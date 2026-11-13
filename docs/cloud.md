@@ -2725,8 +2725,48 @@ free credits are used up. A workspace has a monthly cap.
 - The iPhone shows usage and sells nothing.
 
 What is built so far is the reading of it: Plan and usage, worked out from `usage_events` and
-the rate card, and the meter's cuts below. There is no Stripe and no cap enforcement yet; the
-cap is stored for when there is.
+the rate card, the meter's cuts below, and the groundwork for payments below, which nothing
+calls yet. Nothing charges a card and nothing enforces the cap yet; the cap is stored for when
+something does.
+
+**Payments.** Stripe is reached only through `apps/api/src/deps/payments.ts`, on Stripe's own
+Node SDK (`stripe`, pinned at 23.1.0, at the API version that release pins, `2026-10-28.endive`),
+which no other file imports. It is `noPayments`, refusing every call as `billing_not_set_up`,
+unless `PONZU_BILLING` is `on`: with billing off or observing, nothing reaches Stripe whatever
+keys are set. `on` refuses to start without `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
+`STRIPE_CREDIT_PRICE_ID`; `STRIPE_PORTAL_CONFIGURATION_ID` is optional and `PONZU_STRIPE_TAX=1`
+turns on Stripe Tax. A live key (`sk_live_`, `rk_live_`) starts only where `PONZU_ENVIRONMENT` is
+`production`. Every object the seam makes at Stripe carries `ponzu_workspace_id` and
+`ponzu_scope` (the deployment's sandbox scope) in its metadata, and every create carries an
+idempotency key made from the deployment's scope and our own ids, so a retry never makes a
+second customer, Checkout page or invoice. A period is charged as one invoice with one line of
+credits at the credit price, and the invoice's id is stored before its line is added, so a close
+that crashes anywhere and runs again finds it. Webhooks are checked with Stripe's own
+`constructEvent` against the raw body and the API's clock; one from the other mode than the
+key's, or about an object carrying another deployment's scope, is acknowledged and ignored.
+`bun apps/api/scripts/stripe-setup.ts`, with `STRIPE_SECRET_KEY` in its environment, makes the
+product "Ponzu credits", its one-time price at the rate card's cents (lookup key
+`ponzu_credit_v1`, tax exclusive) and the customer portal's configuration, or finds them from a
+run before, and prints only their ids; it refuses a live key without `--live`, and refuses a
+price under the key that is not the rate card's rather than change it. The seam is proven
+against Stripe's official mock server (`payments.stripe-mock.test.ts`, run in CI against
+`stripe/stripe-mock` pinned by digest), which checks each request's parameters.
+
+**What billing stores.** On `workspaces`: the cached gate (`billing_gate`, `ok` until worked out,
+and `billing_gate_at`), when the running period is next to close (`billing_next_close_at`), the
+card Stripe charges (`stripe_payment_method_id`, with `card_brand`, `card_last4`,
+`card_added_at` and `card_added_by_user_id`), and why and where an invoice is past due
+(`past_due_reason`, `past_due_invoice_url`, beside `past_due_at`). A card being added is an
+`auth_states` row of kind `card_setup` whose payload names the workspace, the cap chosen with the
+card, the app scheme the return page opens, the Checkout session and how it ended; a workspace
+has one open at a time (`auth_states_open_card_setup_key`), and a new one takes the old one's
+place. `billing_periods` holds one row per closed period: its numbers frozen at the close
+(credits used, free, billed and charged, cents charged, the cap, the people counted and the rate
+card), its status (`closing`, `unbilled`, `waived`, `invoiced`, `paid`, `payment_failed`,
+`uncollectible` or `void`) and its one Stripe invoice. What is charged is never more than the
+billed credits, and never more than the cap. A workspace with a closed period cannot be deleted,
+as one with usage cannot. With billing off nothing writes any of these, and they keep their
+defaults.
 
 **The meter's cuts.** While `PONZU_BILLING` is `observe` or `on`, the minute's sweep first cuts
 every awake stretch that is due (`billing/meter.ts`), before any sandbox's own step: at the end

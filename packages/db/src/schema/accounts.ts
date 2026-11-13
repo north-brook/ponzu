@@ -16,11 +16,13 @@ import {
 import {
   AUTH_STATE_KINDS,
   BASE_STATUSES,
+  BILLING_GATES,
   CLAUDE_ACCOUNT_KINDS,
   CLAUDE_ACCOUNT_STATUSES,
   DEVICE_PLATFORMS,
   GITHUB_ACCESS,
   MEMBER_ROLES,
+  PAST_DUE_REASONS,
   PUSH_ENVIRONMENTS,
   REPO_PERMISSIONS,
   REPOSITORY_SELECTIONS,
@@ -161,6 +163,27 @@ export const workspaces = pgTable(
     cardBrand: text("card_brand"),
     cardLast4: text("card_last4"),
     pastDueAt: instant("past_due_at"),
+    // Billing (docs/cloud.md, "Billing"). Every column below is written only while PONZU_BILLING
+    // is observe or on; with it off they keep their defaults and nothing reads them.
+    /**
+     * Whether the workspace may start new work, as last worked out from its usage
+     * (`refreshBillingGate` in the API), and when. Read by the routes, the wake and the runner's
+     * claim only while billing is on.
+     */
+    billingGate: text("billing_gate", { enum: BILLING_GATES }).notNull().default("ok"),
+    billingGateAt: instant("billing_gate_at"),
+    /** When the period running now is to be closed and billed. Null: not worked out yet. */
+    billingNextCloseAt: instant("billing_next_close_at"),
+    /** The card Stripe charges: the customer's default payment method, as Ponzu last set it. */
+    stripePaymentMethodId: text("stripe_payment_method_id"),
+    cardAddedAt: instant("card_added_at"),
+    cardAddedByUserId: text("card_added_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** Why `past_due_at` is set: a payment failed, or the bank asks for it to be confirmed. */
+    pastDueReason: text("past_due_reason", { enum: PAST_DUE_REASONS }),
+    /** Stripe's page where the past-due invoice can be paid. */
+    pastDueInvoiceUrl: text("past_due_invoice_url"),
     /**
      * The workspace's allowance of repo idea generations (`ideas` on `repos`): how many were
      * started in the window that began at `ideas_window_started_at`. Ponzu pays for them.
@@ -184,6 +207,10 @@ export const workspaces = pgTable(
       oneOf(t.repositorySelection, REPOSITORY_SELECTIONS),
     ),
     check("workspaces_monthly_cap_cents_check", sql`${t.monthlyCapCents} >= 0`),
+    check("workspaces_billing_gate_check", oneOf(t.billingGate, BILLING_GATES)),
+    check("workspaces_past_due_reason_check", oneOf(t.pastDueReason, PAST_DUE_REASONS)),
+    // The period close finds the workspaces whose period has ended.
+    index("workspaces_billing_next_close_at_idx").on(t.billingNextCloseAt),
   ],
 );
 
@@ -484,7 +511,8 @@ export const devices = pgTable(
 
 /**
  * A round trip through someone else's page that has to come back to the person who started it:
- * the `state` of a GitHub App install, or a Claude sign-in waiting for its pasted code.
+ * the `state` of a GitHub App install, a Claude sign-in waiting for its pasted code, or a card
+ * being added on Stripe's Checkout page (`card_setup`, whose payload names the workspace).
  */
 export const authStates = pgTable(
   "auth_states",
@@ -505,6 +533,10 @@ export const authStates = pgTable(
     uniqueIndex("auth_states_open_claude_sign_in_key")
       .on(t.userId)
       .where(sql`${t.kind} = 'claude_sign_in' and ${t.consumedAt} is null`),
+    // A workspace has one card setup open at a time: a new one takes the old one first.
+    uniqueIndex("auth_states_open_card_setup_key")
+      .on(sql`(${t.payload} ->> 'workspaceId')`)
+      .where(sql`${t.kind} = 'card_setup' and ${t.consumedAt} is null`),
     check("auth_states_kind_check", oneOf(t.kind, AUTH_STATE_KINDS)),
   ],
 );

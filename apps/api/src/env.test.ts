@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import current from "@ponzu/runner/image/current.json" with { type: "json" };
 import {
@@ -87,6 +87,8 @@ test("a complete environment is read into one typed value", () => {
     push: null,
     // Without a Resend key, email is off.
     mail: null,
+    // Without Stripe's values, there is nothing to charge with (and billing is off anyway).
+    stripe: null,
     // Every feature switch is off when nothing sets it.
     features: FEATURES_OFF,
     // Not on Vercel, so rate limits could not be asked even with PONZU_RATE_LIMITS=vercel.
@@ -145,7 +147,7 @@ test("every feature switch is off by default, and an empty value is unset", () =
 test("each switch is read from its own variable", () => {
   const on = (vars: Record<string, string>) => readEnv({ ...complete, ...vars }).features;
   expect(on({ PONZU_BILLING: "observe" })).toEqual({ ...FEATURES_OFF, billing: "observe" });
-  expect(on({ PONZU_BILLING: "on" })).toEqual({ ...FEATURES_OFF, billing: "on" });
+  expect(on({ PONZU_BILLING: "on", ...STRIPE })).toEqual({ ...FEATURES_OFF, billing: "on" });
   expect(on({ EXPO_ACCESS_TOKEN: "expo-token-for-a-test-0123456789" })).toEqual({
     ...FEATURES_OFF,
     push: true,
@@ -161,6 +163,84 @@ test("each switch is read from its own variable", () => {
   expect(on({ PONZU_MAINTENANCE: "read_only" })).toEqual({
     ...FEATURES_OFF,
     maintenance: "read_only",
+  });
+});
+
+/** Stripe's three required values, in test mode, none of them real. */
+const STRIPE = {
+  STRIPE_SECRET_KEY: "sk_test_notarealkey0123",
+  STRIPE_WEBHOOK_SECRET: "whsec_notarealsecret0123",
+  STRIPE_CREDIT_PRICE_ID: "price_notarealprice0123",
+};
+
+describe("Stripe", () => {
+  test("is nothing until its three values are set, and then is read whole", () => {
+    expect(readEnv(complete).stripe).toBeNull();
+    // Two of three: still nothing, and billing stays off.
+    const { STRIPE_CREDIT_PRICE_ID: _price, ...two } = STRIPE;
+    expect(readEnv({ ...complete, ...two }).stripe).toBeNull();
+    expect(readEnv({ ...complete, ...STRIPE }).stripe).toEqual({
+      secretKey: STRIPE.STRIPE_SECRET_KEY,
+      webhookSecret: STRIPE.STRIPE_WEBHOOK_SECRET,
+      creditPriceId: STRIPE.STRIPE_CREDIT_PRICE_ID,
+      portalConfigurationId: null,
+      tax: false,
+    });
+    expect(
+      readEnv({
+        ...complete,
+        ...STRIPE,
+        STRIPE_PORTAL_CONFIGURATION_ID: "bpc_notarealportal0123",
+        PONZU_STRIPE_TAX: "1",
+      }).stripe,
+    ).toMatchObject({ portalConfigurationId: "bpc_notarealportal0123", tax: true });
+  });
+
+  test("keys set with billing off or observing leave billing as it is: nothing switches on", () => {
+    expect(readEnv({ ...complete, ...STRIPE }).features).toEqual(FEATURES_OFF);
+    expect(readEnv({ ...complete, ...STRIPE, PONZU_BILLING: "observe" }).features.billing).toBe(
+      "observe",
+    );
+    // An empty value is unset, so a dashboard's blank fields change nothing either.
+    const blank = Object.fromEntries(Object.keys(STRIPE).map((name) => [name, ""]));
+    expect(readEnv({ ...complete, ...blank, PONZU_STRIPE_TAX: "" }).stripe).toBeNull();
+  });
+
+  test("billing on without the three values never starts, and names the missing ones", () => {
+    expect(problem({ ...complete, PONZU_BILLING: "on" })).toBe(
+      "The API cannot start. PONZU_BILLING is on, which needs STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_CREDIT_PRICE_ID set.",
+    );
+    const { STRIPE_WEBHOOK_SECRET: _secret, ...two } = STRIPE;
+    expect(problem({ ...complete, ...two, PONZU_BILLING: "on" })).toBe(
+      "The API cannot start. PONZU_BILLING is on, which needs STRIPE_WEBHOOK_SECRET set.",
+    );
+  });
+
+  test("a live key starts only in production", () => {
+    const live = { ...STRIPE, STRIPE_SECRET_KEY: "sk_live_notarealkey0123" };
+    expect(problem({ ...complete, ...live })).toBe(
+      "The API cannot start. STRIPE_SECRET_KEY is a live key, which only production may use.",
+    );
+    expect(problem({ ...complete, ...deployed, ...live })).toContain("live key");
+    expect(problem({ ...complete, ...live, PONZU_ENVIRONMENT: "production" })).toBe("read");
+    // A restricted live key is a live key too.
+    expect(
+      problem({ ...complete, ...STRIPE, STRIPE_SECRET_KEY: "rk_live_notarealkey0123" }),
+    ).toContain("live key");
+  });
+
+  test("a malformed value is named and never quoted", () => {
+    for (const [name, value] of [
+      ["STRIPE_SECRET_KEY", "pk_test_publishable0123"],
+      ["STRIPE_WEBHOOK_SECRET", "secret-without-prefix"],
+      ["STRIPE_CREDIT_PRICE_ID", "prod_notaprice0123"],
+      ["STRIPE_PORTAL_CONFIGURATION_ID", "portal_0123"],
+      ["PONZU_STRIPE_TAX", "yes"],
+    ] as const) {
+      const message = problem({ ...complete, ...STRIPE, [name]: value });
+      expect(message).toBe(`The API cannot start. ${name} is malformed.`);
+      expect(message).not.toContain(value);
+    }
   });
 });
 
@@ -427,8 +507,13 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "PONZU_SANDBOX_IDLE_SECONDS",
     "PONZU_SANDBOX_MAX_PER_OWNER",
     "PONZU_SANDBOX_MAX_PER_WORKSPACE",
+    "PONZU_STRIPE_TAX",
     "PONZU_VAULT_OLD_KEYS",
     "RESEND_API_KEY",
+    "STRIPE_CREDIT_PRICE_ID",
+    "STRIPE_PORTAL_CONFIGURATION_ID",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
     "VERCEL_PROJECT_ID",
     "VERCEL_TEAM_ID",
     "VERCEL_TOKEN",
@@ -533,9 +618,14 @@ test("the required, optional, system and forbidden names are exact and do not ov
     "PONZU_SANDBOX_IDLE_SECONDS",
     "PONZU_SANDBOX_MAX_PER_OWNER",
     "PONZU_SANDBOX_MAX_PER_WORKSPACE",
+    "PONZU_STRIPE_TAX",
     "PONZU_VAULT_OLD_KEYS",
     "R2_PRIVATE_BUCKET",
     "RESEND_API_KEY",
+    "STRIPE_CREDIT_PRICE_ID",
+    "STRIPE_PORTAL_CONFIGURATION_ID",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
     "VERCEL_PROJECT_ID",
     "VERCEL_TEAM_ID",
   ]);

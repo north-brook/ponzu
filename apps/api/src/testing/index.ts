@@ -25,6 +25,7 @@ import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeMail } from "./fake-mail.ts";
 import { FakeModel } from "./fake-model.ts";
+import { FakePayments } from "./fake-payments.ts";
 import { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 import { FakePush } from "./fake-push.ts";
 import { FakeRateLimit } from "./fake-rate-limit.ts";
@@ -41,6 +42,11 @@ export {
   PASSING_VERDICT,
   verdict,
 } from "./fake-model.ts";
+export {
+  FakePayments,
+  type PaymentsMethod,
+  TEST_STRIPE_WEBHOOK_SECRET,
+} from "./fake-payments.ts";
 export { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 export {
   type FakePull,
@@ -184,6 +190,20 @@ export async function createTestApp(
   const mail = new FakeMail({ enabled: options.mail ?? false });
   const posthogAdmin = new FakePosthogAdmin();
   const rateLimit = new FakeRateLimit(clock);
+  const features: Features = {
+    ...FEATURES_OFF,
+    push: options.push ?? true,
+    email: options.mail ?? false,
+    ...options.features,
+  };
+  // As a deployment's `selectPayments`: Stripe only while billing is on. Off or observing, every
+  // call is recorded and refused, so a test can show that nothing was asked. Asked at each call,
+  // so a test that switches `deps.features.billing` switches this with it.
+  const payments = new FakePayments({
+    clock,
+    enabled: () => features.billing === "on",
+    scope: options.sandbox?.scope ?? TEST_SCOPE,
+  });
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -238,12 +258,8 @@ export async function createTestApp(
     push,
     mail,
     rateLimit: options.rateLimit ?? rateLimit,
-    features: {
-      ...FEATURES_OFF,
-      push: options.push ?? true,
-      email: options.mail ?? false,
-      ...options.features,
-    },
+    payments,
+    features,
     config: {
       build: {
         version: "0.0.0-test",
@@ -391,6 +407,11 @@ export async function createTestApp(
     mail,
     /** Every rate-limit check the app made, and the limits it counts to (none until a test sets one). */
     rateLimit,
+    /**
+     * Stripe in memory: every call the app made, and Stripe's part to act. Refuses every call
+     * unless the app was made with `features: { billing: "on" }`.
+     */
+    payments,
     /** Every event, profile and exception the app captured, as PostHog would be handed them. */
     analytics,
     logs,

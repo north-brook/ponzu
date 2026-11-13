@@ -197,9 +197,19 @@ jobs:
     name: Tests
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
+    services:
+      # Stripe's official mock server, which checks every request's parameters against Stripe's
+      # OpenAPI description: apps/api/src/deps/payments.stripe-mock.test.ts runs the payments seam
+      # against it, and is skipped without STRIPE_MOCK_URL. Pinned by digest (v0.206.0). It holds no
+      # key and reaches nothing.
+      stripe-mock:
+        image: stripe/stripe-mock@sha256:aeb96b83e87a893d2ac005e363ac01ffa6e59a5ad85b49c155dfc9129de02e78
+        ports:
+          - 12111:12111
     env:
       # Kept between runs by the cache below, outside the checkout.
       TIMINGS: ~/.cache/ponzu-ci/bun-timings.json
+      STRIPE_MOCK_URL: http://localhost:12111
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0

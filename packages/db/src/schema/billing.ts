@@ -7,13 +7,20 @@ import {
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   text,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { LEDGER_REASONS, USAGE_KINDS, USAGE_PAYERS } from "../enums.ts";
+import {
+  BILLING_PERIOD_STATUSES,
+  INVOICED_PERIOD_STATUSES,
+  LEDGER_REASONS,
+  USAGE_KINDS,
+  USAGE_PAYERS,
+} from "../enums.ts";
 import { users, workspaces } from "./accounts.ts";
 import { canvases } from "./canvases.ts";
-import { createdAt, instant, oneOf } from "./columns.ts";
+import { createdAt, instant, oneOf, updatedAt } from "./columns.ts";
 
 /** What a model costs us, in millionths of a dollar per million tokens. */
 export interface ModelRate {
@@ -128,6 +135,71 @@ export const creditLedger = pgTable(
     check(
       "credit_ledger_usage_event_id_check",
       sql`(${t.reason} = 'use') = (${t.usageEventId} is not null)`,
+    ),
+  ],
+);
+
+/**
+ * One closed billing period of a workspace: its numbers frozen at the close, and what became of
+ * them (docs/cloud.md, "Billing"). Written only while PONZU_BILLING is observe or on; a period
+ * closed while billing is not on is `unbilled` for good. A period has at most one invoice at
+ * Stripe, and the `stripe_invoice_id` stored here is what keeps it to one: Stripe forgets an
+ * idempotency key after about a day, and this row does not. The id may be stored while the
+ * period is still `closing` (the invoice is made, its line or its finalizing is not done yet).
+ */
+export const billingPeriods = pgTable(
+  "billing_periods",
+  {
+    // Billing history is kept: a workspace with a closed period cannot be deleted from under it.
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    periodStart: instant("period_start").notNull(),
+    periodEnd: instant("period_end").notNull(),
+    status: text("status", { enum: BILLING_PERIOD_STATUSES }).notNull().default("closing"),
+    // The numbers, frozen at the close: whole credits and cents.
+    usedCredits: integer("used_credits").notNull(),
+    freeCredits: integer("free_credits").notNull(),
+    billedCredits: integer("billed_credits").notNull(),
+    /** What is charged: the billed credits, never more than the cap allows. */
+    chargedCredits: integer("charged_credits").notNull(),
+    chargedCents: integer("charged_cents").notNull(),
+    capCents: integer("cap_cents").notNull(),
+    people: integer("people").notNull(),
+    rateCardVersion: integer("rate_card_version")
+      .notNull()
+      .references(() => rateCards.version, { onDelete: "restrict" }),
+    // The invoice at Stripe, once there is one.
+    stripeInvoiceId: text("stripe_invoice_id").unique(),
+    invoiceNumber: text("invoice_number"),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    taxCents: integer("tax_cents"),
+    totalCents: integer("total_cents"),
+    /** How many times Stripe has tried to collect it, and when it tries next. */
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: instant("next_attempt_at"),
+    closedAt: instant("closed_at").notNull().defaultNow(),
+    invoicedAt: instant("invoiced_at"),
+    paidAt: instant("paid_at"),
+    failedAt: instant("failed_at"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.periodStart] }),
+    // The webhook and the close look for periods whose invoice is not settled yet.
+    index("billing_periods_unsettled_idx")
+      .on(t.status)
+      .where(sql`${t.status} in ('invoiced', 'payment_failed')`),
+    check("billing_periods_status_check", oneOf(t.status, BILLING_PERIOD_STATUSES)),
+    check("billing_periods_span_check", sql`${t.periodEnd} > ${t.periodStart}`),
+    check(
+      "billing_periods_numbers_check",
+      sql`${t.usedCredits} >= 0 and ${t.freeCredits} >= 0 and ${t.billedCredits} >= 0 and ${t.chargedCredits} >= 0 and ${t.chargedCredits} <= ${t.billedCredits} and ${t.chargedCents} >= 0 and ${t.chargedCents} <= ${t.capCents} and ${t.people} >= 0 and ${t.attempts} >= 0`,
+    ),
+    // A period whose status says it has an invoice at Stripe names it.
+    check(
+      "billing_periods_invoice_check",
+      sql`${t.status} not in (${sql.raw(INVOICED_PERIOD_STATUSES.map((status) => `'${status}'`).join(", "))}) or ${t.stripeInvoiceId} is not null`,
     ),
   ],
 );

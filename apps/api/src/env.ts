@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { PosthogConfig } from "./analytics/posthog.ts";
 import type { PosthogAdminConfig } from "./analytics/posthog-admin.ts";
 import { DEFAULT_EMAIL_FROM } from "./deps/mail.ts";
+import type { StripeConfig } from "./deps/payments.ts";
 import type { R2Config } from "./deps/storage.ts";
 import {
   BILLING_MODES,
@@ -184,8 +185,36 @@ const schema = z.object({
     .regex(/^[^<>\r\n]{1,64} <[^<>@\s]{1,64}@[A-Za-z0-9.-]{1,253}>$/)
     .default(DEFAULT_EMAIL_FROM),
 
+  // Billing: payments through Stripe (deps/payments.ts). Nothing reaches Stripe unless
+  // PONZU_BILLING is on, whatever is set here; on needs the first three.
+  /** A secret or restricted key: test mode (sk_test_, rk_test_) off production. A secret. */
+  STRIPE_SECRET_KEY: z
+    .string()
+    .regex(/^(sk|rk)_(test|live)_[A-Za-z0-9]+$/)
+    .optional(),
+  /** What Stripe signs deliveries to /v1/stripe/webhook with (whsec_…). A secret. */
+  STRIPE_WEBHOOK_SECRET: z
+    .string()
+    .regex(/^whsec_[A-Za-z0-9]+$/)
+    .optional(),
+  /** The one-time price of a credit (price_…), which `scripts/stripe-setup.ts` prints. */
+  STRIPE_CREDIT_PRICE_ID: z
+    .string()
+    .regex(/^price_[A-Za-z0-9]+$/)
+    .optional(),
+  /** The customer portal's configuration (bpc_…) the setup script made. Unset: the account's default. */
+  STRIPE_PORTAL_CONFIGURATION_ID: z
+    .string()
+    .regex(/^bpc_[A-Za-z0-9]+$/)
+    .optional(),
+  /** "1": Stripe Tax works out tax on each invoice, once the founder has registered. Off when unset. */
+  PONZU_STRIPE_TAX: z.enum(["0", "1"]).default("0"),
+
   // Feature switches (features.ts). Each is off when unset.
-  /** off, observe (the gate is computed and what it would refuse is logged), or on. */
+  /**
+   * off, observe (the gate is computed and what it would refuse is logged), or on (enforced and
+   * charged; needs STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and STRIPE_CREDIT_PRICE_ID).
+   */
   PONZU_BILLING: z.enum(BILLING_MODES).default("off"),
   /** "1": repo bases are built, and canvases wake from them. */
   PONZU_REPO_BASES: z.enum(["0", "1"]).default("0"),
@@ -315,6 +344,11 @@ export interface Env {
   push: { accessToken: string } | null;
   /** The daily email through Resend, or null when RESEND_API_KEY is unset and email is off. */
   mail: { apiKey: string; from: string } | null;
+  /**
+   * Stripe, or null unless its key, webhook secret and credit price are all set. Used only while
+   * PONZU_BILLING is on (`selectPayments`): off and observe never reach Stripe.
+   */
+  stripe: StripeConfig | null;
   /** Which features are switched on (features.ts): all off unless their variables say so. */
   features: Features;
   /** Whether this runs as a Vercel deployment (`VERCEL=1`): only there can rate limits be asked. */
@@ -424,6 +458,7 @@ export function readEnv(
     posthogAdmin: posthogAdmin(env),
     push: env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : null,
     mail: env.RESEND_API_KEY ? { apiKey: env.RESEND_API_KEY, from: env.PONZU_EMAIL_FROM } : null,
+    stripe: stripeConfig(env),
     features: featuresFrom(env),
     onVercel: env.VERCEL === "1",
   };
@@ -478,6 +513,40 @@ export function environmentPair(set: Record<string, string | undefined>): {
   return result(
     `PONZU_ENVIRONMENT is ${environment}, which belongs on Vercel's "${expected}" environment, but VERCEL_TARGET_ENV says this deployment runs in "${vercelEnvironment}".`,
   );
+}
+
+/**
+ * Stripe's settings, or null when its three required values are not all set. Billing on refuses
+ * to start without them, and a live key refuses to start anywhere but production, so dev, a
+ * preview or a laptop can never charge a real card.
+ */
+function stripeConfig(env: z.infer<typeof schema>): StripeConfig | null {
+  const required = {
+    STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_CREDIT_PRICE_ID: env.STRIPE_CREDIT_PRICE_ID,
+  };
+  const missing = Object.entries(required)
+    .filter(([, value]) => value === undefined)
+    .map(([name]) => name);
+  if (env.PONZU_BILLING === "on" && missing.length > 0) {
+    throw new EnvError([`PONZU_BILLING is on, which needs ${missing.join(", ")} set.`]);
+  }
+  if (
+    env.STRIPE_SECRET_KEY !== undefined &&
+    /^(sk|rk)_live_/.test(env.STRIPE_SECRET_KEY) &&
+    env.PONZU_ENVIRONMENT !== "production"
+  ) {
+    throw new EnvError(["STRIPE_SECRET_KEY is a live key, which only production may use."]);
+  }
+  if (missing.length > 0) return null;
+  return {
+    secretKey: env.STRIPE_SECRET_KEY!,
+    webhookSecret: env.STRIPE_WEBHOOK_SECRET!,
+    creditPriceId: env.STRIPE_CREDIT_PRICE_ID!,
+    portalConfigurationId: env.STRIPE_PORTAL_CONFIGURATION_ID ?? null,
+    tax: env.PONZU_STRIPE_TAX === "1",
+  };
 }
 
 /** PostHog's private API: its personal key and project id together, or neither. */

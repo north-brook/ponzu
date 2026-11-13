@@ -17,7 +17,11 @@ export const CLAUDE_ACCOUNT_KINDS = ["subscription", "api_key"] as const;
 export const CLAUDE_ACCOUNT_STATUSES = ["connected", "expired", "revoked"] as const;
 export const DEVICE_PLATFORMS = ["ios", "macos"] as const;
 export const PUSH_ENVIRONMENTS = ["development", "production"] as const;
-export const AUTH_STATE_KINDS = ["github_install", "claude_sign_in"] as const;
+/**
+ * A round trip through someone else's page: a GitHub App install, a Claude sign-in, or a card
+ * added on Stripe's Checkout page (`card_setup`, docs/cloud.md "Billing").
+ */
+export const AUTH_STATE_KINDS = ["github_install", "claude_sign_in", "card_setup"] as const;
 
 export const CANVAS_STATUSES = ["active", "settled"] as const;
 export const AGENT_STATES = ["idle", "waking", "working", "needs_you", "limited"] as const;
@@ -100,6 +104,45 @@ export const UPLOAD_PURPOSES = [
 export const USAGE_KINDS = ["sandbox", "model"] as const;
 export const USAGE_PAYERS = ["ponzu", "own_plan"] as const;
 export const LEDGER_REASONS = ["grant", "use", "topup", "refund", "adjustment"] as const;
+/**
+ * Whether a workspace may start new work, as last worked out from its usage (`workspaces.
+ * billing_gate`; apps/api/src/billing/gate.ts has the rules). Only read while billing is on.
+ */
+export const BILLING_GATES = ["ok", "free_used", "cap_reached", "payment_failed"] as const;
+/** Why a workspace's invoice is past due: a payment failed, or the bank asks the payer to confirm it. */
+export const PAST_DUE_REASONS = ["failed", "needs_confirmation"] as const;
+/**
+ * A closed billing period (`billing_periods.status`):
+ *
+ *   closing         its numbers are frozen, and what to do with them is not settled yet
+ *   unbilled        closed while billing was not on: never billed, then or later
+ *   waived          nothing to charge: under the $1 minimum, or no card was added
+ *   invoiced        one invoice was made for it at Stripe, and is not paid yet
+ *   paid            that invoice is paid
+ *   payment_failed  a payment of that invoice failed, and Stripe is still trying
+ *   uncollectible   Stripe gave up on it (the invoice's own page can still take a payment)
+ *   void            the invoice was voided
+ */
+export const BILLING_PERIOD_STATUSES = [
+  "closing",
+  "unbilled",
+  "waived",
+  "invoiced",
+  "paid",
+  "payment_failed",
+  "uncollectible",
+  "void",
+] as const;
+/** The statuses of a period that has an invoice at Stripe. */
+export const INVOICED_PERIOD_STATUSES = [
+  "invoiced",
+  "paid",
+  "payment_failed",
+  "uncollectible",
+  "void",
+] as const;
+/** How a card setup ended (the `outcome` in a `card_setup` auth state's payload). */
+export const CARD_SETUP_OUTCOMES = ["added", "cancelled", "expired", "failed"] as const;
 
 export const WEBHOOK_SOURCES = ["github", "stripe", "workos"] as const;
 
@@ -195,6 +238,10 @@ export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
 export type SandboxState = (typeof SANDBOX_STATES)[number];
 export type AgentBlocker = (typeof AGENT_BLOCKERS)[number];
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
+export type BillingGateValue = (typeof BILLING_GATES)[number];
+export type PastDueReason = (typeof PAST_DUE_REASONS)[number];
+export type BillingPeriodStatus = (typeof BILLING_PERIOD_STATUSES)[number];
+export type CardSetupOutcome = (typeof CARD_SETUP_OUTCOMES)[number];
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export type NotificationOpen = (typeof NOTIFICATION_OPENS)[number];
