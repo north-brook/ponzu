@@ -17,6 +17,9 @@ export const TEST_STRIPE_WEBHOOK_SECRET = "whsec_test_fake_payments_secret";
 /** Every method of the seam, by name: what `calls` records and `failNext` aims at. */
 export type PaymentsMethod = Exclude<keyof Payments, "enabled" | "livemode">;
 
+/** The Stripe steps of one period's charge, in order. */
+export type ChargeStep = "invoice" | "item" | "finalize";
+
 interface FakeSession {
   id: string;
   setupId: string;
@@ -68,6 +71,7 @@ export class FakePayments implements Payments {
   };
   readonly #clock: Clock;
   readonly #failures: { method: PaymentsMethod; when: "before" | "after"; error: Error }[] = [];
+  readonly #chargeCrashes: { step: ChargeStep; error: Error }[] = [];
   readonly #idempotency = new Map<string, string>();
   #next = 0;
 
@@ -102,6 +106,15 @@ export class FakePayments implements Payments {
    */
   failNext(method: PaymentsMethod, error: Error, when: "before" | "after" = "before"): void {
     this.#failures.push({ method, when, error });
+  }
+
+  /**
+   * The next `chargePeriod` crashes right after one of its Stripe steps took effect: the invoice
+   * was made (before `onInvoice` hears of it), its line was added, or it was finalized. This is
+   * how a test crashes the close between Stripe's calls.
+   */
+  crashChargeAfter(step: ChargeStep, error: Error = new Error(`crashed after ${step}`)): void {
+    this.#chargeCrashes.push({ step, error });
   }
 
   /** How many calls of a method were made. */
@@ -260,6 +273,10 @@ export class FakePayments implements Payments {
     return this.#call("chargePeriod", [charge], async () => {
       const periodStart = charge.periodStart.toISOString();
       const key = `${this.scope}:${charge.workspaceId}:${periodStart}`;
+      const crash = (step: ChargeStep) => {
+        const index = this.#chargeCrashes.findIndex((crash) => crash.step === step);
+        if (index !== -1) throw this.#chargeCrashes.splice(index, 1)[0]!.error;
+      };
       const id =
         charge.invoiceId ??
         this.#once(`invoice:${key}`, () => {
@@ -286,9 +303,19 @@ export class FakePayments implements Payments {
           });
           return made;
         });
+      crash("invoice");
       await charge.onInvoice(id);
       const invoice = this.#invoice(id);
-      if (invoice.status === "draft" && !invoice.lines.some((l) => l.periodStart === periodStart)) {
+      const hasOurLine = invoice.lines.some((l) => l.periodStart === periodStart);
+      if (invoice.status !== "draft" && !hasOurLine) {
+        throw new PaymentsError({
+          type: "invoice_without_line",
+          code: null,
+          status: 200,
+          requestId: null,
+        });
+      }
+      if (invoice.status === "draft" && !hasOurLine) {
         this.#once(`invoice-item:${key}`, () => {
           invoice.lines.push({
             quantity: charge.credits,
@@ -298,6 +325,7 @@ export class FakePayments implements Payments {
           invoice.lineCount = invoice.lines.length;
           return "added";
         });
+        crash("item");
       }
       if (invoice.status === "draft") {
         const cents = Number(this.creditPrice.unitAmountDecimal ?? "0");
@@ -307,6 +335,7 @@ export class FakePayments implements Payments {
         invoice.amountDueCents = total;
         invoice.number = `PONZU-${String(++this.#next).padStart(4, "0")}`;
         invoice.hostedInvoiceUrl = `https://invoice.stripe.test/i/${id}`;
+        crash("finalize");
       }
       return this.#state(invoice);
     });

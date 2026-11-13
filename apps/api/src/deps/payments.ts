@@ -89,7 +89,10 @@ export interface PeriodCharge {
    * again. Stripe forgets an idempotency key after about a day; this is what holds after that.
    */
   invoiceId: string | null;
-  /** Called with the invoice's id as soon as Stripe made it, before its line, to store it. */
+  /**
+   * Called with the invoice's id as soon as Stripe made it, before its line, to store it. What it
+   * throws comes out of `chargePeriod` unchanged, not as a `PaymentsError`.
+   */
   onInvoice: (invoiceId: string) => Promise<void>;
 }
 
@@ -266,8 +269,14 @@ function client(secretKey: string, endpoint?: StripeEndpoint): Stripe {
   });
 }
 
+/** A failure of a callback the caller handed in (`onInvoice`), carried out of `call` unchanged. */
+class CallerError {
+  constructor(readonly error: unknown) {}
+}
+
 /** Turns anything the SDK threw into a `PaymentsError` of safe parts, or passes ours through. */
-function safe(error: unknown): Error {
+function safe(error: unknown): unknown {
+  if (error instanceof CallerError) return error.error;
   if (
     error instanceof PaymentsError ||
     error instanceof PaymentsOffError ||
@@ -469,7 +478,11 @@ export function stripePayments(config: StripeConfig, options: StripeOptions): Pa
               {
                 customer: charge.customerId,
                 collection_method: "charge_automatically",
-                auto_advance: true,
+                // Not until it is finalized below. A draft with auto_advance on is finalized by
+                // Stripe about an hour after it is made, line or no line: a close that crashed
+                // before adding the line and ran again later would find an empty, finalized
+                // invoice for $0, and the period would never be charged.
+                auto_advance: false,
                 pending_invoice_items_behavior: "exclude",
                 automatic_tax: { enabled: config.tax },
                 description: charge.description,
@@ -477,11 +490,26 @@ export function stripePayments(config: StripeConfig, options: StripeOptions): Pa
               },
               { idempotencyKey: `invoice:${key}` },
             );
-        await charge.onInvoice(invoice.id);
+        try {
+          await charge.onInvoice(invoice.id);
+        } catch (error) {
+          // The caller's own failure (storing the id), not Stripe's: it passes through as it is.
+          throw new CallerError(error);
+        }
         // Its one line, marked with the period: added once, whatever crashed before.
         const hasOurLine = (invoice.lines?.data ?? []).some(
           (line) => line.metadata?.ponzu_period_start === periodStart,
         );
+        if (invoice.status !== "draft" && !hasOurLine) {
+          // Finalized without the period's line (by hand at Stripe): charging it would charge
+          // nothing. Refused, never taken as the period's charge.
+          throw new PaymentsError({
+            type: "invoice_without_line",
+            code: null,
+            status: 200,
+            requestId: null,
+          });
+        }
         if (invoice.status === "draft" && !hasOurLine) {
           await stripe.invoiceItems.create(
             {

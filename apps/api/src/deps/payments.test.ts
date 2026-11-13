@@ -281,4 +281,34 @@ describe("FakePayments acts Stripe's part", () => {
     expect(payments.invoices.size).toBe(1);
     expect(state).toMatchObject({ status: "open", lineCount: 1, totalCents: 15_000 });
   });
+
+  for (const step of ["invoice", "item", "finalize"] as const) {
+    test(`crashChargeAfter("${step}") stops the charge there, and a retry still makes one of each`, async () => {
+      const payments = new FakePayments({ clock: new FakeClock() });
+      let stored: string | null = null;
+      const charge = () =>
+        payments.chargePeriod({
+          workspaceId: "ws_1",
+          periodStart: new Date("2026-10-13T00:00:00Z"),
+          periodEnd: new Date("2026-11-13T00:00:00Z"),
+          customerId: "cus_1",
+          credits: 1500,
+          description: "d",
+          lineDescription: "l",
+          invoiceId: stored,
+          onInvoice: async (id) => {
+            stored = id;
+          },
+        });
+      payments.crashChargeAfter(step);
+      await expect(charge()).rejects.toThrow(`crashed after ${step}`);
+      expect(stored === null).toBe(step === "invoice");
+      const [made] = [...payments.invoices.values()];
+      expect(made!.lineCount).toBe(step === "invoice" ? 0 : 1);
+      expect(made!.status).toBe(step === "finalize" ? "open" : "draft");
+      if (step !== "invoice") payments.forgetIdempotencyKeys();
+      expect(await charge()).toMatchObject({ status: "open", lineCount: 1, totalCents: 15_000 });
+      expect(payments.invoices.size).toBe(1);
+    });
+  }
 });

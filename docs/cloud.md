@@ -2741,7 +2741,10 @@ turns on Stripe Tax. A live key (`sk_live_`, `rk_live_`) starts only where `PONZ
 idempotency key made from the deployment's scope and our own ids, so a retry never makes a
 second customer, Checkout page or invoice. A period is charged as one invoice with one line of
 credits at the credit price, and the invoice's id is stored before its line is added, so a close
-that crashes anywhere and runs again finds it. Webhooks are checked with Stripe's own
+that crashes anywhere and runs again finds it. The invoice is made without automatic collection
+and given it only when it is finalized with its line, so Stripe never finalizes an empty one by
+itself while a crashed close waits to run again; an invoice found finalized without the period's
+line is refused, never taken as the charge. Webhooks are checked with Stripe's own
 `constructEvent` against the raw body and the API's clock; one from the other mode than the
 key's, or about an object carrying another deployment's scope, is acknowledged and ignored.
 `bun apps/api/scripts/stripe-setup.ts`, with `STRIPE_SECRET_KEY` in its environment, makes the

@@ -43,6 +43,7 @@ export {
   verdict,
 } from "./fake-model.ts";
 export {
+  type ChargeStep,
   FakePayments,
   type PaymentsMethod,
   TEST_STRIPE_WEBHOOK_SECRET,
