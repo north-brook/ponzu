@@ -2,7 +2,7 @@
 
 The Mac app's main window for Ponzu Cloud, as components driven by props: no data fetching, no
 API, no Electron. The data layer maps the API and live queries onto the types in `model.ts` and
-passes them in. The local app's screens beside this folder are deleted at cutover.
+passes them in. The local app's screens that sat beside this folder were deleted at the cutover.
 
 The product's pure rules live in `@ponzu/client/model` (packages/client/src/model/), so the
 phone shows the same ones; their tests are there too. Each file marked "shared" below is a
@@ -87,8 +87,8 @@ shortfall (`fitPanes`); what's remembered changes only when the person moves an 
 
 The chrome departs from the boards on purpose, at the founder's request: it draws no Ponzu
 lockup in any state, the sidebar toggle is the first thing at the left (on a Mac 8px past the
-traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76 to 104 and is
-centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
+traffic lights, which the shell puts at x 16 and centres on the chrome (y 12 since macOS 26,
+13 before it; `apps/desktop/src/traffic-lights.ts`), with the toggle centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
 the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
 on every tab. The chrome is 38px tall where the boards draw 44 (the founder's direction: more
 compact, its 28px controls and the traffic lights centred on it), so everything under it sits 6px
@@ -345,8 +345,9 @@ The create page's keys and caret:
   ladder (below), never a size and stroke by hand; color them with a text token. Brand marks are
   in `ui/marks.tsx`.
 - Motion: durations and easings are tokens; reduced motion stills every animation.
-- Fonts: `vite.config.ts` links the web fonts into every page (the app and the gallery) from one
-  URL; a new family or weight goes there, so the gallery always measures what ships.
+- Fonts: they ship with the app in `styles/fonts/`, declared in `fonts.css`, which `cloud.css`
+  brings into every page (the app and the gallery). A new family or weight goes there with its
+  files, so the gallery always measures what ships.
 - What is open or chosen (the open row, the selected result, the open "+") takes `bg-selected`,
   not `bg-canvas`: in dark the black canvas would read as a hole in the shell.
 - The grounds, at the founder's direction: the canvas (`--c-canvas`) is pure white or pure black,
@@ -357,8 +358,8 @@ The create page's keys and caret:
   shell with `bg-shell`, never `bg-chrome`: over the glass only `<html>` paints the tint, once.
   Raised things on the shell (the composer, cards, menus, popovers) stay solid. `bun
   scripts/glass-shots.ts <dir> [ids]` draws compositions solid and over a stand-in for the glass.
-- One way to style: the canvas keeps its own `pz:` build, and `studio.css` (the local app's)
-  doesn't scan this folder.
+- One way to style: the canvas keeps its own `pz:` build in `src/pz.css`, which scans only
+  `@ponzu/canvas`.
 
 ## The ladder
 
