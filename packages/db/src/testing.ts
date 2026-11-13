@@ -51,6 +51,17 @@ function copy(kind: Copy): Promise<Blob> {
 export async function prepareTestDbs(): Promise<void> {
   await copy("migrated");
   if (!existsSync(copyFile("empty"))) await copy("empty");
+  prepared = true;
+}
+
+let prepared = false;
+
+/**
+ * Whether prepareTestDbs has finished in this process, so a test may check, when its file loads,
+ * that the preload ran before it rather than leaving the copies to the first test.
+ */
+export function testDbsPrepared(): boolean {
+  return prepared && existsSync(copyFile("empty")) && existsSync(copyFile("migrated"));
 }
 
 function copyFile(kind: Copy): string {
