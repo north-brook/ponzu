@@ -27,6 +27,7 @@ import { actionBlock, type NextAction, nextAction } from "../pull-request.ts";
 import { railSignal } from "../status.ts";
 import { ThreadRail } from "../thread/rail.tsx";
 import { CanvasChrome } from "../window/canvas-chrome.tsx";
+import type { ToggleDriver } from "../window/thread-toggle.tsx";
 import { BoardsPane, SHOW_BOARDS } from "./boards-pane.tsx";
 import * as f from "./fixtures.ts";
 import { Harness } from "./harness.tsx";
@@ -84,6 +85,7 @@ export function CanvasHarness({
   opensWith = null,
   autoMerge = false,
   boards,
+  driver = null,
 }: {
   canvases: CanvasSummary[];
   canvas: CanvasSummary;
@@ -112,11 +114,18 @@ export function CanvasHarness({
   autoMerge?: boolean;
   /** The canvas's boards, drawn in the main pane with `&boards` (boards-pane.tsx). */
   boards?: Doc;
+  /**
+   * The person's own agent driving the canvas: the rail is closed and can't open, and the toggle
+   * is the agent's mark; Take back ends the drive and the rail comes back as it was.
+   */
+  driver?: Omit<ToggleDriver, "onTakeBack"> | null;
 }) {
   const [page, setPage] = useState(pages.find((p) => p.working)?.id ?? pages[0]!.id);
   const [prTab, setPrTab] = useState(tab === "pull-request");
   // The pull request tab leaves the rail as it is: it only swaps what the main pane shows.
-  const [railOpen, setRailOpen] = useState(initialRail);
+  const [railAsked, setRailOpen] = useState(initialRail);
+  const [driving, setDriving] = useState(driver);
+  const railOpen = driving ? false : railAsked;
   const [items, setItems] = useState(initialThread);
   const [older, setOlder] = useState(olderThread);
   const [olderState, setOlderState] = useState<OlderItems>(olderThread.length ? "more" : "none");
@@ -290,7 +299,10 @@ export function CanvasHarness({
           rail={{
             open: railOpen,
             signal: railSignal(shown, false),
-            onToggle: () => setRailOpen((o) => !o),
+            onToggle: () => {
+              if (!driving) setRailOpen((o) => !o);
+            },
+            driver: driving ? { ...driving, onTakeBack: () => setDriving(null) } : null,
           }}
         />
       )}

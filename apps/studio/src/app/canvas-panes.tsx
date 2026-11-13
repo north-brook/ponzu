@@ -1,6 +1,15 @@
 import type { CanvasProps } from "@ponzu/canvas";
 import { isTyping } from "@ponzu/canvas/modifier-hint";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CanvasDriver, Live } from "@ponzu/client";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { CanvasMember, CanvasSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
@@ -23,8 +32,16 @@ export interface CanvasPanes {
   chrome: ReactNode;
   rail: ReactNode | null;
   pane: ReactNode;
-  /** What the rail toggle does (⌥⌘B, View › Toggle Thread): from the pull request tab too. */
+  /**
+   * What the rail toggle does (⌥⌘B, View › Toggle Thread): from the pull request tab too.
+   * Nothing while the person's own agent drives the canvas (`driven`).
+   */
   toggleRail: () => void;
+  /**
+   * The person's own agent drives the canvas (docs/cloud.md, "Your own agent"): the rail is
+   * closed and can't open, whatever the person left it as, which comes back when the drive ends.
+   */
+  driven: boolean;
   /** What the main pane shows: the canvas, or the pull request tab over it. */
   tab: "boards" | "pull-request";
 }
@@ -38,7 +55,7 @@ export function useCanvasPanes({
   members,
   workspaceKind,
   sidebarOpen,
-  rail,
+  rail: railAsked,
   page,
   onPage,
   link,
@@ -90,6 +107,17 @@ export function useCanvasPanes({
   // Each is the open canvas's own: another canvas opens on its boards, where its own link or
   // the person left it, never on the last one's tab or board.
   const canvasId = open?.id ?? null;
+  // While the person's own agent drives it, the rail is closed and its toggle does nothing; the
+  // person's own choice (`railAsked`, saved in the window's state) is left as it was, for after.
+  const driven = useDriver(host.live, canvasId) !== null;
+  const rail = useMemo(
+    () => (driven ? { open: false, onToggle: () => {} } : railAsked),
+    [driven, railAsked],
+  );
+  const takeBack = useMemo(
+    () => (canvasId ? () => host.api.canvases.takeBack(canvasId) : null),
+    [canvasId, host],
+  );
   const [tabFor, setTabFor] = useState<string | null>(null);
   const [showing, setShowing] = useState<{ canvasId: string; link: BoardsJump }>();
   const prTab = canvasId !== null && tabFor === canvasId;
@@ -209,6 +237,7 @@ export function useCanvasPanes({
 
   return {
     toggleRail: rail.onToggle,
+    driven,
     tab: prTab ? "pull-request" : "boards",
     chrome: (
       <CanvasChromeSlot
@@ -228,6 +257,7 @@ export function useCanvasPanes({
         seenThreadSeq={seenThreadSeq}
         onOpenRepo={openRepo}
         resetLinks={resetLinks}
+        takeBack={takeBack}
         say={say}
       />
     ),
@@ -290,4 +320,19 @@ function placeOf(link: {
     ...(link.thread ? { thread: link.thread } : {}),
     ...(link.at !== undefined ? { at: link.at } : {}),
   };
+}
+
+/**
+ * The person's own agent driving the canvas, from its head (the same live query its chrome
+ * reads); null with no canvas open, or while Ponzu's agent drives.
+ */
+function useDriver(live: Live, canvasId: string | null): CanvasDriver | null {
+  const subscribe = useCallback(
+    (changed: () => void) =>
+      canvasId ? live.subscribe("canvas.head", { canvasId }, changed) : () => {},
+    [live, canvasId],
+  );
+  const snapshot = () =>
+    canvasId ? (live.snapshot("canvas.head", { canvasId }).rows?.[0]?.driver ?? null) : null;
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
 }

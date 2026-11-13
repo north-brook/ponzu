@@ -130,6 +130,9 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
   "agents-limits": () => (
     <SettingsWindow section="agents" data={{ ...TEAM_SETTINGS, limits: s.limitsAtLimit }} />
   ),
+  "settings-agents-own": () => (
+    <SettingsWindow section="agents" data={{ ...TEAM_SETTINGS, ownAgents: s.connectedAgents }} />
+  ),
   "settings-notifications": () => <SettingsWindow section="notifications" />,
   "settings-members": () => <SettingsWindow section="members" />,
   "settings-members-not-joined": () => (

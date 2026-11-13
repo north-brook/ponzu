@@ -68,7 +68,27 @@ export function Logo({
   );
 }
 
-/** Agent product marks for presence. */
+/**
+ * Cursor's mark, from Simple Icons (simple-icons/simple-icons, icons/cursor.svg, CC0): drawn in
+ * `currentColor`, as Cursor's own is black or white.
+ */
+export const CURSOR_MARK =
+  "M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23";
+
+/**
+ * T3 Code's mark: its "T3" wordmark, from its own repo (pingdotgg/t3code, MIT,
+ * apps/web/src/components/T3Wordmark.tsx), one path rounded to hundredths, drawn in
+ * `currentColor` as T3 Code draws it. Its box is made square about the letters
+ * (`T3_MARK_VIEWBOX`), so it sits in a mark's square as the others do.
+ */
+export const T3_MARK =
+  "M33.45 93V47.56H15.53V37H64.33V47.56H46.41V93H33.45ZM86.73 93.96C82.83 93.96 78.97 93.45 75.13 92.44C71.29 91.37 68.03 89.88 65.37 87.96L70.41 78.04C72.54 79.59 75.02 80.81 77.85 81.72C80.67 82.63 83.53 83.08 86.41 83.08C89.66 83.08 92.22 82.44 94.09 81.16C95.95 79.88 96.89 78.12 96.89 75.88C96.89 73.75 96.06 72.07 94.41 70.84C92.75 69.61 90.09 69 86.41 69H80.49V60.44L96.09 42.76L97.53 47.4H68.17V37H107.36V45.4L91.85 63.08L85.29 59.32H89.05C95.93 59.32 101.12 60.87 104.64 63.96C108.17 67.05 109.92 71.03 109.92 75.88C109.92 79.03 109.1 81.99 107.44 84.76C105.79 87.48 103.26 89.69 99.85 91.4C96.43 93.11 92.06 93.96 86.73 93.96Z";
+export const T3_MARK_VIEWBOX = "15.53 18.28 94.39 94.39";
+
+/**
+ * Agent product marks, for presence and for the agent driving a canvas: Claude, OpenAI (Codex),
+ * Cursor, T3 Code, or a plain dot for any other.
+ */
 export function AgentMark({ client, size = 14 }: { client?: string; size?: number }) {
   if (client === "claude") {
     return (
@@ -87,6 +107,20 @@ export function AgentMark({ client, size = 14 }: { client?: string; size?: numbe
           fill="currentColor"
           d="M22.28 9.82a5.99 5.99 0 0 0-.52-4.91 6.05 6.05 0 0 0-6.51-2.9A6.07 6.07 0 0 0 4.98 4.18a5.99 5.99 0 0 0-4 2.9 6.05 6.05 0 0 0 .75 7.1 5.98 5.98 0 0 0 .51 4.91 6.05 6.05 0 0 0 6.52 2.9A5.99 5.99 0 0 0 13.26 24a6.06 6.06 0 0 0 5.77-4.21 5.99 5.99 0 0 0 4-2.9 6.06 6.06 0 0 0-.75-7.07Zm-9.02 12.61a4.48 4.48 0 0 1-2.88-1.04l.14-.08 4.78-2.76a.8.8 0 0 0 .39-.68v-6.74l2.02 1.17a.07.07 0 0 1 .04.05v5.58a4.5 4.5 0 0 1-4.49 4.5ZM3.6 18.3a4.47 4.47 0 0 1-.54-3.01l.14.09 4.78 2.76a.77.77 0 0 0 .78 0l5.84-3.37v2.33a.08.08 0 0 1-.03.06l-4.83 2.79a4.5 4.5 0 0 1-6.14-1.65ZM2.34 7.9a4.49 4.49 0 0 1 2.37-1.97v5.68a.77.77 0 0 0 .39.68l5.81 3.35-2.02 1.17a.08.08 0 0 1-.07 0l-4.83-2.79A4.5 4.5 0 0 1 2.34 7.87Zm16.6 3.86-5.83-3.39 2.01-1.16a.08.08 0 0 1 .07 0l4.83 2.79a4.49 4.49 0 0 1-.68 8.1v-5.68a.79.79 0 0 0-.4-.66Zm2.01-3.02-.14-.09-4.77-2.78a.78.78 0 0 0-.79 0L9.41 9.23V6.9a.07.07 0 0 1 .03-.06l4.83-2.79a4.5 4.5 0 0 1 6.68 4.66ZM8.31 12.86l-2.02-1.16a.08.08 0 0 1-.04-.06V6.07a4.5 4.5 0 0 1 7.38-3.45l-.14.08-4.78 2.76a.8.8 0 0 0-.39.68Zm1.1-2.36 2.6-1.5 2.61 1.5v3l-2.6 1.5-2.6-1.5Z"
         />
+      </svg>
+    );
+  }
+  if (client === "cursor") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Cursor">
+        <path fill="currentColor" d={CURSOR_MARK} />
+      </svg>
+    );
+  }
+  if (client === "t3") {
+    return (
+      <svg width={size} height={size} viewBox={T3_MARK_VIEWBOX} aria-label="T3 Code">
+        <path fill="currentColor" d={T3_MARK} />
       </svg>
     );
   }

@@ -192,6 +192,23 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       agent={IDLE}
     />
   ),
+  // The person's own agent drives the canvas: the rail is closed and the toggle is its mark, with
+  // its words on hover and Take back in its popover. Taking it back opens the rail again.
+  "driven-by-own-agent": () => (
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
+      contributors={f.contributors}
+      thread={t.drivenThread}
+      agent={IDLE}
+      driver={{
+        client: "claude",
+        name: "Claude Code",
+        host: "T3 Code",
+        since: new Date(f.NOW - 40 * 60_000).toISOString(),
+      }}
+    />
+  ),
   "pull-request-busy": () => (
     <CanvasHarness
       canvases={f.soloCanvases}

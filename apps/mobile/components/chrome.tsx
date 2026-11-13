@@ -15,6 +15,7 @@ import { SliceMark } from "./icons";
  */
 export function BarButton({
   onPress,
+  onLongPress,
   children,
   label,
   hint,
@@ -25,6 +26,8 @@ export function BarButton({
   testID,
 }: {
   onPress?: () => void;
+  /** Held down: what a long press does, when it does anything. */
+  onLongPress?: () => void;
   children: ReactNode;
   label: string;
   /** What VoiceOver adds after the label: why it's unavailable, say. */
@@ -41,6 +44,7 @@ export function BarButton({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}

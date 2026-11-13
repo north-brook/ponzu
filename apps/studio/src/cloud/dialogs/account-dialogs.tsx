@@ -135,6 +135,44 @@ export function DisconnectClaudeDialog({
 }
 
 /**
+ * Disconnecting one of the person's own agents, from Settings › Agents: its tokens stop working
+ * at once, and a canvas it drives goes back to Ponzu's agent.
+ */
+export function RevokeAgentDialog({
+  name,
+  open,
+  onCancel,
+  onConfirm,
+  busy = false,
+}: {
+  /** The agent's name, as they allowed it: "Claude Code". */
+  name: string;
+  open: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <BlockingDialog
+      open={open}
+      onDismiss={onCancel}
+      title={`Revoke ${name}?`}
+      confirm
+      body={`${name} can't use Ponzu as you any more, and a canvas it drives goes back to Ponzu's agent. It can ask to connect again.`}
+    >
+      <DialogActions>
+        <DialogButton tone="raised" onClick={onCancel} disabled={busy}>
+          Cancel
+        </DialogButton>
+        <DialogButton tone="danger" onClick={onConfirm} busy={busy}>
+          Revoke
+        </DialogButton>
+      </DialogActions>
+    </BlockingDialog>
+  );
+}
+
+/**
  * Deleting the account, confirmed by typing the GitHub login. Refused while the person is the
  * only admin of a team that has other people in it.
  */
