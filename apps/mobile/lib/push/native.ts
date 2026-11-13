@@ -3,6 +3,7 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import * as Updates from "expo-updates";
+import { LogBox } from "react-native";
 import { config } from "../cloud/config";
 import type { PingPermission } from "./ask";
 import type { PingBehavior } from "./foreground";
@@ -14,6 +15,14 @@ import type { PushNative } from "./register";
  * expo-device): what lib/push's rules are handed. The component tests replace this module
  * (jest.setup.js), so nothing native runs there.
  */
+
+// expo-notifications reads its server-registration record from the Keychain when it loads. A
+// simulator build made without signing (maestro/run.sh) has no Keychain entitlement, so that
+// read fails and the library says so with console.error, which a development build shows as a
+// full-screen error over the app. Pings never use Expo's server registration, so the failure
+// changes nothing; it is kept off the screen (still in the log). A signed build has the
+// entitlement and never logs it.
+LogBox.ignoreLogs(["[expo-notifications] Error reading persisted server registration info"]);
 
 /** iOS's answer, in the rules' words: provisional and ephemeral count as allowed. */
 function permissionOf(answer: Notifications.NotificationPermissionsStatus): PingPermission {
