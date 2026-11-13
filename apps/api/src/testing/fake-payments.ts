@@ -167,6 +167,8 @@ export class FakePayments implements Payments {
     id?: string;
     type: string;
     object: Record<string, unknown>;
+    /** What the object was before, for an `*.updated` or `*.detached` event. */
+    previousAttributes?: Record<string, unknown>;
     livemode?: boolean;
   }): Promise<{ body: string; signature: string }> {
     const body = JSON.stringify({
@@ -176,7 +178,10 @@ export class FakePayments implements Payments {
       created: Math.floor(this.#clock.now() / 1000),
       type: event.type,
       livemode: event.livemode ?? this.livemode,
-      data: { object: event.object },
+      data: {
+        object: event.object,
+        ...(event.previousAttributes ? { previous_attributes: event.previousAttributes } : {}),
+      },
     });
     const signature = await signTestWebhook(
       body,
@@ -256,6 +261,15 @@ export class FakePayments implements Payments {
   /** Acts out the admin removing the card in the portal. */
   detachCard(customerId: string): void {
     this.#customer(customerId).defaultPaymentMethod = null;
+  }
+
+  /** Acts out the admin putting in another card in the portal. Answers its id. */
+  replaceCard(customerId: string, card: Card): string {
+    const customer = this.#customer(customerId);
+    const paymentMethodId = this.#id("pm");
+    this.cards.set(paymentMethodId, card);
+    customer.defaultPaymentMethod = paymentMethodId;
+    return paymentMethodId;
   }
 
   portalUrl(i: { customerId: string; returnUrl: string }) {

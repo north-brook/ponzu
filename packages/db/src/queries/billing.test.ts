@@ -18,6 +18,7 @@ import {
   setNextClose,
   setPeriodInvoice,
   settleCardSetup,
+  workspaceForStripe,
 } from "./billing.ts";
 import { run } from "./run.ts";
 
@@ -162,6 +163,49 @@ describe("the card", () => {
       cardBrand: "amex",
       cardAddedAt: later(60),
     });
+  });
+
+  test("given the card it read, a late answer never replaces a card stored meanwhile", async () => {
+    const workspace = await seedWorkspace(db, "ifcard");
+    const card = (paymentMethodId: string, ifPaymentMethodId: string | null) =>
+      setCard(db, {
+        workspaceId: workspace.id,
+        paymentMethodId,
+        brand: "visa",
+        last4: "4242",
+        addedByUserId: null,
+        at: now,
+        ifPaymentMethodId,
+      });
+    expect(await card("pm_a", null)).toBe(true);
+    // Read with no card, answered after pm_a landed: left alone.
+    expect(await card("pm_stale", null)).toBe(false);
+    expect(await card("pm_b", "pm_other")).toBe(false);
+    expect(await card("pm_b", "pm_a")).toBe(true);
+    expect((await getWorkspace(db, workspace.id))!.stripePaymentMethodId).toBe("pm_b");
+  });
+});
+
+describe("which workspace a Stripe object is about", () => {
+  test("by its customer first, else by the card stored, else none", async () => {
+    const first = await seedWorkspace(db, "stripe-a");
+    const second = await seedWorkspace(db, "stripe-b");
+    await setCustomer(db, { workspaceId: first.id, customerId: "cus_match_a" });
+    await setCard(db, {
+      workspaceId: second.id,
+      paymentMethodId: "pm_match_b",
+      brand: "visa",
+      last4: "4242",
+      addedByUserId: null,
+      at: now,
+    });
+    const of = (customerId: string | null, paymentMethodId: string | null) =>
+      workspaceForStripe(db, { customerId, paymentMethodId });
+    expect(await of("cus_match_a", null)).toBe(first.id);
+    expect(await of(null, "pm_match_b")).toBe(second.id);
+    expect(await of("cus_match_a", "pm_match_b")).toBe(first.id);
+    expect(await of("cus_elsewhere", "pm_elsewhere")).toBeNull();
+    expect(await of(null, null)).toBeNull();
   });
 });
 

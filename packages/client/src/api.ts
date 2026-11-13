@@ -542,6 +542,34 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         ).json(),
     },
 
+    /**
+     * Adding the workspace's card on Stripe's Checkout page, and Stripe's portal. Each answers
+     * 409 `billing_not_set_up` while billing is not on where the API runs.
+     */
+    billing: {
+      /**
+       * Admins. Stripe's Checkout page to open in the browser, with the cap to set once the card
+       * is added, and the setup's id for `cardSetup`. 400 `cap_too_low`; 503
+       * `upstream_unavailable` when Stripe can't be reached.
+       */
+      startCardSetup: async (
+        workspaceId: string,
+        body: { capUsd: number; source?: "wall" | "settings" },
+      ) =>
+        (
+          await v1.workspaces[":id"].billing["card-setups"].$post({
+            ...canvas(workspaceId),
+            json: opts.linkScheme ? { ...body, scheme: opts.linkScheme } : body,
+          })
+        ).json(),
+      /** How a setup begun with `startCardSetup` stands; asked while Checkout is open. */
+      cardSetup: async (id: string) =>
+        (await v1.billing["card-setups"][":id"].$get({ param: { id } })).json(),
+      /** Admins. Stripe's customer portal, to change the card or read invoices. 409 `no_card`. */
+      portal: async (workspaceId: string) =>
+        (await v1.workspaces[":id"].billing.portal.$post(canvas(workspaceId))).json(),
+    },
+
     privacy: {
       /**
        * Settings › Account › Share usage data, for every device the person uses. `me` carries

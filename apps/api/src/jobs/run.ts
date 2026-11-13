@@ -36,6 +36,7 @@ export type JobDeps = Pick<
   | "mail"
   | "workos"
   | "posthogAdmin"
+  | "payments"
   | "features"
 >;
 

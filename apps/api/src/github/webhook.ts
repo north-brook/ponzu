@@ -59,6 +59,7 @@ export type WebhookDeps = Pick<
   | "mail"
   | "workos"
   | "posthogAdmin"
+  | "payments"
   | "features"
 >;
 type Work = (deps: WebhookDeps) => Promise<void>;

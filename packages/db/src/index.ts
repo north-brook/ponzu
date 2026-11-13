@@ -80,6 +80,7 @@ export {
   setNextClose,
   setPeriodInvoice,
   settleCardSetup,
+  workspaceForStripe,
 } from "./queries/billing.ts";
 export {
   type AssetKeySwap,

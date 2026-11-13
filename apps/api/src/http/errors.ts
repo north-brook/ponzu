@@ -199,6 +199,13 @@ export type ErrorCode =
    * `periodEnd` and `invoiceUrl`; the message is the sentence to show.
    */
   | "billing_required"
+  /**
+   * Billing is not on here (PONZU_BILLING is not `on`): there is no card to add and no portal
+   * to open. Nothing was written and Stripe was not asked.
+   */
+  | "billing_not_set_up"
+  /** The workspace has no Stripe customer yet, so there is no portal: add a card first. */
+  | "no_card"
   | "internal";
 
 /**

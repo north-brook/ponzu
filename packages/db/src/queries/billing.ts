@@ -64,6 +64,7 @@ export async function setCard(
     last4,
     addedByUserId,
     at,
+    ifPaymentMethodId,
   }: {
     workspaceId: string;
     paymentMethodId: string;
@@ -72,6 +73,11 @@ export async function setCard(
     /** Who added it, or null when it came from Stripe's portal or a webhook. */
     addedByUserId: string | null;
     at: Date;
+    /**
+     * Only while the stored card is still this one (null: none): what the caller read before it
+     * asked Stripe, so a late answer about an older card never replaces a card added meanwhile.
+     */
+    ifPaymentMethodId?: string | null;
   },
 ): Promise<boolean> {
   const rows = await run(
@@ -85,10 +91,49 @@ export async function setCard(
         cardAddedAt: sql`case when ${workspaces.stripePaymentMethodId} is not distinct from ${paymentMethodId} then coalesce(${workspaces.cardAddedAt}, ${timeParam(at)}::timestamptz) else ${timeParam(at)}::timestamptz end`,
         cardAddedByUserId: sql`case when ${workspaces.stripePaymentMethodId} is not distinct from ${paymentMethodId} then coalesce(${workspaces.cardAddedByUserId}, ${addedByUserId}::text) else ${addedByUserId}::text end`,
       })
-      .where(eq(workspaces.id, workspaceId))
+      .where(
+        and(
+          eq(workspaces.id, workspaceId),
+          ifPaymentMethodId === undefined
+            ? undefined
+            : ifPaymentMethodId === null
+              ? isNull(workspaces.stripePaymentMethodId)
+              : eq(workspaces.stripePaymentMethodId, ifPaymentMethodId),
+        ),
+      )
       .returning({ id: workspaces.id }),
   );
   return rows.length > 0;
+}
+
+/**
+ * The workspace a Stripe object is about: the one whose customer it names or, failing that, the
+ * one whose stored card it is. This is how a webhook about a customer or a payment method (which
+ * carry no marks of ours) is matched to a workspace of this deployment. Null when neither is
+ * ours.
+ */
+export async function workspaceForStripe(
+  db: Db,
+  { customerId, paymentMethodId }: { customerId: string | null; paymentMethodId: string | null },
+): Promise<string | null> {
+  const matches = [
+    customerId === null ? undefined : eq(workspaces.stripeCustomerId, customerId),
+    paymentMethodId === null ? undefined : eq(workspaces.stripePaymentMethodId, paymentMethodId),
+  ].filter((match) => match !== undefined);
+  if (matches.length === 0) return null;
+  const [row] = await run(
+    db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(or(...matches))
+      // The customer's match first: a stored card can be stale, a customer cannot.
+      .orderBy(
+        sql`case when ${workspaces.stripeCustomerId} is not distinct from ${customerId} then 0 else 1 end`,
+        asc(workspaces.id),
+      )
+      .limit(1),
+  );
+  return row?.id ?? null;
 }
 
 /**
@@ -258,6 +303,8 @@ export interface CardSetupPayload {
   workspaceId: string;
   capCents: number;
   scheme: "ponzu" | "ponzu-dev" | "ponzu-preview" | "none";
+  /** Where the admin started it: the wall on a send, or Settings. Absent when not said. */
+  source?: "wall" | "settings";
   checkoutSessionId: string | null;
   outcome: CardSetupOutcome | null;
   settledAt: string | null;
@@ -285,6 +332,7 @@ export async function beginCardSetup(
     workspaceId,
     capCents,
     scheme,
+    source,
     now,
     expiresAt,
   }: {
@@ -292,6 +340,7 @@ export async function beginCardSetup(
     workspaceId: string;
     capCents: number;
     scheme: CardSetupPayload["scheme"];
+    source?: CardSetupPayload["source"];
     now: Date;
     expiresAt: Date;
   },
@@ -300,6 +349,7 @@ export async function beginCardSetup(
     workspaceId,
     capCents,
     scheme,
+    ...(source ? { source } : {}),
     checkoutSessionId: null,
     outcome: null,
     settledAt: null,

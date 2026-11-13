@@ -35,6 +35,7 @@ import { noAnalytics } from "../analytics/analytics.ts";
 import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
 import { noMail } from "../deps/mail.ts";
+import { noPayments } from "../deps/payments.ts";
 import { noPush } from "../deps/push.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { FEATURES_OFF } from "../features.ts";
@@ -75,6 +76,7 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
     // Nothing here pings a phone.
     push: noPush,
     mail: noMail,
+    payments: noPayments,
     background: (_name: string, work: Promise<unknown>) => {
       background.push(work.catch(() => {}));
     },

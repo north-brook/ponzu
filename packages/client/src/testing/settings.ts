@@ -12,10 +12,15 @@ import type { NotificationRow } from "../live/rows.ts";
 
 export type SettingsApi = Pick<
   Api,
-  "notifications" | "devices" | "environments" | "usage" | "privacy" | "account"
+  "notifications" | "devices" | "environments" | "usage" | "billing" | "privacy" | "account"
 >;
 
 type Prefs = Awaited<ReturnType<Api["notifications"]["get"]>>["prefs"];
+
+/** What every card and portal call answers while billing is off. */
+function notSetUp(): never {
+  throw new ApiError(409, "billing_not_set_up", "Billing isn't set up here.");
+}
 type Device = Awaited<ReturnType<Api["notifications"]["get"]>>["devices"][number];
 type Environment = Awaited<ReturnType<Api["environments"]["get"]>>["environment"];
 type Base = Environment["base"];
@@ -436,6 +441,13 @@ export class FakeSettings {
             this.caps.set(workspaceId, capUsd);
             return usage(workspaceId);
           }),
+      },
+      // Billing is off here, as it is in production until the founder turns it on: there is no
+      // card to add and no portal, as the API answers while PONZU_BILLING is unset.
+      billing: {
+        startCardSetup: () => call(() => notSetUp()),
+        cardSetup: () => call(() => notSetUp()),
+        portal: () => call(() => notSetUp()),
       },
       privacy: {
         setShareUsage: (shareUsage) =>

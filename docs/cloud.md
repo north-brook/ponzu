@@ -2730,9 +2730,10 @@ free credits are used up. A workspace has a monthly cap.
 - The iPhone shows usage and sells nothing.
 
 What is built so far: Plan and usage, worked out from `usage_events` and the rate card, the
-meter's cuts, the gate (worked out, cached, observed and enforced, below), and the groundwork for
-payments, which nothing calls yet. Nothing charges a card yet, and while `PONZU_BILLING` is
-unset, as in production, nothing is held back either.
+meter's cuts, the gate (worked out, cached, observed and enforced, below), payments through
+Stripe, and adding a card through Stripe's Checkout with Stripe's webhook (below). Nothing
+charges a card yet: periods are not closed or invoiced. While `PONZU_BILLING` is unset, as in
+production, nothing is held back and no card can be added.
 
 **The gate.** Whether a workspace may start new work, from its numbers (`billing/gate.ts`):
 `payment_failed` once an invoice has been past due for 7 days, else `free_used` with no card and
@@ -2806,6 +2807,49 @@ price under the key that is not the rate card's rather than change it. The seam 
 against Stripe's official mock server (`payments.stripe-mock.test.ts`, run in CI against
 `stripe/stripe-mock` pinned by digest), which checks each request's parameters.
 
+**Cards.** An admin adds the workspace's card on Stripe's own Checkout page, in setup mode, in
+their browser, never in the app (`billing/cards.ts`). `POST /v1/workspaces/:id/billing/card-setups`
+with the cap to set once the card is added makes the workspace's Stripe customer the first time
+(named for the workspace, with the admin's email, and the request's IP for Stripe Tax until an
+address is known), opens a setup in place of any the workspace had open, and answers Stripe's
+page to open and the setup's id. The app polls `GET /v1/billing/card-setups/:id` every two
+seconds. A setup is settled by whichever comes first, and every later one finds it settled: the
+poll (a setup still waiting after five seconds is read from Stripe), the page Checkout returns to
+(`GET /v1/billing/return`), or Stripe's `checkout.session.*` webhook. Each reads the Checkout
+session from Stripe as it is now: a card Stripe collected is made the customer's default for
+invoices, stored, the setup's cap is set, and the gate is worked out again, which wakes what it
+held back; then the setup is marked `added`. The card is applied before the setup is marked, so a
+crash between leaves it to be applied again, and a card Stripe has is applied even if the setup
+was meanwhile marked cancelled or expired. A page left with Cancel marks the setup `cancelled`
+(unless Stripe says it finished); a page Stripe expired, or a setup older than 35 minutes, marks
+it `expired`; and a setup whose page Stripe could not make is `failed`, with 503
+`upstream_unavailable` ("Couldn't reach Stripe. Try again."). The cap may not be below what the
+month has billed (400 `cap_too_low`). The return page is the handoff page (`@ponzu/core/handoff`):
+"Card added" opens `<scheme>://billing/card?setup=<id>&result=added`, "No card added" opens it
+with `result=cancelled`, where the scheme is the one the app named when it started the setup,
+kept on the row (a browser's address only picks the row); for a build that takes no links it
+says Ponzu has it and closes. `POST /v1/workspaces/:id/billing/portal` answers a link into
+Stripe's customer portal, where an admin changes the card or reads invoices (409 `no_card` with no
+customer yet); it comes back to the return page's "Back to Ponzu". Each of these answers 409
+`billing_not_set_up` (the return page 404) unless `PONZU_BILLING` is `on`, before it reads
+anything.
+
+**Webhooks.** `POST /v1/stripe/webhook` is checked against the raw body and
+`STRIPE_WEBHOOK_SECRET` before anything else is read (400 `signature_invalid`), and is 404 unless
+billing is on. An event of the other mode, of another deployment's scope, or of a kind not acted
+on is answered 200 and dropped. One acted on is taken with its delivery in one statement
+(`takeWebhookDelivery`, source `stripe`, keyed by the event's id) as a `stripe_webhook` job, so a
+redelivery is answered and dropped, and is answered 200 before its job runs. A delivery is a
+signal, not a record: the job reads from Stripe what the event is about, as it is now, so events
+late or out of order cannot move a workspace backwards. `checkout.session.completed` and
+`.expired` settle the setup the session names. `customer.updated`, `payment_method.attached` and
+`payment_method.detached` read the customer's default card and store it, or forget the stored one
+when there is none (a card removed in the portal), then work the gate out again; the workspace is
+found by the customer, or by the stored card, and an event about neither is dropped.
+`charge.dispute.created` and `charge.refunded` are logged (`billing_dispute`, `billing_refund`)
+and change nothing: the founder works them in Stripe's dashboard. Invoice events are not acted on
+yet.
+
 **What billing stores.** On `workspaces`: the cached gate (`billing_gate`, `ok` until worked out,
 and `billing_gate_at`), when the running period is next to close (`billing_next_close_at`), the
 card Stripe charges (`stripe_payment_method_id`, with `card_brand`, `card_last4`,
@@ -2844,6 +2888,11 @@ credits never go below zero.
 |---|---|---|---|
 | GET | `/v1/workspaces/:id/usage` | none | `WorkspaceUsage` |
 | PATCH | `/v1/workspaces/:id/billing` | `{ capUsd }` | `WorkspaceUsage` |
+| POST | `/v1/workspaces/:id/billing/card-setups` | `{ capUsd, scheme?, source? }` (admin) | 201 `{ id, url }` |
+| GET | `/v1/billing/card-setups/:id` | none (its starter) | `{ status: waiting \| added \| cancelled \| expired \| failed, workspaceId }` |
+| GET | `/v1/billing/return` | `?setup=` with `&session_id=` or `&cancelled=1`, or `?kind=portal` | a handoff page |
+| POST | `/v1/workspaces/:id/billing/portal` | none (admin) | `{ url }` |
+| POST | `/v1/stripe/webhook` | Stripe's raw body, `Stripe-Signature` | 200 `{ received: true }` |
 
 **The period.** A workspace's anchor is the day it was made (`billing_period_anchor`). Its
 period starts at midnight UTC on that day of every month, or on the month's last day when the

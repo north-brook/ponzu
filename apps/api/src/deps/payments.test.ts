@@ -138,6 +138,7 @@ describe("webhooks, through Stripe's own signature check", () => {
       object: {
         id: "cs_test_1",
         object: "checkout.session",
+        customer: "cus_1",
         metadata: { ponzu_setup_id: "auth_1", ponzu_workspace_id: "ws_1", ponzu_scope: SCOPE },
       },
     });
@@ -147,8 +148,40 @@ describe("webhooks, through Stripe's own signature check", () => {
       livemode: false,
       objectId: "cs_test_1",
       metadata: { ponzu_setup_id: "auth_1", ponzu_workspace_id: "ws_1", ponzu_scope: SCOPE },
+      customerId: "cus_1",
       foreign: null,
     });
+  });
+
+  test("the customer an event is about: the customer itself, its object's, or the one it left", async () => {
+    const payments = new FakePayments({ clock });
+    const read = async (event: Parameters<FakePayments["webhookFor"]>[0]) => {
+      const { body, signature } = await payments.webhookFor(event);
+      return (await payments.verifyWebhook(body, signature)).customerId;
+    };
+    expect(
+      await read({ type: "customer.updated", object: { id: "cus_2", object: "customer" } }),
+    ).toBe("cus_2");
+    expect(
+      await read({
+        type: "payment_method.attached",
+        object: { id: "pm_1", object: "payment_method", customer: "cus_3" },
+      }),
+    ).toBe("cus_3");
+    expect(
+      await read({
+        type: "payment_method.detached",
+        object: { id: "pm_1", object: "payment_method", customer: null },
+        previousAttributes: { customer: "cus_4" },
+      }),
+    ).toBe("cus_4");
+    expect(
+      await read({
+        type: "charge.refunded",
+        object: { id: "ch_1", object: "charge", customer: { id: "cus_5", object: "customer" } },
+      }),
+    ).toBe("cus_5");
+    expect(await read({ type: "invoice.created", object: { id: "in_1" } })).toBeNull();
   });
 
   test("a changed body, another secret, or an old signature is refused", async () => {

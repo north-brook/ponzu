@@ -123,6 +123,9 @@ Every event about a workspace also carries `workspace_id`.
 | `billing wall hit` | `reason` (`free_used`, `cap_reached`, `payment_failed`), `surface` (`create`, `message`), `can_manage`, `enforced` | A person's message, or create with one, met a workspace at a billing limit. Only while `PONZU_BILLING` is not off; `enforced` is false in observe, where it went through. |
 | `canvas waiting on billing` | `canvas_id`, `reason` | A canvas's wake began waiting on its workspace's billing limit (billing on), once each time it starts waiting. About no one. |
 | `billing notice` | `kind` (`free_used`, `cap_warning`, `cap_reached`) | A workspace's admins were pinged about billing, once a period for each kind (billing on). About no one. |
+| `card setup started` | `source` (`wall`, `settings`) | An admin opened Stripe's Checkout page to add the workspace's card (billing on). |
+| `card added` | `brand`, `source`, `seconds_to_add` | A card setup ended with the card stored, once, about whoever started it. The brand only, never the card's digits or Stripe's ids. |
+| `card setup ended` | `outcome` (`cancelled`, `expired`, `failed`) | A card setup ended without a card, once, about whoever started it. |
 | `repo secret changed` | `repo_id`, `action` (`added`, `replaced`, `removed`) | Never the secret's name or value. |
 | `search answered` | `q_length`, `terms`, `results`, `groups`, `ms` | A search of a workspace was answered (`POST /v1/workspaces/:id/search`). `q_length` is the query's length after trimming, `terms` how many terms it made, `results` the hits in all, `groups` the names of the groups with a hit, `ms` the time from the route's start to its answer. Never the words searched for. |
 

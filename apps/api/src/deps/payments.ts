@@ -65,6 +65,12 @@ export interface StripeEventRef {
   /** The object's metadata, as the event carried it. */
   metadata: Record<string, string>;
   /**
+   * The Stripe customer the object is, or belongs to, when it names one: a customer's own id,
+   * an object's `customer`, or, for a payment method just detached, the customer it was
+   * detached from. Null when it names none.
+   */
+  customerId: string | null;
+  /**
    * Why the event is not this deployment's, or null when it is: it is from the other mode than
    * this deployment's key (`livemode`), or its object carries another deployment's scope
    * (`scope`). Such an event is acknowledged and ignored. An object with no scope of ours (a
@@ -591,7 +597,13 @@ export async function verifyStripeWebhook(
   } catch {
     throw new WebhookSignatureError();
   }
-  const object = (event.data?.object ?? {}) as { id?: unknown; metadata?: unknown };
+  const object = (event.data?.object ?? {}) as {
+    id?: unknown;
+    object?: unknown;
+    customer?: unknown;
+    metadata?: unknown;
+  };
+  const before = (event.data?.previous_attributes ?? {}) as { customer?: unknown };
   const metadata =
     object.metadata && typeof object.metadata === "object"
       ? Object.fromEntries(
@@ -607,6 +619,10 @@ export async function verifyStripeWebhook(
     livemode: event.livemode,
     objectId: typeof object.id === "string" ? object.id : null,
     metadata,
+    customerId:
+      object.object === "customer" && typeof object.id === "string"
+        ? object.id
+        : (customerIdOf(object.customer) ?? customerIdOf(before.customer)),
     foreign:
       event.livemode !== livemode
         ? "livemode"
@@ -614,6 +630,15 @@ export async function verifyStripeWebhook(
           ? "scope"
           : null,
   };
+}
+
+/** A customer as an event names it: its id, or the expanded customer's. */
+function customerIdOf(value: unknown): string | null {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (value && typeof value === "object" && typeof (value as { id?: unknown }).id === "string") {
+    return (value as { id: string }).id;
+  }
+  return null;
 }
 
 /** Signs a webhook body as Stripe would, for tests: Stripe's own test helper. */

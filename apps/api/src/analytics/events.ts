@@ -231,6 +231,16 @@ export interface ServerEvents {
   };
   /** A workspace's admins were pinged about billing, once a period each (billing on). */
   "billing notice": { kind: "free_used" | "cap_warning" | "cap_reached" | "payment_failed" };
+  /** An admin opened Stripe's Checkout page to add the workspace's card (billing on). */
+  "card setup started": { source: "wall" | "settings" };
+  /** A card setup ended with the card at Stripe and stored: the brand only, never its digits. */
+  "card added": {
+    brand: "visa" | "mastercard" | "amex" | "other" | (string & {});
+    source: "wall" | "settings";
+    seconds_to_add: number;
+  };
+  /** A card setup ended without a card. */
+  "card setup ended": { outcome: "cancelled" | "expired" | "failed" };
   "repo secret changed": { repo_id: string; action: "added" | "replaced" | "removed" };
 }
 

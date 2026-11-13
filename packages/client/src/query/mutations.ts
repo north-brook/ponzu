@@ -313,6 +313,23 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
         onSuccess: (usage, { workspaceId }) =>
           queryClient.setQueryData(queryKeys.usage(workspaceId), usage),
       }),
+    /** Admins. Stripe's Checkout page for the workspace's card, and the setup's id to poll. */
+    startCardSetup: () =>
+      mutationOptions({
+        mutationFn: ({
+          workspaceId,
+          ...body
+        }: {
+          workspaceId: string;
+          capUsd: number;
+          source?: "wall" | "settings";
+        }) => api.billing.startCardSetup(workspaceId, body),
+      }),
+    /** Admins. Stripe's customer portal for the workspace. */
+    openBillingPortal: () =>
+      mutationOptions({
+        mutationFn: (workspaceId: string) => api.billing.portal(workspaceId),
+      }),
     /**
      * Settings › Account › Share usage data: shown flipped at once in `me`, put back if the API
      * turns it down. The app stops or starts its own reporting beside this (the studio's
