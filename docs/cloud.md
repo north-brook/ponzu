@@ -181,8 +181,8 @@ only by an Admin in Ponzu, never by a sync.
 **Keeping it true.** `syncGithub` brings one person's workspaces in line with GitHub,
 as that person, against their own rate limit: the installations their token lists,
 their membership of each with what they may do in each of its repos (`write` or
-`read` for the repos it lists, and for its others `read` if public, `none` if
-private), and none of any other but
+`read` for the repos it lists, and for its others `none`, except a public one for a
+member or owner of the organization, which is `read`), and none of any other but
 their own account's. An installation is read as the App (its workspace and every repo
 it can see) only when Ponzu's copy is ten minutes old, disagrees with the person's
 view, or lacks a repo they reach: those reads come out of the installation's hourly
@@ -298,31 +298,71 @@ feed through the same row the commit statement writes for a person's ops
 forgets the person's GitHub token and ends their sessions, once GitHub confirms the
 token is dead.
 
-**Opening a canvas** needs membership of its workspace and read access to its repo.
-Steering it (messages, answers, merging) needs write access. Seeing a repo or its
-canvases in a list needs the same read access: GitHub hides a private repo, its name
-included, from members who cannot read it, and so does Ponzu.
+**Opening a canvas** needs membership of its workspace and read access to its repo
+that GitHub has GIVEN the person: they own the repo (it is their personal account's),
+they are one of its collaborators with any permission (directly, as an outside
+collaborator, or through a team; read-only included), or, for a public repo, they are
+a member or owner of the organization that owns it. On a public repo GitHub lets
+anyone read, but that is not enough: someone whose only tie to a public repo is that
+it is public cannot see that its canvases exist. Every route, list, search, live
+query and ping answers them as it answers for a canvas id that names nothing (404
+`not_found`). A private repo's rule is what GitHub's is: read to open. Steering a
+canvas (messages, answers, merging) needs write access, on any repo. Seeing a repo or
+its canvases in a list needs the same read access: GitHub hides a private repo, its
+name included, from members who cannot read it, and Ponzu hides a public repo from
+anyone GitHub has not given it to.
 
 Every one of these questions is answered from one table, `repo_access`: (person, repo)
-→ `admin | write | read | none`, and when GitHub was asked. Each answer is GitHub's,
-by numeric ids, and reaches the table one of two ways:
+→ `admin | write | read | none`, and when GitHub was asked. A `read` there is always
+one GitHub gave the person, never the read anyone has of a public repo. Each answer is
+GitHub's, by numeric ids, and reaches the table one of two ways:
 
 - **A list, as the person.** `GET /user/installations/{id}/repositories` on their own
-  token names every repo of the installation they were given permission on, and
-  whether they can push: `write` or `read` for those. When the list is whole, the
-  workspace's others are `read` if public (anyone can read one, and GitHub leaves it
-  out of this list) and `none` if private. One call for the whole workspace, on their
-  own rate limit. Their sync does it for every workspace; the workspace's repo list
+  token names every repo of the installation GitHub has given them (theirs, those they
+  collaborate on, those their organization membership reaches), and whether they can
+  push: `write` or `read` for those. It leaves out a public repo whose only tie to them
+  is that it is public. When the list is whole, the workspace's others are `none`,
+  except that its public ones are `read` for someone who is its personal account or an
+  active member or owner of its organization (`GET /user/memberships/orgs/{org}` on
+  their own token, asked with every list: a private membership counts, a pending
+  invitation does not, and an organization that does not let the App see its members
+  answers no). One or two calls for the whole workspace, on their own rate limit.
+  Their sync does it for every workspace; the workspace's repo list
   (`GET /v1/workspaces/:id`), its canvases list and each renewal of `workspace.canvases`
   do it for one, when any answer about any of its repos is more than a minute old. A
   list GitHub cut short (past 2,000 repos) says nothing of the repos it left out, so
   the oldest of those whose answer a reader acts on (one that lets them read, or a
-  repo with a canvas), up to 20 at a time, are asked about as the App.
+  repo with a canvas), up to 20 at a time, are asked about as the App; for those a
+  `read` stands only for a member of the organization on a public repo, since nothing
+  else can say whether it was given.
 - **A question, as the App.** `GET /repos/{owner}/{repo}/collaborators/{login}/permission`
   about one repo, asked by `requireCanvas`, `POST /v1/canvases` and a review's check
   when there is no fresh answer. It takes the answer only when the account it names
   has the person's GitHub id (a login can change hands). GitHub answers `read` on a
-  public repo for anyone, so the list and the question agree.
+  public repo for anybody, so a `read` from it is settled by the person's own list
+  (above), which also keeps its answers. When their GitHub token is dead nothing can
+  settle it: it stands on a private repo (where GitHub answers `read` only to someone it
+  gave the repo) and is `none` on a public one. For someone who never signed in (a
+  review's author) it is `none`; only whether they can push is ever asked of them.
+
+Whether a repo is public is the App's word, kept in `repos.private` from every read of
+the installation. A repo that goes public or private is read again at once by its
+`repository` webhook, which also makes every answer about it stale; if that webhook is
+lost, the installation is read again within ten minutes of any member's sync, and the
+cron reads every installation at least every six hours. Until then: a repo made public
+still counts as private, which gives nobody more than GitHub's list does; a repo made
+private still counts as public, which lets a member of its organization who was not
+given it open its canvases until Ponzu hears. Anything Ponzu cannot tell is `none`.
+
+**What someone sees of a workspace because of its public repos alone.** Nothing: a
+person is in a workspace only when GitHub lists its installation for them
+(`GET /user/installations`), which it does only for someone it has given at least one
+of its repos. Someone in a workspace through one repo (an outside collaborator on a
+private repo, say) is shown that repo and its canvases, not the workspace's public
+repos they were not given; of its people only themselves, and no count ("Who sees
+whom"); its name and picture, their own role, and the App's installation (whether
+it is installed or suspended, whether it covers all of the account's repos or chosen
+ones, when and by whom it was installed).
 
 While the App is not installed on a workspace, or is suspended, the answer for every
 repo of it is `none` without asking GitHub: its canvases open for nobody (404), none
@@ -342,6 +382,9 @@ The rules for reading it:
   in `POST /v1/live` only that query is.
 - An answer is about a member: whoever reads it also requires the membership, so
   someone who leaves a workspace loses its repos and canvases at once.
+- Until November 2026 a public repo was `read` to every member of its workspace. The
+  migration that came with the rule above (`public_repo_read`) made every kept `read`
+  stale, so none of those is trusted again before GitHub is asked under the new rule.
 
 A Scratch canvas has no repo and is its owner's alone.
 

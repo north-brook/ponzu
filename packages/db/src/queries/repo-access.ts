@@ -11,7 +11,11 @@ import { run } from "./run.ts";
  * Whoever reads it also requires the person's membership of the repo's workspace.
  */
 
-/** The permissions that let a person open a canvas in the repo, and see the repo listed. */
+/**
+ * The permissions that let a person open a canvas in the repo, and see the repo listed. A
+ * `read` in `repo_access` is one GitHub gave the person, never the read anyone has of a public
+ * repo (`recordReachableRepos`, and `repoPermission` in the API).
+ */
 export const READABLE_PERMISSIONS = ["admin", "write", "read"] as const satisfies RepoPermission[];
 /** The permissions that let a person steer a canvas in the repo, and start one there. */
 export const WRITABLE_PERMISSIONS = ["admin", "write"] as const satisfies RepoPermission[];
@@ -49,11 +53,14 @@ export async function recordRepoAccess(db: Db, answers: RepoAccessAnswer[]): Pro
  * Record what one person's own token lists of an installation's repos
  * (`GET /user/installations/{id}/repositories`), asked at `checkedAt`: each listed repo of the
  * workspace with the permission it shows, and, when the list is `complete`, every other repo
- * of the workspace as what GitHub gives someone with no permission of their own there: `read`
- * on a public repo, which anyone can read (and which GitHub leaves out of that list, since it
- * lists only repos the person was given permission on), and `none` on a private one. That is
- * what asking as the App says of them too, so the two never disagree. A list GitHub cut short
- * only adds. As with `recordRepoAccess`, nothing replaces a newer answer.
+ * of the workspace as `none`, except a public one when `readsPublic`. GitHub lists exactly the
+ * repos it has given the person (they own it, they are one of its collaborators, directly or
+ * through a team, or their organization membership reaches it), and leaves out a public repo
+ * whose only tie to them is that anyone may read it. Ponzu shows a canvas only to people GitHub
+ * has given its repo (docs/cloud.md, "Identity and access"), so such a repo is `none` for them.
+ * `readsPublic` says they are a member or an owner of the organization the workspace is, or are
+ * its personal account: GitHub gives them every public repo of it, listed or not. A list GitHub
+ * cut short only adds. As with `recordRepoAccess`, nothing replaces a newer answer.
  *
  * Only repos Ponzu already has for the workspace are recorded. Answers the GitHub ids it does
  * not have, which mean the workspace's own copy of its installation is behind.
@@ -65,12 +72,15 @@ export async function recordReachableRepos(
     userId,
     repos: listed,
     complete,
+    readsPublic,
     checkedAt,
   }: {
     workspaceId: string;
     userId: string;
     repos: { githubRepoId: number; permission: Exclude<RepoPermission, "none"> }[];
     complete: boolean;
+    /** They are in the organization the workspace is, or are its personal account. */
+    readsPublic: boolean;
     checkedAt: Date;
   },
 ): Promise<{ missing: number[] }> {
@@ -88,7 +98,9 @@ export async function recordReachableRepos(
       ), answers as (
         select distinct on (repo_id) repo_id, permission from seen where repo_id is not null
         union all
-        select repos.id, case when repos.private then 'none' else 'read' end from repos
+        select repos.id,
+          case when not repos.private and ${readsPublic}::boolean then 'read' else 'none' end
+        from repos
         where ${complete}::boolean and repos.workspace_id = ${workspaceId}
           and repos.id not in (select repo_id from seen where repo_id is not null)
       ), recorded as (
@@ -117,6 +129,23 @@ export async function getRepoAccess(
       .select({ permission: repoAccess.permission, checkedAt: repoAccess.checkedAt })
       .from(repoAccess)
       .where(and(eq(repoAccess.userId, userId), eq(repoAccess.repoId, repoId))),
+  );
+  return row ?? null;
+}
+
+/**
+ * The workspace a repo belongs to and whether GitHub last said it is private, or null when
+ * Ponzu has no such repo.
+ */
+export async function getRepoVisibility(
+  db: Db,
+  repoId: string,
+): Promise<{ workspaceId: string; private: boolean } | null> {
+  const [row] = await run(
+    db
+      .select({ workspaceId: repos.workspaceId, private: repos.private })
+      .from(repos)
+      .where(eq(repos.id, repoId)),
   );
   return row ?? null;
 }
@@ -183,6 +212,8 @@ export interface WorkspaceRepoAccess {
   repoId: string;
   githubRepoId: number;
   fullName: string;
+  /** Whether GitHub last said it is private. */
+  private: boolean;
   /** Whether it holds a canvas. */
   hasCanvas: boolean;
   /** Null when nobody has asked GitHub about this person and repo yet. */
@@ -204,6 +235,7 @@ export function listWorkspaceRepoAccess(
         repoId: repos.id,
         githubRepoId: repos.githubRepoId,
         fullName: repos.fullName,
+        private: repos.private,
         hasCanvas: exists(
           db.select({ one: sql`1` }).from(canvases).where(eq(canvases.repoId, repos.id)),
         ).mapWith(Boolean),

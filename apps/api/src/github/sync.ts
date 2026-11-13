@@ -134,6 +134,9 @@ async function joinInstallation(
         workspaceId: workspace.id,
         installationId: installation.id,
         token,
+        // GitHub gives its own account, and an organization's members and owners, every public
+        // repo of it; anyone else only the repos their list names.
+        readsPublic: githubAccess !== "collaborator",
       });
     const { missing } = await record();
     // They reach a repo Ponzu has not recorded: its copy of the installation is behind.

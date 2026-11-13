@@ -1,5 +1,7 @@
 import {
   getRepoAccess,
+  getRepoVisibility,
+  getWorkspace,
   listWorkspaceRepoAccess,
   READABLE_PERMISSIONS,
   type RepoPermission,
@@ -12,20 +14,26 @@ import {
 } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { githubUserToken } from "../github/user-token.ts";
-import { UpstreamError } from "../http/errors.ts";
+import { ApiError, UpstreamError } from "../http/errors.ts";
 
 /*
  * What a person may do in a repo, as GitHub says it (docs/cloud.md, "Identity and access").
  * There is one place the answer lives, `repo_access`, and two ways GitHub's answers reach it:
  *
  * - `recordReposReachedBy`: one call on the person's own token lists every repo of an
- *   installation they reach, with whether they can push. Their sync does it for every
- *   workspace, and a reader does it for one when any of its answers is more than a minute old.
+ *   installation GitHub has given them, with whether they can push. Their sync does it for
+ *   every workspace, and a reader does it for one when any of its answers is more than a
+ *   minute old.
  * - `repoPermission`: one question as the App about one repo, when there is no fresh answer.
  *
- * Both give the same answer for the same repo: a public repo is `read` to anyone GitHub gives
- * no more. While the App is not installed on a workspace, or is suspended, Ponzu can reach
- * none of its repos for anyone, and the answer is `none`.
+ * A `read` in `repo_access` is one GitHub GAVE the person: they own the repo, they are one of
+ * its collaborators (directly, as an outside collaborator, or through a team), or they are a
+ * member or owner of the organization that owns it. The read anyone has of a public repo is
+ * not one: for someone whose only tie to a public repo is that it is public, its canvases do
+ * not exist. GitHub's question as the App cannot tell the two apart (it answers `read` on a
+ * public repo for anybody), so a `read` from it is settled by the person's own list, which
+ * can. Something Ponzu cannot tell is `none`. While the App is not installed on a workspace, or
+ * is suspended, Ponzu can reach none of its repos for anyone, and the answer is `none`.
  *
  * Every question of "may this person see or steer this repo" reads that table: `requireCanvas`
  * (through `repoPermission`), the workspace's repo list, its canvases list and the live query
@@ -46,7 +54,11 @@ export const REPO_ACCESS_FALLBACK_MS = 10 * 60_000;
  */
 const UNLISTED_ASKED_AT_MOST = 20;
 
-type RepoAccessDeps = Pick<Deps, "db" | "github" | "clock">;
+/**
+ * `vault` and `log` are for asking as the person (their GitHub token is in the vault), which a
+ * `read` from GitHub's question as the App needs.
+ */
+type RepoAccessDeps = Pick<Deps, "db" | "github" | "clock" | "vault" | "log">;
 
 /**
  * Someone GitHub may give access to a repo, by their GitHub id (never by a stored login alone:
@@ -68,8 +80,16 @@ const reachable = ({ installationId, suspendedAt }: AppInstallation) =>
  * answer kept. While GitHub fails, an answer younger than `REPO_ACCESS_FALLBACK_MS` stands in;
  * past that the failure is thrown. Without the App, or while it is suspended, it is `none`.
  *
+ * GitHub's question as the App answers `read` on a public repo for anybody, so a `read` from it
+ * says nothing of whether GitHub gave the person the repo. It is settled by the person's own
+ * list of the workspace's repos (`recordReposReachedBy`, which also keeps the answer), and is
+ * `none` when that cannot be asked: for someone who never signed in (whose answer only ever
+ * decides whether they can push), or whose GitHub token GitHub no longer takes.
+ *
  * `known` is the kept answer when the caller read it already (`getCanvasAccess` reads it with
- * the canvas); left out, it is read here.
+ * the canvas); left out, it is read here. `unlisted` is for a repo a cut-short list of the
+ * person's left out, which their list cannot settle: a `read` is then kept only for someone
+ * GitHub gives every public repo of the account (`readsPublic`), on a public repo.
  */
 export async function repoPermission(
   deps: RepoAccessDeps,
@@ -78,11 +98,13 @@ export async function repoPermission(
     repo,
     installation,
     known,
+    unlisted,
   }: {
     user: RepoAsker;
     repo: { id: string; githubRepoId: number; fullName: string };
     installation: AppInstallation;
     known?: { permission: RepoPermission; checkedAt: Date } | null;
+    unlisted?: { readsPublic: boolean; private: boolean };
   },
 ): Promise<RepoPermission> {
   const installationId = reachable(installation);
@@ -96,6 +118,13 @@ export async function repoPermission(
   const now = deps.clock.now();
   const age = kept ? now - kept.checkedAt.getTime() : Number.POSITIVE_INFINITY;
   if (kept && age < REPO_ACCESS_FRESH_MS) return kept.permission;
+  // GitHub down or out of rate limit for this installation: not a reason to shut everyone out.
+  const standIn = (error: unknown) => {
+    if (kept && age < REPO_ACCESS_FALLBACK_MS && error instanceof UpstreamError) {
+      return kept.permission;
+    }
+    throw error;
+  };
   let permission: RepoPermission;
   try {
     permission = await deps.github.getRepoPermission({
@@ -104,11 +133,25 @@ export async function repoPermission(
       user: { id: user.githubUserId, login: user.githubLogin },
     });
   } catch (error) {
-    // GitHub down or out of rate limit for this installation: not a reason to shut everyone out.
-    if (kept && age < REPO_ACCESS_FALLBACK_MS && error instanceof UpstreamError) {
-      return kept.permission;
+    return standIn(error);
+  }
+  if (permission === "read") {
+    if (unlisted) {
+      permission = unlisted.readsPublic && !unlisted.private ? "read" : "none";
+    } else if (user.id === null) {
+      return "none";
+    } else {
+      try {
+        return await settleRead(deps, {
+          user: { ...user, id: user.id },
+          repo,
+          installationId,
+          asked: now,
+        });
+      } catch (error) {
+        return standIn(error);
+      }
     }
-    throw error;
   }
   if (user.id !== null) {
     await recordRepoAccess(deps.db, [
@@ -116,6 +159,48 @@ export async function repoPermission(
     ]);
   }
   return permission;
+}
+
+/**
+ * Whether a `read` GitHub's question as the App gave is one GitHub gave the person: their own
+ * list of the workspace's repos says, and keeps what it says for every repo of it. When their
+ * GitHub token is dead nothing can tell, except that on a private repo GitHub answers `read`
+ * only to someone it gave the repo, so it stands (and is kept) there and is `none` on a public
+ * one.
+ * `none` too when the repo has left Ponzu.
+ */
+async function settleRead(
+  deps: RepoAccessDeps,
+  {
+    user,
+    repo,
+    installationId,
+    asked,
+  }: {
+    user: RepoAsker & { id: string };
+    repo: { id: string };
+    installationId: number;
+    /** When GitHub was asked as the App. */
+    asked: number;
+  },
+): Promise<RepoPermission> {
+  const visibility = await getRepoVisibility(deps.db, repo.id);
+  if (visibility === null) return "none";
+  try {
+    await recordReposReachedBy(deps, {
+      user,
+      workspaceId: visibility.workspaceId,
+      installationId,
+    });
+  } catch (error) {
+    if (!(error instanceof ApiError && error.code === "github_reauth_required")) throw error;
+    if (!visibility.private) return "none";
+    await recordRepoAccess(deps.db, [
+      { userId: user.id, repoId: repo.id, permission: "read", checkedAt: new Date(asked) },
+    ]);
+    return "read";
+  }
+  return (await getRepoAccess(deps.db, { userId: user.id, repoId: repo.id }))?.permission ?? "none";
 }
 
 /** Whether a permission lets its holder steer a canvas: send messages, answer, merge. */
@@ -126,11 +211,18 @@ const canRead = (permission: RepoPermission | null) =>
   permission !== null && (READABLE_PERMISSIONS as readonly string[]).includes(permission);
 
 /**
- * Ask GitHub, with the person's own token, which repos of an installation they reach, and keep
- * the answer for every repo of its workspace: `write` or `read` for those listed and, when
- * GitHub listed them all, `read` for the rest that are public and `none` for the rest that are
- * private. One call however many repos, on their own rate limit. A person who cannot reach the
- * installation at all is given nothing of their own there.
+ * Ask GitHub, with the person's own token, which repos of an installation it has given them,
+ * and keep the answer for every repo of its workspace: `write` or `read` for those listed and,
+ * when GitHub listed them all, `none` for the rest, except that the public ones are `read` for a
+ * member or owner of the organization the workspace is (`readsPublic`). One call however many
+ * repos, on their own rate limit, and for an organization one more for their membership of it
+ * (`GET /user/memberships/orgs/{org}`: an active membership, public or private; a pending
+ * invitation is none). A person who cannot reach the installation at all is given nothing of
+ * their own there.
+ *
+ * A public repo GitHub has not given them is left out of the list: anyone may read it on
+ * GitHub, but its canvases are only for the people GitHub gave it to (docs/cloud.md, "Identity
+ * and access").
  *
  * A list GitHub cut short says nothing of the repos it left out, so of those whose answer some
  * reader acts on (one that lets them read, or a repo with a canvas) the oldest are asked about
@@ -140,30 +232,40 @@ const canRead = (permission: RepoPermission | null) =>
  * is behind (`syncGithub` reads it again and calls this once more).
  */
 export async function recordReposReachedBy(
-  deps: RepoAccessDeps & Pick<Deps, "vault" | "log">,
+  deps: RepoAccessDeps,
   {
     user,
     workspaceId,
     installationId,
     token,
+    readsPublic: known,
   }: {
-    user: User;
+    user: RepoAsker & { id: string };
     workspaceId: string;
     installationId: number;
     /** Their GitHub token, when the caller holds it already. */
     token?: string;
+    /**
+     * Whether they are the personal account or in the organization the workspace is, when the
+     * caller has just asked GitHub (`syncGithub`); left out, GitHub is asked here.
+     */
+    readsPublic?: boolean;
   },
 ): Promise<{ missing: number[] }> {
   const checkedAt = new Date(deps.clock.now());
   const userToken = token ?? (await githubUserToken(deps, user.id));
   let listed: Awaited<ReturnType<Deps["github"]["listInstallationRepositories"]>>;
+  let reaches = true;
   try {
     listed = await deps.github.listInstallationRepositories(userToken, installationId);
   } catch (error) {
     // They cannot reach the installation at all.
     if (!(error instanceof UpstreamError && error.status === 404)) throw error;
     listed = { items: [], complete: true };
+    reaches = false;
   }
+  const readsPublic =
+    reaches && (known ?? (await inAccount(deps, { user, workspaceId, token: userToken })));
   const recorded = await recordReachableRepos(deps.db, {
     workspaceId,
     userId: user.id,
@@ -173,6 +275,7 @@ export async function recordReposReachedBy(
       permission: canPush ? "write" : "read",
     })),
     complete: listed.complete,
+    readsPublic,
     checkedAt,
   });
   if (!listed.complete) {
@@ -186,16 +289,34 @@ export async function recordReposReachedBy(
       .sort(byCanvasThenOldest)
       .slice(0, UNLISTED_ASKED_AT_MOST);
     await Promise.all(
-      left.map(({ repoId, githubRepoId, fullName }) =>
+      left.map(({ repoId, githubRepoId, fullName, private: isPrivate }) =>
         repoPermission(deps, {
           user,
           repo: { id: repoId, githubRepoId, fullName },
           installation: { installationId, suspendedAt: null },
+          unlisted: { readsPublic, private: isPrivate },
         }),
       ),
     );
   }
   return recorded;
+}
+
+/**
+ * Whether GitHub gives the person every public repo of the workspace's account: it is their own
+ * personal account, or they are an active member or owner of the organization (asked on their
+ * own token, which sees a private membership too). Anything else, a pending invitation or an
+ * organization that does not let the App see its members included, is no.
+ */
+async function inAccount(
+  deps: RepoAccessDeps,
+  { user, workspaceId, token }: { user: RepoAsker; workspaceId: string; token: string },
+): Promise<boolean> {
+  const workspace = await getWorkspace(deps.db, workspaceId);
+  if (!workspace) return false;
+  if (workspace.githubAccountId === user.githubUserId) return true;
+  if (workspace.kind !== "org") return false;
+  return (await deps.github.getOrgRole(token, workspace.githubLogin)) !== null;
 }
 
 /** Repos with a canvas first, then the answers asked longest ago, never-asked first of all. */
@@ -215,7 +336,7 @@ function byCanvasThenOldest(a: WorkspaceRepoAccess, b: WorkspaceRepoAccess) {
  * since a list cannot be shown without trusting them.
  */
 export async function refreshWorkspaceRepoAccess(
-  deps: RepoAccessDeps & Pick<Deps, "vault" | "log">,
+  deps: RepoAccessDeps,
   {
     user,
     workspace,

@@ -85,6 +85,7 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       workspaceId: workspace.id,
       repos: [{ githubRepoId: repo.githubRepoId, permission: "write" }],
       complete: true,
+      readsPublic: false,
       checkedAt: new Date(),
     });
     const write = {

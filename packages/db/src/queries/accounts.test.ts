@@ -615,6 +615,7 @@ describe("repos", () => {
         permission: githubRepoId === 503 ? "write" : "read",
       })),
       complete: true,
+      readsPublic: false,
       checkedAt: new Date(),
     });
     const list = (userId: string) => listWorkspaceRepos(db, { workspaceId: workspace.id, userId });
