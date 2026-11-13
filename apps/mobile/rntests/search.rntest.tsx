@@ -78,7 +78,9 @@ describe("search", () => {
       "Plans, in Pricing page",
     );
     // Maya's comment on Plans and her ask in the thread, both under Threads.
-    expect(screen.getByTestId(`search-comment-${id}-m_search`)).toBeTruthy();
+    expect(screen.getByTestId(`search-comment-${id}-m_search`).props.accessibilityLabel).toMatch(
+      new RegExp(`^Maya · Pricing page, now, ${SEARCH_SCENE.comment}$`),
+    );
     const ask = screen.getAllByLabelText(new RegExp(`^Maya · Pricing page, .*${CHAT_SCENE.ask}`));
     expect(ask).toHaveLength(1);
     // The words went in the request's body, with the phone's four groups.

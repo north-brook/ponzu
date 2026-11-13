@@ -414,25 +414,30 @@ export async function stockSearch(world: FakeWorld): Promise<void> {
   );
   if (!pricing) return;
   const at = Date.now();
-  fake.agent(pricing.id).commit([
+  // Through Maya's own commit, so the API stamps it as hers (an agent's commit would make it Claude's).
+  const { api } = fake.connect(maya);
+  await api.canvases.commit(pricing.id, [
     {
-      op: "thread.create",
-      thread: {
-        id: "th_search",
-        artboardId: "ab_plans",
-        x: 120,
-        y: 80,
-        status: "open",
-        createdAt: at,
-        updatedAt: at,
-        messages: [
-          {
-            id: "m_search",
-            author: { kind: "user", id: maya.id, name: maya.name ?? maya.githubLogin },
-            text: SEARCH_SCENE.comment,
-            createdAt: at,
-          },
-        ],
+      id: "op_search_comment",
+      op: {
+        op: "thread.create",
+        thread: {
+          id: "th_search",
+          artboardId: "ab_plans",
+          x: 120,
+          y: 80,
+          status: "open",
+          createdAt: at,
+          updatedAt: at,
+          messages: [
+            {
+              id: "m_search",
+              author: { kind: "user", id: maya.id, name: maya.name ?? maya.githubLogin },
+              text: SEARCH_SCENE.comment,
+              createdAt: at,
+            },
+          ],
+        },
       },
     },
   ]);
