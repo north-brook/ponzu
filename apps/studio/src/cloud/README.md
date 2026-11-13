@@ -76,7 +76,8 @@ window keeps it in `app/ui-state.ts`). The edge is the gutter between pane and c
 covers either. The toggles collapse and expand the same panels, easing while `data-pane-motion` is
 on the window; a drag never eases. Anything that lines up with a pane's edge (the chrome's blocks)
 reads its width from `--pane-sidebar` or `--pane-rail`, which a drag writes in the frame the panes
-move in, and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
+move in, on the elements marked `data-pane-widths` and never on anything that holds the canvas
+(a custom property changed there restyles every element of every board), and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
 `pane-motion` eases only while `data-pane-motion` is on, so nothing tagged with it trails a drag.
 Dragging one edge holds the other pane still (its panel disabled) and stops where the main pane
 reaches 400. Whenever the window lays the panes out itself (opening, a toggle, a window resize),

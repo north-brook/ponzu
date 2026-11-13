@@ -575,8 +575,8 @@
 /*
  * The ground's dots, on the plane the camera scrolls: a pan moves them with the boards for
  * free, and a zoom sets their step and where they start (useCameraLayers writes the three
- * variables), so one always sits on the page's origin and they stay about a step apart on
- * screen at any zoom.
+ * variables, on this element and never above it), so one always sits on the page's origin and
+ * they stay about a step apart on screen at any zoom.
  */
 .pz-dots {
   background-image: radial-gradient(circle at 1px 1px, var(--pz-dot) 0.9px, transparent 1.15px);

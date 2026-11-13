@@ -115,8 +115,12 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  * same panels, easing (`data-pane-motion`); a drag never eases. Whenever the window lays the
  * panes out itself (when it opens, on a toggle, when it's resized) each open pane takes the
  * width it was left at, or, in a window too small for both, a fair share less (panes.ts,
- * fitPanes). The chrome's blocks over the panes read the widths from `--pane-sidebar` and
- * `--pane-rail` on the window, which a drag writes in the same frame as the panels move.
+ * fitPanes). The chrome's blocks over the panes and the panes' content read the widths from
+ * `--pane-sidebar` and `--pane-rail`: the window's, as React last rendered them, and their own
+ * (`data-pane-widths`), which every move of an edge writes in the same frame as the panels move.
+ * Never the window's while an edge moves: a custom property is inherited by everything under
+ * the element it's set on, and Chrome restyles all of it when it changes, so on the window each
+ * frame of a drag restyled every element of every board on the canvas (apps/studio/perf).
  */
 /**
  * The keyboard and the thread pane. Once the pane has opened (its toggle's easing has ended, or
@@ -400,14 +404,13 @@ export function AppWindow({
     return panel ? panel.getSize().inPixels + GUTTER[pane] : 0;
   };
 
-  // Every move of an edge, in the same frame as the panels: the chrome's blocks and the panes'
-  // content read these.
+  // Every move of an edge, in the same frame as the panels: on the elements that read them,
+  // none of which holds the canvas (see AppWindow).
   const onLayoutChange = useCallback(
     (layout: Layout) => {
-      const el = frame.current;
-      if (!el) return;
+      const readers = frame.current?.querySelectorAll<HTMLElement>("[data-pane-widths]") ?? [];
       for (const [pane, width] of Object.entries(widthsOf(layout)) as [Pane, number][]) {
-        el.style.setProperty(WIDTH_VAR[pane], `${width}px`);
+        for (const el of readers) el.style.setProperty(WIDTH_VAR[pane], `${width}px`);
       }
     },
     [widthsOf],
@@ -566,6 +569,7 @@ export function AppWindow({
         <header
           // A click on its buttons and tabs leaves focus where it was (installFocusRule).
           data-toolbar
+          data-pane-widths
           className={cn(
             // 38 tall: its 28px controls with 5 above and below (CHROME in the shell's traffic-lights.ts).
             "app-drag flex h-[38px] shrink-0 items-center gap-1",
@@ -620,6 +624,7 @@ export function AppWindow({
             >
               <aside
                 id="sidebar"
+                data-pane-widths
                 aria-label="Canvases"
                 inert={!sidebar.open}
                 // Its width less the gutter past it (the edge), which is its right padding.
@@ -660,6 +665,7 @@ export function AppWindow({
             <aside
               ref={railBox}
               id="thread"
+              data-pane-widths
               aria-label="Thread"
               inert={!railOpen}
               // Held to the window's right edge, so it slides in and out from there; its width
