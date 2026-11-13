@@ -12,7 +12,7 @@ canvas. Nothing here talks to a real service.
 ```sh
 bun apps/studio/perf/run.ts                                   # this checkout, built now, one round
 bun apps/studio/perf/run.ts --only website.zoom,thread        # some scenarios, or whole suites
-bun apps/studio/perf/run.ts --head <dir> --base <dir> --rounds 3 --markdown comment.md
+bun apps/studio/perf/run.ts --head <dir> --base <dir> --rounds 3 --markdown comment.md   # times need 3 rounds
 bun apps/studio/perf/run.ts --only website.zoom --profile traces   # keep each trace, say why
 ```
 
@@ -55,7 +55,7 @@ description.
 | Suite | What it stresses |
 | --- | --- |
 | `website` | Two tall marketing pages dense with mockups and a big footer, at about 13% (the canvas that was slow to zoom): open, zoom, pan, both panes resized, an agent's edit landing. |
-| `examples` | The example designs' landing pages, as an agent draws them. |
+| `examples` | The repository's example landing pages, as an agent draws them. |
 | `dom` | A dense grid, a big table, a 300-deep tree, a wall of text, a fit-content page. |
 | `paint` | Shadows, filters, blends and masks; big SVG charts; many images. |
 | `motion` | Hundreds of running CSS and SVG animations. |

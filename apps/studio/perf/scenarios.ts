@@ -19,7 +19,7 @@ import {
   zoomPercent,
 } from "./app.ts";
 import { BOARDS, type BoardKind, CORPUS_TOKENS } from "./corpus.ts";
-import { frameStats, percentile, round } from "./metrics.ts";
+import { frameStats, median, percentile, round } from "./metrics.ts";
 import { summarize, traced } from "./trace.ts";
 
 export type Surface = "canvas" | "panes" | "thread" | "sidebar" | "sandbox";
@@ -87,7 +87,7 @@ export const CANVASES: Record<string, { about: string; seed: () => Seed }> = {
     seed: () => ({ name: "Website", tokens: CORPUS_TOKENS, boards: row("ws", ["site", "site"]) }),
   },
   examples: {
-    about: "The example designs' three landing pages, as an agent draws them.",
+    about: "The repository's three example landing pages, as an agent draws them.",
     seed: () => ({
       name: "Examples",
       tokens: CORPUS_TOKENS,
@@ -208,6 +208,17 @@ async function action(s: Studio, act: () => Promise<unknown>): Promise<Measured>
   };
 }
 
+/**
+ * `run` three times, each metric's median: one action is a single sample of a time, and a
+ * comparison of single samples marks noise as change.
+ */
+async function thrice(run: () => Promise<Measured>): Promise<Measured> {
+  const runs = [await run(), await run(), await run()];
+  const out: Measured = {};
+  for (const k of Object.keys(runs[0]!)) out[k] = median(runs.map((r) => r[k] ?? 0));
+  return out;
+}
+
 /* ------------------------------------------------------------------ */
 /* Canvas suites                                                       */
 /* ------------------------------------------------------------------ */
@@ -299,35 +310,37 @@ const commitText: Scenario = {
   title: "Agent edits a line",
   headline: ["latencyMs", "restyled", "commits"],
   run: (s, state) =>
-    action(s, () =>
-      s.page.evaluate(async (canvasId) => {
-        const w = window.ponzuFake!;
-        const doc = w.backend.canvas(canvasId).sequencer.doc;
-        const board = doc.pages[0]!.artboards[0]!;
-        // The first element holding text directly: its text is replaced.
-        const find = (n: any): any =>
-          n.kind === "el" && n.children.some((c: any) => c.kind === "text")
-            ? n
-            : n.kind === "el"
-              ? n.children.map(find).find(Boolean)
-              : null;
-        const el = find(board.root);
-        const word = `Edited ${Math.random().toString(36).slice(2, 8)}`;
-        w.backend
-          .agent(canvasId)
-          .commit([{ op: "children", id: el.id, children: [{ kind: "text", value: word }] }]);
-        const host = document.querySelector(`[data-pz-board="${board.id}"]`);
-        const shows = () => {
-          const walk = (root: ParentNode): boolean => {
-            for (const e of root.querySelectorAll("*")) {
-              if (e.shadowRoot && walk(e.shadowRoot)) return true;
-            }
-            return (root as Element).textContent?.includes(word) ?? false;
+    thrice(() =>
+      action(s, () =>
+        s.page.evaluate(async (canvasId) => {
+          const w = window.ponzuFake!;
+          const doc = w.backend.canvas(canvasId).sequencer.doc;
+          const board = doc.pages[0]!.artboards[0]!;
+          // The first element holding text directly: its text is replaced.
+          const find = (n: any): any =>
+            n.kind === "el" && n.children.some((c: any) => c.kind === "text")
+              ? n
+              : n.kind === "el"
+                ? n.children.map(find).find(Boolean)
+                : null;
+          const el = find(board.root);
+          const word = `Edited ${Math.random().toString(36).slice(2, 8)}`;
+          w.backend
+            .agent(canvasId)
+            .commit([{ op: "children", id: el.id, children: [{ kind: "text", value: word }] }]);
+          const host = document.querySelector(`[data-pz-board="${board.id}"]`);
+          const shows = () => {
+            const walk = (root: ParentNode): boolean => {
+              for (const e of root.querySelectorAll("*")) {
+                if (e.shadowRoot && walk(e.shadowRoot)) return true;
+              }
+              return (root as Element).textContent?.includes(word) ?? false;
+            };
+            return !!host && walk(host);
           };
-          return !!host && walk(host);
-        };
-        while (!shows()) await window.__pz.frame();
-      }, state.canvasId),
+          while (!shows()) await window.__pz.frame();
+        }, state.canvasId),
+      ),
     ),
 };
 
@@ -541,16 +554,18 @@ const sandbox: Suite = {
       headline: ["latencyMs", "commits"],
       // A wake has no line of its own: the thread's working line at its foot says it.
       run: (s) =>
-        action(s, () =>
-          s.page.evaluate(async () => {
-            const w = window.ponzuFake!;
-            const id = [...w.backend.canvases.keys()].at(-1)!;
-            const says = () =>
-              document.querySelector("#thread")?.textContent?.includes("Waking up");
-            w.backend.agent(id).wake();
-            while (!says()) await window.__pz.frame();
-            w.backend.agent(id).idle();
-          }),
+        thrice(() =>
+          action(s, () =>
+            s.page.evaluate(async () => {
+              const w = window.ponzuFake!;
+              const id = [...w.backend.canvases.keys()].at(-1)!;
+              const says = () =>
+                document.querySelector("#thread")?.textContent?.includes("Waking up");
+              w.backend.agent(id).wake();
+              while (!says()) await window.__pz.frame();
+              w.backend.agent(id).idle();
+            }),
+          ),
         ),
     },
   ],

@@ -234,7 +234,7 @@ const PALETTE = [
 /* Tokens                                                              */
 /* ------------------------------------------------------------------ */
 
-/** Where the repository's example designs are. */
+/** Where the repository's examples are. */
 const EXAMPLES = new URL("../../../examples/", import.meta.url);
 
 function readExample(path: string): string {
@@ -270,22 +270,22 @@ const BENCH_TOKENS = `:root {
 `;
 
 const LANDINGS = {
-  "landing-weft": { design: "weft", page: "weft.design/pages/website/landing.html" },
-  "landing-kettle": { design: "kettle", page: "kettle.design/pages/website/landing-desktop.html" },
-  "landing-halon": { design: "halon", page: "halon.design/pages/website/landing.html" },
+  "landing-weft": { example: "weft", page: "weft.design/pages/website/landing.html" },
+  "landing-kettle": { example: "kettle", page: "kettle.design/pages/website/landing-desktop.html" },
+  "landing-halon": { example: "halon", page: "halon.design/pages/website/landing.html" },
 } as const;
 
 /** Tokens CSS every corpus canvas should commit (union of what the boards reference). */
 export const CORPUS_TOKENS: string = [
   BENCH_TOKENS,
-  ...Object.values(LANDINGS).map(({ design }) =>
-    prefixTokens(readExample(`${design}.design/tokens.css`), design),
+  ...Object.values(LANDINGS).map(({ example }) =>
+    prefixTokens(readExample(`${example}.design/tokens.css`), example),
   ),
 ].join("\n");
 
 function landing(kind: keyof typeof LANDINGS) {
-  const { design, page } = LANDINGS[kind];
-  return (spec: BoardSpec) => fromFile(spec, prefixTokens(readExample(page), design));
+  const { example, page } = LANDINGS[kind];
+  return (spec: BoardSpec) => fromFile(spec, prefixTokens(readExample(page), example));
 }
 
 /* ------------------------------------------------------------------ */

@@ -43,7 +43,9 @@ describe("what counts as a change", () => {
     expect(compare("mainMs", aggregate([100, 105, 110]), aggregate([150, 160, 170]))).toBe("worse");
     expect(compare("fps", aggregate([40, 42, 44]), aggregate([58, 59, 60]))).toBe("better");
     // Under 10%: same, even apart.
-    expect(compare("mainMs", aggregate([100, 101]), aggregate([105, 106]))).toBe("same");
+    expect(compare("mainMs", aggregate([100, 101, 102]), aggregate([105, 106, 107]))).toBe("same");
+    // Fewer than three rounds: never called.
+    expect(compare("mainMs", aggregate([100, 105]), aggregate([300, 310]))).toBe("same");
   });
 });
 

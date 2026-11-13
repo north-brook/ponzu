@@ -123,24 +123,25 @@ const SURFACES: Record<string, string> = {
 
 /** The comment, in Markdown. `history` is main's recent merges, oldest first. */
 export function report(results: Results, history: HistoryEntry[] = []): string {
-  const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "?");
+  const short = (sha: string | null, or: string) => (sha ? `\`${sha.slice(0, 7)}\`` : or);
   const out: string[] = [MARKER, "## Performance"];
   const against = results.base
-    ? `\`${short(results.head.sha)}\` against base \`${short(results.base.sha)}\`, ${results.rounds} rounds each, interleaved`
-    : `\`${short(results.head.sha)}\`, ${results.rounds} rounds`;
+    ? `${short(results.head.sha, "head")} against ${short(results.base.sha, "base")}, ${results.rounds} rounds each, interleaved`
+    : `${short(results.head.sha, "head")}, ${results.rounds} rounds`;
   out.push(
     `<sub>${against} · ${results.machine} · headless Chrome on Ponzu Cloud in memory · reported, never enforced</sub>`,
     "",
   );
 
-  // What moved, first.
+  // What moved, first: each scenario's headline numbers. The rest are marked in the details.
   const moved: string[] = [];
   let better = 0;
   let worse = 0;
   let same = 0;
   if (results.base) {
     for (const sc of results.scenarios) {
-      for (const name of Object.keys(results.head.runs[sc.id] ?? {})) {
+      for (const name of sc.headline) {
+        if (!results.head.runs[sc.id]?.[name]) continue;
         const c = cell(results, sc.id, name);
         if (c.verdict === "better") better++;
         else if (c.verdict === "worse") worse++;
@@ -153,8 +154,8 @@ export function report(results: Results, history: HistoryEntry[] = []): string {
     }
     out.push(
       worse || better
-        ? `**${better} better, ${worse} worse**, ${same} within noise.`
-        : `**No change** beyond noise across ${same} numbers.`,
+        ? `**${better} better, ${worse} worse** of the ${better + worse + same} headline numbers; the rest within noise.`
+        : `**No change** beyond noise in the ${same} headline numbers.`,
       "",
     );
     if (moved.length) {

@@ -53,7 +53,8 @@ jobs:
           # nothing to measure. A push or a dispatch always measures.
           if [ "$EVENT" = pull_request ]; then
             bun scripts/ci/scope.ts HEAD^1 > "$RUNNER_TEMP/scope"
-            grep -q '^desktop=true$' "$RUNNER_TEMP/scope" && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
+            if grep -q '^desktop=true$' "$RUNNER_TEMP/scope"; then run=true; else run=false; fi
+            echo "run=$run" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
@@ -82,9 +83,11 @@ jobs:
       - name: Main's history
         if: steps.scope.outputs.run == 'true'
         run: |
-          git fetch --depth=1 origin perf-history 2>/dev/null &&
-            git show FETCH_HEAD:history.jsonl > "$RUNNER_TEMP/history.jsonl" ||
+          # None yet (before main's first measured push): the comment draws no trends.
+          if ! { git fetch --depth=1 origin perf-history 2>/dev/null &&
+            git show FETCH_HEAD:history.jsonl > "$RUNNER_TEMP/history.jsonl"; }; then
             : > "$RUNNER_TEMP/history.jsonl"
+          fi
       - name: Measure
         id: run
         if: steps.scope.outputs.run == 'true'
