@@ -1,4 +1,7 @@
-import { Mail, Open } from "@/components/legal";
+import { Mail } from "@/components/legal";
+import { Link } from "@/components/prose";
+import { ADVISORIES } from "@/components/security-txt";
+import { GITHUB_PRIVATE_REPORTING } from "@/components/site";
 import { share } from "@/components/share";
 
 export const metadata = {
@@ -29,7 +32,7 @@ Ponzu runs an AI agent on your code, with your credentials, in the cloud. This p
 - **Pull requests are held to people.** The agent merges, marks ready or turns on auto-merge only in a turn a person started in Ponzu, as that person, and never past the repository's rules on GitHub.
 - **Canvas HTML is contained.** It is sanitized on the way in and drawn under a strict content security policy: no script from a canvas runs in the apps.
 - **Your files are on their own domain.** A canvas's files are served from ponzu.cloud, never from ponzu.design, so nothing in a canvas shares an origin or a cookie with our site.
-- **Logs carry no secrets.** Our servers log ids and outcomes, never tokens, request bodies or headers.
+- **Our logs carry no secrets.** Our servers' own log lines carry ids and outcomes, never tokens, request bodies or headers, and each line our logger writes is redacted on its way out.
 
 ## What we are still hardening
 
@@ -46,6 +49,18 @@ What we are building: your Claude credential kept behind an egress proxy, so not
 
 ## Reporting a vulnerability
 
-Write to <Mail to="security" />, or report it privately on GitHub at [github.com/north-brook/ponzu/security/advisories/new](https://github.com/north-brook/ponzu/security/advisories/new). Please give us a reasonable time to fix it before you share it. We welcome good-faith research. <Open who="counsel">Safe-harbor wording for good-faith research.</Open>
+Write to <Mail to="security" />{GITHUB_PRIVATE_REPORTING ? <>, or report it privately on GitHub at <Link href={ADVISORIES}>github.com/north-brook/ponzu/security/advisories/new</Link></> : null}. Tell us what you found and how to see it happen. Please give us a reasonable time to fix it before you share it. We do not run a paid bounty program.
 
-Our [security.txt](/security.txt) says the same.
+### Good-faith research
+
+We welcome security research on Ponzu. If you look for vulnerabilities in good faith and keep to the rules below, we will not take legal action against you, or ask anyone to, for that research, and we consider it authorized. The rules:
+
+- Test only with accounts, workspaces and repositories that are yours, or whose owners agreed.
+- Don't look at, change or delete other people's data beyond the least you need to show the problem, and tell us at once if you reach any.
+- Don't degrade the service for others: no denial of service, spam or load testing, and no running up sandbox use beyond what a test needs.
+- No social engineering, phishing or physical attacks on our people or our providers.
+- Report what you find to us first, give us a reasonable time to fix it before you share it, and delete any data you got once you have reported it.
+
+This covers Ponzu's own apps, service and website. The companies we work with (GitHub, Vercel, Anthropic and the others on [Subprocessors](/subprocessors)) have their own rules for research on their systems. If you are not sure whether something is allowed, ask us first.
+
+Our [security.txt](/security.txt) says where to report.
