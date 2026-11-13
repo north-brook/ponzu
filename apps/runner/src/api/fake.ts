@@ -38,6 +38,7 @@ import {
   type SavedPoint,
   SECRET_DELIVERY_MS,
   type SecretResponse,
+  type SessionRequest,
   type StateRequest,
   type StateResponse,
   type ThreadItem,
@@ -140,8 +141,23 @@ export class FakeRunnerApi {
     session: null,
     workspace: null,
   };
-  /** Every checkpoint sent, recorded or not. */
-  readonly checkpoints: Omit<Checkpoint, "session" | "workspace">[] = [];
+  /** Every checkpoint sent, recorded or not, with what it said it held. */
+  readonly checkpoints: (Omit<Checkpoint, "session" | "workspace" | "heldThrough"> & {
+    heldThrough?: number;
+  })[] = [];
+  /** What each session call said, in order. */
+  readonly sessionRequests: SessionRequest[] = [];
+  /**
+   * What the last recorded checkpoint holds, as the API's `canvas_runners.saved_through`: the
+   * smaller of what it said it held and the newest event delivered as it was recorded, or that
+   * newest event when it did not say. Null while nothing delivered.
+   */
+  savedThrough: number | null = null;
+  /**
+   * How long the checkpoint call itself is on its way after its archives are up and what it held
+   * is read: the API records it when this has passed.
+   */
+  recordDelayMs = 0;
   /** What runners reported restoring. */
   readonly restored: RestoredReport[] = [];
   /** How long each call of a kind takes before the fake looks at it: a slow API. */
@@ -183,8 +199,8 @@ export class FakeRunnerApi {
         fetchOps: as((r, after: number) => this.fetchOps(r, after)),
         fetchDoc: as((r) => this.fetchDoc(r)),
       },
-      session: async () => {
-        const session = await this.session();
+      session: async (request?: SessionRequest) => {
+        const session = await this.session(request);
         runner = session.runnerId;
         return session;
       },
@@ -301,8 +317,10 @@ export class FakeRunnerApi {
 
   /* The routes, as the API answers them. `runner` is the caller's `X-Ponzu-Runner`. */
 
-  async session(): Promise<RunnerSession> {
+  async session(request: SessionRequest = {}): Promise<RunnerSession> {
     await this.enter("session");
+    // Recorded and not used, as the API does: the lease is new each time.
+    this.sessionRequests.push(structuredClone(request));
     this.runner = `rnr_${String(++this.runners).padStart(16, "0")}`;
     return structuredClone({
       ...this.sessionInfo,
@@ -314,10 +332,22 @@ export class FakeRunnerApi {
 
   async saveCheckpoint(runner: string, point: Checkpoint): Promise<SavedPoint> {
     await this.enter("saveCheckpoint", runner);
-    const { session, workspace, ...marker } = point;
-    this.checkpoints.push(structuredClone(marker));
+    const { session, workspace, heldThrough: held, ...marker } = point;
+    const heldThrough = held?.();
+    if (this.recordDelayMs) await new Promise((resolve) => setTimeout(resolve, this.recordDelayMs));
+    this.checkpoints.push({
+      ...structuredClone(marker),
+      ...(heldThrough === undefined ? {} : { heldThrough }),
+    });
     if (!this.saved || this.saved.turn < point.turn) {
       const before = this.saved;
+      const delivered = this.events
+        .filter((e) => e.deliveredAt !== undefined)
+        .reduce<number | null>((most, e) => Math.max(most ?? 0, e.event.seq), null);
+      this.savedThrough =
+        delivered === null || heldThrough === undefined
+          ? delivered
+          : Math.min(heldThrough, delivered);
       const keepSession = !session && !!point.keep?.session && !!before;
       const keepWork = !workspace && !!point.keep?.workspace && !!before;
       this.saved = {

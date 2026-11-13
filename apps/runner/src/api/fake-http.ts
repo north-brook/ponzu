@@ -47,7 +47,7 @@ export function fakeApiHandler(
       const body = request.method === "GET" ? undefined : ((await request.json()) as any);
       switch (route) {
         case "POST /v1/runner/session":
-          return Response.json(await fake.session());
+          return Response.json(await fake.session(body));
         case "POST /v1/runner/events/claim":
           return Response.json(await fake.claim(runner, body));
         case "POST /v1/runner/events/ack":
@@ -118,6 +118,7 @@ export function fakeApiHandler(
             wipCommit: body.wipCommit,
             session: take(body.session),
             workspace: take(body.workspace),
+            ...(body.heldThrough === undefined ? {} : { heldThrough: () => body.heldThrough }),
           });
           return Response.json({ saved });
         }

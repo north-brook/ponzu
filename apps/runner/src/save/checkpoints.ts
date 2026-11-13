@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { RunnerApi } from "../api/api.ts";
 import type { RestoredReport, SavedPoint } from "../api/protocol.ts";
 import { writeDurably } from "../durable.ts";
+import type { HeldMark } from "./held.ts";
 import { type Transcripts, TranscriptTooLarge } from "./transcripts.ts";
 import type { SavedWork, WorkSaver } from "./work.ts";
 
@@ -63,6 +64,12 @@ export interface CheckpointOptions {
   flush(): Promise<void>;
   /** Tells the person, in the thread, something they lost or may want: said once per thing. */
   notify?(message: string): void;
+  /**
+   * Begins a mark of the events the session holds, as its archive is about to be taken
+   * (save/held.ts). Without it a checkpoint does not say, and the API counts what was delivered
+   * when it records the checkpoint.
+   */
+  held?(): HeldMark;
 }
 
 export class Checkpoints {
@@ -76,6 +83,11 @@ export class Checkpoints {
   private known: SavedPoint | null = null;
   /** What the person was already told, so it is said once. */
   private told = new Set<string>();
+  /**
+   * The `heldThrough` this process sent with the last recorded checkpoint that carried a
+   * transcript of its own: what the transcript the API keeps holds, as far as this process knows.
+   */
+  private heldSent = 0;
 
   constructor(private readonly opts: CheckpointOptions) {}
 
@@ -207,12 +219,31 @@ export class Checkpoints {
   }
 
   private async saveOnce(sessionId: string | null): Promise<void> {
+    // Before anything of the session is read: what settles from here on may not be in it.
+    const held = this.opts.held?.();
+    try {
+      await this.saveFrom(sessionId, held);
+    } finally {
+      held?.end();
+    }
+  }
+
+  private async saveFrom(sessionId: string | null, held: HeldMark | undefined): Promise<void> {
     const { transcripts, work } = this.opts;
+    const large: { path: string; size: number }[] = [];
+    const skipped = (path: string, size: number) => large.push({ path, size });
     const stamp = [
       sessionId ?? "",
-      sessionId && transcripts ? transcripts.stamp(sessionId) : "",
-      work ? await work.stamp() : "",
+      sessionId && transcripts ? transcripts.stamp(sessionId, skipped) : "",
+      work ? await work.stamp(skipped) : "",
     ].join("#");
+    // Written in the last moments and too large to hash: told apart by size and times alone.
+    if (large.length)
+      this.opts.event("checkpoint_hash_skipped", {
+        files: large.length,
+        bytes: large.reduce((sum, file) => sum + file.size, 0),
+        paths: large.slice(0, 10).map((file) => file.path),
+      });
     if (stamp === this.last) return;
     const turn = this.turn + 1;
     const known = this.known;
@@ -220,6 +251,8 @@ export class Checkpoints {
     // carried, the API keeps from the checkpoint before (`keep`), so a checkpoint never carries
     // less than the last one.
     let session: Uint8Array | null = null;
+    /** The transcript could not be packed (not too large: it may well pack next time). */
+    let packFailed = false;
     if (sessionId && transcripts) {
       try {
         session = await transcripts.pack(sessionId);
@@ -227,6 +260,7 @@ export class Checkpoints {
         this.opts.log(`the session's transcript was left out of the checkpoint: ${said(err)}`);
         this.opts.event("checkpoint_session_skipped", { turn, reason: said(err) });
         if (err instanceof TranscriptTooLarge) this.tell("session", SESSION_UNSAVED);
+        else packFailed = true;
       }
     }
     let saved: SavedWork | null = null;
@@ -245,6 +279,21 @@ export class Checkpoints {
     // before is still the work.
     const keepWorkspace =
       !saved?.workspace && (!saved || !!saved.kept) && !!(known?.workspace || known?.wipCommit);
+    // What the transcript the API will keep holds. One packed now: what the mark says. One that
+    // failed to pack (tar refuses a file a turn is writing): the transcript kept from before, so
+    // what the last one sent held, never what was delivered since. One over the cap: nothing is
+    // said, and the API counts what was delivered, as before; that conversation is no longer
+    // saved, and saying less would keep its canvas off a new image for good.
+    let sent: number | undefined;
+    const heldThrough =
+      session && held
+        ? () => {
+            sent = held.read();
+            return sent;
+          }
+        : packFailed && held
+          ? () => this.heldSent
+          : undefined;
     // Before the call: once the API has it, this disk has everything it carries.
     this.write(this.markerPoint(), this.opts.boot(), turn);
     const point = await this.opts.api.saveCheckpoint({
@@ -256,11 +305,13 @@ export class Checkpoints {
       ...(keepSession || keepWorkspace
         ? { keep: { session: keepSession, workspace: keepWorkspace } }
         : {}),
+      ...(heldThrough ? { heldThrough } : {}),
     });
     this.known = point;
     this.turn = Math.max(turn, point.turn);
     // Another process saved a later one: this one was not recorded, so the disk is not at it.
     if (point.turn !== turn) return;
+    if (sent !== undefined) this.heldSent = sent;
     this.last = stamp;
     this.write(point, this.opts.boot());
     await this.opts.flush();
