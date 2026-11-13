@@ -231,7 +231,7 @@ export class BillingWall {
   private show(details: BillingRequired, dialog: WallDialog): void {
     this.snapshot = { open: true, dialog, details };
     this.deps.analytics.capture("billing dialog shown", { reason: reasonOf(dialog) });
-    if (dialog.kind !== "add_card") this.pollGate(details.workspaceId, dialog.kind);
+    if (dialog.kind !== "add_card") this.pollGate(details);
     this.emit();
   }
 
@@ -257,9 +257,12 @@ export class BillingWall {
    * paid (any gate but payment_failed), or the gate back to ok after a card or cap set by someone
    * else, which is the only way a member's held send ever runs.
    */
-  private pollGate(workspaceId: string, kind: Exclude<WallDialog["kind"], "add_card">): void {
+  private pollGate(details: BillingRequired): void {
     const clock = this.deps.scheduler ?? realScheduler;
-    const showing = () => this.snapshot.open && this.snapshot.dialog?.kind === kind;
+    const { workspaceId, reason: kind } = details;
+    // Bound to the refusal that opened the dialog: a poll still in flight when another refusal
+    // replaces it (even one of the same kind) acts on nothing.
+    const showing = () => this.snapshot.open && this.snapshot.details === details;
     const ask = async () => {
       this.cancelPaidPoll = null;
       try {

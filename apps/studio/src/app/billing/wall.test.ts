@@ -297,6 +297,26 @@ describe("a send at the wall", () => {
     }
   });
 
+  test("a poll in flight when another refusal replaces its dialog lifts nothing", async () => {
+    const w = world();
+    let answer: (value: unknown) => void = () => {};
+    (w.wall as unknown as { deps: { api: { usage: { get: unknown } } } }).deps.api.usage.get = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    w.wall.refused(refusal("free_used", { canManage: false }), w.held);
+    await w.clock.advance(PAID_POLL_MS);
+    let second = 0;
+    w.wall.refused(refusal("free_used", { canManage: false, workspaceId: "ws_2" }), {
+      kind: "message",
+      run: () => void second++,
+    });
+    answer({ billing: { gate: "ok" } });
+    await flush();
+    expect([w.runs(), second]).toEqual([0, 0]);
+    expect(w.wall.getSnapshot()).toMatchObject({ open: true, details: { workspaceId: "ws_2" } });
+  });
+
   test("a free-credits dialog is not lifted by another limit, only by ok", async () => {
     const w = world({ gates: ["cap_reached"] });
     w.wall.refused(refusal("free_used", { canManage: false }), w.held);
