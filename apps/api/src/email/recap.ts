@@ -1,0 +1,376 @@
+import {
+  DIGEST_DEFAULT_TIME_ZONE,
+  enqueueJob,
+  type Job,
+  notifyCanvasFacts,
+  type RecapMerge,
+  recapMerges,
+  recapPerson,
+  recapsDue,
+  stampQuietRecaps,
+  stampRecapSent,
+} from "@ponzu/db";
+import { type RecapCanvas, renderEmail } from "@ponzu/email";
+import { z } from "zod";
+import type { Deps } from "../deps/index.ts";
+import { type JobDeps, type RunningJob, runJob } from "../jobs/run.ts";
+import { canvasFactsOf } from "../notifications/facts.ts";
+import { canRead } from "../notifications/recipients.ts";
+import { emailPaused } from "./kinds.ts";
+import { canvasHref } from "./links.ts";
+import { sendEmail } from "./send.ts";
+
+/*
+ * The Friday recap (docs/cloud.md, "Email"): on Fridays from 15:00 where the person is, the pull
+ * requests merged that week from canvases they own, in weeks when there were any.
+ *
+ * Every five minutes the cron's `recaps` step first stamps, in one statement, everyone due whose
+ * week had no merge from a canvas they own (`stampQuietRecaps`): most people, most weeks. Then
+ * it records an `email.recap` job for each of up to `RECAP_BATCH` people who have something to
+ * be sent (`recapsDue`), keyed `recap:<user>:<Friday>`, and runs them one after another past the
+ * response, as the digest does. A Friday missed entirely is skipped, never caught up later.
+ *
+ * The job reads the week's merges (`recapMerges`), and keeps a canvas only while the person
+ * still owns it, is still a member of its workspace now, and could read it when it was last
+ * merged (`canRead` at that canvas's newest merge, not now: a kept access answer counts for a
+ * day, and the recap is for people who have not opened Ponzu since). It sends one email through
+ * `sendEmail` with Resend's key `recap/<user>/<Friday>` and stamps `recap_sent_on` (and, on the
+ * first real send, `recap_first_sent_at`, which drops the email's one-time introduction from
+ * every later one). With nothing left to say it only stamps.
+ *
+ * The email carries canvas names, workspace names and pull request numbers at most: never a
+ * pull request's title (the agent wrote it), a repository, or anything else a person wrote. In
+ * the counts-only form (`RECAP_FORM`) it carries no canvas name at all.
+ *
+ * With email off nothing is read, stamped or recorded. While `recap` is in PONZU_EMAIL_PAUSED the
+ * step does nothing, and a job recorded before stamps the Friday without sending.
+ */
+
+export const RECAP_JOB = "email.recap";
+
+/**
+ * How many recaps one run of the step sends. They go one after another, each within the mail
+ * seam's deadline, so a batch ends well inside a job's lock; at one run every five minutes that
+ * is 240 an hour, and the people with nothing merged never take a place in it.
+ */
+export const RECAP_BATCH = 20;
+
+/**
+ * What the recap shows, the founder's choice (the email plan's §1.6): "names" lists each canvas
+ * by name with its pull request numbers; "counts" says only how many canvases and pull requests
+ * ("Shipped this week: 2 canvases, 3 pull requests merged"), with no canvas or workspace name in
+ * the subject, preview or body. Counts until the founder says otherwise: names of canvases from
+ * private repositories would otherwise go to personal mailboxes by default.
+ */
+export const RECAP_FORM: "names" | "counts" = "counts";
+
+const RecapPayload = z.object({
+  userId: z.string().min(1).max(64),
+  /** The Friday it is for, in the person's zone: `YYYY-MM-DD`. */
+  friday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** The zone the week is computed in, as the step found it. */
+  timeZone: z.string().min(1).max(128),
+});
+
+/** The job's key. */
+export function recapJobKey(userId: string, friday: string): string {
+  return `recap:${userId}:${friday}`;
+}
+
+/** The email's idempotency key. */
+export function recapEmailKey(userId: string, friday: string): string {
+  return `recap/${userId}/${friday}`;
+}
+
+/** Whether a recap may be recorded now: email is on and `recap` is not paused. */
+export function recapEmailOn(deps: Pick<Deps, "mail" | "config">): boolean {
+  return deps.mail.enabled && !emailPaused(deps.config.email, "recap");
+}
+
+const HOUR_MS = 60 * 60_000;
+
+/**
+ * Whether it can be Friday 15:00 or later, and still Friday, anywhere at `now`: from 15:00 on
+ * Friday at UTC+14 (01:00 UTC on Friday) until midnight at UTC-12 (12:00 UTC on Saturday),
+ * with an hour's margin each side. Outside it nobody can be due, so the step asks the database
+ * nothing for the rest of the week.
+ */
+export function recapMayBeDue(now: Date): boolean {
+  const day = now.getUTCDay();
+  const fridayStart = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() - ((day + 2) % 7),
+  );
+  const since = now.getTime() - fridayStart;
+  return since < 37 * HOUR_MS;
+}
+
+/**
+ * The cron's step: stamp the quiet, then record and send the recaps of up to `RECAP_BATCH`
+ * people with a merge in their week. Nothing, not even a read, while email is off or `recap` is
+ * paused, or outside the hours when it can be Friday afternoon somewhere.
+ */
+export async function enqueueRecaps(
+  deps: JobDeps & Pick<Deps, "background">,
+  now: Date,
+): Promise<{ stamped: number; due: number; recorded: number }> {
+  if (!recapEmailOn(deps) || !recapMayBeDue(now)) return { stamped: 0, due: 0, recorded: 0 };
+  const stamped = await stampQuietRecaps(deps.db, { now });
+  const due = await recapsDue(deps.db, {
+    now,
+    limit: RECAP_BATCH,
+    job: { kind: RECAP_JOB, keyPrefix: "recap" },
+  });
+  const worker = `${RECAP_JOB}:${crypto.randomUUID()}`;
+  const held: Job[] = [];
+  for (const { userId, friday, timeZone } of due) {
+    const job = await enqueueJob(deps.db, {
+      kind: RECAP_JOB,
+      key: recapJobKey(userId, friday),
+      payload: { userId, friday, timeZone },
+      runAt: now,
+      lockedBy: worker,
+    });
+    if (job) held.push(job);
+  }
+  if (held.length > 0) {
+    deps.background(
+      RECAP_JOB,
+      (async () => {
+        for (const job of held) await runJob(deps, job, worker);
+      })(),
+    );
+  }
+  return { stamped, due: due.length, recorded: held.length };
+}
+
+/** A canvas's merges in the week, newest merge first. */
+interface CanvasWeek {
+  canvasId: string;
+  name: string;
+  workspaceName: string;
+  /** Its pull request numbers, in merge order, each once. */
+  numbers: number[];
+  newest: Date;
+}
+
+/** The week's merges by canvas: newest merge first, each canvas's numbers in merge order. */
+export function groupMerges(merges: readonly RecapMerge[]): CanvasWeek[] {
+  const byCanvas = new Map<string, CanvasWeek>();
+  const oldestFirst = [...merges].sort((a, b) => a.mergedAt.getTime() - b.mergedAt.getTime());
+  for (const merge of oldestFirst) {
+    const week = byCanvas.get(merge.canvasId) ?? {
+      canvasId: merge.canvasId,
+      name: merge.canvasName,
+      workspaceName: merge.workspaceName,
+      numbers: [],
+      newest: merge.mergedAt,
+    };
+    if (!week.numbers.includes(merge.number)) week.numbers.push(merge.number);
+    if (merge.mergedAt > week.newest) week.newest = merge.mergedAt;
+    byCanvas.set(merge.canvasId, week);
+  }
+  return [...byCanvas.values()].sort(
+    (a, b) => b.newest.getTime() - a.newest.getTime() || a.canvasId.localeCompare(b.canvasId),
+  );
+}
+
+/** A zone Intl can format in: the one given, or the default when Intl does not know it. */
+function intlZone(timeZone: string): string {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return timeZone;
+  } catch {
+    return DIGEST_DEFAULT_TIME_ZONE;
+  }
+}
+
+/** "Tuesday": the weekday of `at` in `timeZone`. */
+export function weekdayIn(at: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: intlZone(timeZone) }).format(
+    at,
+  );
+}
+
+/**
+ * The instant of `hour`:00 on the day after the local date `YYYY-MM-DD`, in `timeZone`. Used for
+ * Saturday 12:00, the last moment a recap job may still send for that Friday.
+ */
+export function nextDayAt(date: string, hour: number, timeZone: string): Date {
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const wanted = Date.UTC(year, month - 1, day + 1, hour);
+  const format = new Intl.DateTimeFormat("en-US", {
+    timeZone: intlZone(timeZone),
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  });
+  const offset = (at: number) => {
+    const parts = Object.fromEntries(
+      format.formatToParts(at).map((part) => [part.type, Number(part.value)]),
+    );
+    const local = Date.UTC(
+      parts.year!,
+      parts.month! - 1,
+      parts.day!,
+      parts.hour!,
+      parts.minute!,
+      parts.second!,
+    );
+    return local - (at - (at % 1000));
+  };
+  // Twice, so a daylight-saving change between the guess and the answer is followed.
+  let at = wanted - offset(wanted);
+  at = wanted - offset(at);
+  return new Date(at);
+}
+
+/**
+ * A recap is sent first on its Friday at or after 15:00 local, so by Saturday 12:00 local, 21
+ * hours later, every retry still falls inside Resend's 24-hour idempotency window. After that a
+ * retry could send a second copy of one Resend took before the job lost its answer.
+ */
+const RECAP_LAST_SEND_HOUR = 12;
+
+/** "Friday, November 13", from the local date `YYYY-MM-DD`. */
+export function recapDateLine(friday: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${friday}T12:00:00Z`));
+}
+
+/**
+ * The canvases the person may still be told about: they own it now, they are a member of its
+ * workspace now, and they could read it when it was last merged.
+ */
+async function readableWeeks(
+  deps: Pick<JobDeps, "db">,
+  userId: string,
+  weeks: readonly CanvasWeek[],
+): Promise<CanvasWeek[]> {
+  const kept: CanvasWeek[] = [];
+  for (const week of weeks) {
+    const facts = await notifyCanvasFacts(deps.db, { canvasId: week.canvasId });
+    if (!facts || facts.ownerId !== userId) continue;
+    if (!facts.people.some((person) => person.userId === userId)) continue;
+    if (!canRead(canvasFactsOf(facts), userId, week.newest)) continue;
+    kept.push(week);
+  }
+  return kept;
+}
+
+/** The `email.recap` job: one person's recap for one Friday. */
+export async function runRecapJob(
+  deps: JobDeps,
+  payload: unknown,
+  running: RunningJob,
+): Promise<void> {
+  const { db, log, clock } = deps;
+  const { userId, friday, timeZone } = RecapPayload.parse(payload);
+  const job = recapJobKey(userId, friday);
+  if (!deps.mail.enabled) {
+    log.info("recap_skipped", { userId, reason: "mail_off" });
+    return;
+  }
+  const person = await recapPerson(db, userId);
+  // A deleted account: nothing to send, nobody to stamp.
+  if (!person) return;
+  if (person.recapSentOn !== null && person.recapSentOn >= friday) return;
+  const now = () => new Date(clock.now());
+  if (emailPaused(deps.config.email, "recap")) {
+    // Paused means dropped: this Friday is skipped.
+    log.info("email_paused", { kind: "recap", job });
+    await stampRecapSent(db, { userId, friday, sent: false, now: now() });
+    return;
+  }
+  if (now() >= nextDayAt(friday, RECAP_LAST_SEND_HOUR, timeZone)) {
+    // Too late to send safely: Resend may no longer know this key, so a recap it already took
+    // would go twice. This Friday is given up, as a missed one is.
+    await stampRecapSent(db, { userId, friday, sent: false, now: now() });
+    log.warn("recap_given_up", { userId, attempts: running.attempts, reason: "too_late" });
+    return;
+  }
+
+  try {
+    await sendRecap(deps, { userId, friday, timeZone, first: person.recapFirstSentAt === null });
+  } catch (error) {
+    // The last attempt failed (Resend held off every time, or something threw): this Friday is
+    // given up, as a missed one is. Without the stamp the step, which leaves only a waiting job
+    // alone, would record a new one every five minutes until the person's Friday ends.
+    if (running.attempts >= running.maxAttempts) {
+      await stampRecapSent(db, { userId, friday, sent: false, now: now() });
+      log.warn("recap_given_up", { userId, attempts: running.attempts });
+    }
+    throw error;
+  }
+}
+
+/** Read the week, keep what the person may still be told about, and send it or stamp it. */
+async function sendRecap(
+  deps: JobDeps,
+  {
+    userId,
+    friday,
+    timeZone,
+    first,
+  }: { userId: string; friday: string; timeZone: string; first: boolean },
+): Promise<void> {
+  const { db, log, clock } = deps;
+  const now = () => new Date(clock.now());
+  const weeks = await readableWeeks(
+    deps,
+    userId,
+    groupMerges(await recapMerges(db, { userId, friday, timeZone })),
+  );
+  if (weeks.length === 0) {
+    await stampRecapSent(db, { userId, friday, sent: false, now: now() });
+    log.info("recap_empty", { userId });
+    return;
+  }
+
+  const canvases: RecapCanvas[] = weeks.map((week) => ({
+    name: week.name,
+    href: canvasHref(deps.config.build.environment, week.canvasId, { open: "pull-request" }),
+    workspaceName: week.workspaceName,
+    numbers: week.numbers,
+    weekday: weekdayIn(week.newest, timeZone),
+  }));
+  // `first` was read before the send and is not changed by it, so a retry renders the same email.
+  // The one door (send.ts): it reads the address and switch now, and throws RetryLater when
+  // Resend could not take the email, so the job goes again with the same key.
+  const outcome = await sendEmail(deps, {
+    kind: "recap",
+    userId,
+    key: recapEmailKey(userId, friday),
+    render: ({ unsubscribeUrl }) =>
+      renderEmail("recap", {
+        date: recapDateLine(friday),
+        canvases,
+        first,
+        countsOnly: RECAP_FORM === "counts",
+        unsubscribeUrl: unsubscribeUrl!,
+      }),
+  });
+  if (outcome === "off") return;
+  // Sent, or done with for good (refused, held, paused, turned off since): this Friday is done.
+  await stampRecapSent(db, {
+    userId,
+    friday,
+    sent: outcome === "sent" || outcome === "duplicate",
+    now: now(),
+  });
+  log.info("recap_done", {
+    userId,
+    outcome,
+    canvases: canvases.length,
+    pullRequests: canvases.reduce((sum, canvas) => sum + canvas.numbers.length, 0),
+  });
+}

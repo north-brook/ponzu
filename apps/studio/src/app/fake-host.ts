@@ -137,6 +137,8 @@ export function fakeHost(opts: { shell?: PonzuDesktop } = {}): Host {
   } else {
     backend.latencyMs = latency;
   }
+  // `email=1`: an API that can send email (RESEND_API_KEY set), so Settings has its Email group.
+  if (params.get("email") === "1") backend.features = { ...backend.features, email: true };
   const as = params.get("as");
   const stage = ["where", "claude", "iphone", "returning"].indexOf(as ?? "");
   if (stage >= 1) {

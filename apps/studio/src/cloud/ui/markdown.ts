@@ -18,15 +18,17 @@ import { gfmStrikethroughFromMarkdown } from "mdast-util-gfm-strikethrough";
 import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
 import { gfmTaskListItemFromMarkdown } from "mdast-util-gfm-task-list-item";
 import { gfmAutolinkLiteral } from "micromark-extension-gfm-autolink-literal";
-import { gfmStrikethrough } from "micromark-extension-gfm-strikethrough";
 import { gfmTable } from "micromark-extension-gfm-table";
 import { gfmTaskListItem } from "micromark-extension-gfm-task-list-item";
+import { linearEmphasis } from "./emphasis.ts";
 
 /**
  * GitHub's flavour without its footnotes: remark-gfm is these four extensions and footnotes,
  * assembled the same way. Footnotes go because their parser slows with the square of the `]`s in
  * a block (32 KB of `a]` took 0.8 s against 10 ms without them) and because GitHub draws them
- * with in-page links, which `safeHref` drops; `[^1]` reads as written instead.
+ * with in-page links, which `safeHref` drops; `[^1]` reads as written instead. Strikethrough, and
+ * emphasis with it, is emphasis.ts's: the same marks paired the same way, in time that grows with
+ * the text rather than its square.
  */
 export function remarkGfm(this: { data(): object }) {
   const data = this.data() as Record<string, unknown[] | undefined>;
@@ -34,12 +36,7 @@ export function remarkGfm(this: { data(): object }) {
     data[key] ??= [];
     data[key].push(extension);
   };
-  for (const extension of [
-    gfmAutolinkLiteral(),
-    gfmStrikethrough(),
-    gfmTable(),
-    gfmTaskListItem(),
-  ]) {
+  for (const extension of [gfmAutolinkLiteral(), linearEmphasis, gfmTable(), gfmTaskListItem()]) {
     add("micromarkExtensions", extension);
   }
   for (const extension of [

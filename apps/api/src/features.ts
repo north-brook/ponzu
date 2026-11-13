@@ -15,7 +15,7 @@ export interface Features {
   billing: (typeof BILLING_MODES)[number];
   /** Whether `EXPO_ACCESS_TOKEN` is set: pings to phones. */
   push: boolean;
-  /** Whether `RESEND_API_KEY` is set: the email digest. */
+  /** Whether `RESEND_API_KEY` is set: Resend is set, so Ponzu's emails (docs/cloud.md, "Email"). */
   email: boolean;
   /** `PONZU_REPO_BASES=1`: repo bases are built and woken from. */
   repoBases: boolean;

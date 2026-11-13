@@ -440,6 +440,41 @@ Replay is `private` and AI content is off unless the founder chooses otherwise (
 A workspace "Ponzu production" with a monthly spend limit, and a key used only as
 `PONZU_ANTHROPIC_API_KEY` for ideas and their gate.
 
+### Email (Resend)
+
+Off until the founder's email steps (docs/cloud.md, "Email"). When production has a key:
+
+- `mail.ponzu.design` verified at Resend (SPF and DKIM), and `_dmarc.ponzu.design` published.
+- `RESEND_API_KEY` a sending-only key restricted to that domain, stored as sensitive; dev has its
+  own key.
+- `PONZU_EMAIL_FROM` (or its default, `Ponzu <ping@mail.ponzu.design>`) and
+  `PONZU_EMAIL_REPLY_TO` set.
+- `PONZU_EMAIL_ALLOW` absent on the Production target: the check fails `vercel.env.email_allow`
+  when it is there, and the API logs `email_env_problem` at boot.
+- `PONZU_EMAIL_PAUSED` set to `digest,billing,team,recap` in the same change as the key, then
+  emptied one kind at a time. `billing` never in it while `PONZU_BILLING=on`: the API logs
+  `email_env_problem` at boot when it is, and the check marks `vercel.env.email_paused` for a
+  person to confirm, since it reads names, not values.
+- The site's `/settings` page and `/email/` assets live on ponzu.design before any kind is
+  released.
+- Just before `team` is first removed from `PONZU_EMAIL_PAUSED`, run
+  `DATABASE_URL=… bun apps/api/scripts/email-stamp-members.ts` against production's database
+  once, so only people who join from then on are announced. It only moves each workspace's
+  window start later, so running it twice is harmless.
+- Legal notices are the founder's to send, from a machine with production's `DATABASE_URL`,
+  `RESEND_API_KEY` and `PONZU_EMAIL_REPLY_TO`, and `PONZU_ENVIRONMENT=production`:
+  `bun apps/api/scripts/notice.ts --notice <id> --dry-run`, read the counts and the rendered
+  email, then `--send`. It records each person in `email_notices` and never sends anyone a
+  notice twice, so it can be run again after any stop. Off production it refuses to send
+  without `PONZU_EMAIL_ALLOW`, because everyone else would be recorded `held` for good. Exit 1
+  lists the ids of records still `pending` after a day, which the script never sends again:
+  look up each person's address in Resend's emails, which it keeps 30 days (its dashboard
+  finds an email by recipient; finding one by idempotency key is not something we have seen it
+  do). If it went, set that row's `outcome` to `sent` by
+  hand; if it did not, delete the row and run the script again.
+- The billing-starts notice (`billing-starts`, with its day written in a reviewed pull request)
+  goes at least 30 days before `PONZU_BILLING=on` in production; the script refuses it sooner.
+
 ### The GitHub repository
 
 - `main` keeps its ruleset exactly as it is: `infra/github/ruleset-main.json` is a copy of it,

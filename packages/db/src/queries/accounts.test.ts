@@ -346,6 +346,19 @@ describe("memberships", () => {
     expect(synced.syncedAt.getTime()).toBeGreaterThan(0);
   });
 
+  test("upsertMembership says it made the row only when the person joined just now", async () => {
+    const [user, workspace] = await Promise.all([seedUser(db), seedWorkspace(db)]);
+    const key = { workspaceId: workspace.id, userId: user.id };
+    expect((await upsertMembership(db, { ...key, role: "member" })).created).toBe(true);
+    expect((await upsertMembership(db, { ...key, role: "member" })).created).toBe(false);
+    const owner = await upsertMembership(db, { ...key, role: "member", githubAccess: "owner" });
+    expect(owner).toMatchObject({ created: false, role: "admin" });
+
+    // Gone and back again: a new row, so a new join.
+    await db.delete(memberships).where(eq(memberships.userId, user.id));
+    expect((await upsertMembership(db, { ...key, role: "member" })).created).toBe(true);
+  });
+
   test("an owner of the account is made an admin whatever their role was", async () => {
     const [user, workspace] = await Promise.all([seedUser(db), seedWorkspace(db)]);
     const key = { workspaceId: workspace.id, userId: user.id };
