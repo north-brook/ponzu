@@ -60,7 +60,6 @@ import {
   useKeyHeld,
   useModifierHint,
   useSource,
-  useZoomPercent,
 } from "./useCanvas.ts";
 import { Juice, useDelayed, useLingering } from "./working.tsx";
 
@@ -2766,9 +2765,24 @@ function ringBox(r: { x: number; y: number; w: number; h: number }) {
   };
 }
 
-/** The zoom label, the only text that changes with the camera; it renders on its own. */
+/**
+ * The zoom label, the only text that changes with the camera. Written as the camera moves,
+ * like the boards' transform (useCameraLayers), not rendered: through React, every frame of a
+ * zoom was a commit of its own.
+ */
 function ZoomPercent({ camera }: { camera: CameraStore }) {
-  return <>{useZoomPercent(camera)}%</>;
+  const label = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = label.current;
+    if (!el) return;
+    const show = (c: { zoom: number }) => {
+      const text = `${Math.round(c.zoom * 100)}%`;
+      if (el.textContent !== text) el.textContent = text;
+    };
+    show(camera.get());
+    return camera.subscribe(show);
+  }, [camera]);
+  return <span ref={label} />;
 }
 
 /** A node's box in its artboard's px, and which artboard it was found in. */
