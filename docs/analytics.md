@@ -101,6 +101,8 @@ Every event about a workspace also carries `workspace_id`.
 | `canvas file links reset` | `canvas_id`, `by_owner` | The owner or an admin reset the canvas's file links from Share: its files moved under a new asset key, and links to the old one stop working. |
 | `canvas settled` / `canvas reopened` | `canvas_id` | |
 | `canvas taken over` | `canvas_id`, `woke` | A teammate took over a canvas whose owner left the workspace or deleted their account; it runs on their Claude from then on. `woke`: its feed held work no runner took, so it was woken. About the person who took it. |
+| `agent connected` | | The person allowed an agent of theirs to use Ponzu through its MCP, in the app. |
+| `agent disconnected` | | The person disconnected one of their agents in Settings › Agents. |
 | `message sent` | `canvas_id`, `first`, `characters`, `attachments` | `first`: the message a canvas began with, sent by its create. |
 | `comment posted` | `canvas_id`, `reply` | A person's comment on the canvas, or a reply in one of its threads. |
 | `turn stopped` | `canvas_id` | A person asked the agent to stop. |

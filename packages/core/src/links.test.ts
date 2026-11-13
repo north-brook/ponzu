@@ -253,3 +253,18 @@ describe("appLink writes only what parses back", () => {
     expect(() => appLink({ kind: "settings" }, "ponzu-preview" as "ponzu")).toThrow();
   });
 });
+
+describe("an agent's ask to connect", () => {
+  test("names its request, and comes back the same", () => {
+    const link: AppLink = { kind: "agent_connect", requestId: "aga_0123456789abcdef" };
+    const written = appLink(link, "ponzu");
+    expect(written).toBe("ponzu://agents/connect?request=aga_0123456789abcdef");
+    expect(parseAppLink(written, "ponzu")).toEqual(link);
+  });
+
+  test("without a request, or with one that isn't an id, it is no link", () => {
+    expect(parseAppLink("ponzu://agents/connect", "ponzu")).toBeNull();
+    expect(parseAppLink("ponzu://agents/connect?request=a%2Fb", "ponzu")).toBeNull();
+    expect(parseAppLink("ponzu://agents/connect?request=a&request=b", "ponzu")).toBeNull();
+  });
+});

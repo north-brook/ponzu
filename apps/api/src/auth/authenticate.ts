@@ -1,4 +1,4 @@
-import { getSessionUser, verifyRunnerToken } from "@ponzu/db";
+import { getSessionUser, touchAgentGrant, verifyAgentToken, verifyRunnerToken } from "@ponzu/db";
 import { errors, jwtVerify } from "jose";
 import type { Deps } from "../deps/index.ts";
 import { ApiError, UpstreamError } from "../http/errors.ts";
@@ -48,6 +48,28 @@ export async function authenticateUser(
 }
 
 const RUNNER_TOKEN_PREFIX = "pzr_";
+
+/**
+ * The person a token of their own agent acts for (an MCP access token, `pza_…`), or a 401 that
+ * says why not. The grant must not be revoked and the person must still be one: the same
+ * person, with the same access, their own routes would see. `client` is what the agent said it
+ * is in this request, noted on the grant for settings to show.
+ */
+export async function authenticateAgent(
+  deps: Pick<Deps, "db">,
+  token: string,
+  client: string | null,
+): Promise<UserActor> {
+  const found = await verifyAgentToken(deps.db, token);
+  if (!found) throw new ApiError(401, "token_invalid", "This agent's token is not valid.");
+  await touchAgentGrant(deps.db, { grantId: found.grant.id, client });
+  return {
+    kind: "user",
+    user: found.user,
+    sessionId: `agent:${found.grant.id}`,
+    agent: { grantId: found.grant.id, name: found.grant.name, client },
+  };
+}
 
 /** Whether a bearer is a runner token by its look, which says which of the two checks it gets. */
 export function isRunnerToken(token: string): boolean {

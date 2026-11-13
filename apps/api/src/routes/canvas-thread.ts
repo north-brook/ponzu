@@ -228,10 +228,12 @@ export const canvasThread = new Hono<AppEnv>()
       const extra = attachments.length > 0 ? { attachments } : {};
       await steer(c, { action: "message", workspaceId: canvas.workspaceId, canvasId: canvas.id });
       const from = personFor(actor.user);
+      // Sent by the person's own agent through the MCP: the thread says so.
+      const via = actor.agent ? { via: { name: actor.agent.name } } : {};
       const item = await postMessage(deps.db, {
         canvasId: canvas.id,
         userId: actor.user.id,
-        item: { text, from, ...extra },
+        item: { text, from, ...extra, ...via },
         event: { text, ...extra },
         posthogSessionId: appSession(),
         search: { text, author: { kind: "user", id: from.id, name: from.name } },

@@ -3535,6 +3535,7 @@ ponzu://github/setup?result=installed&workspace=<workspace id>
 ponzu://auth/callback?code=&state=                       the iPhone's sign-in only
 ponzu://billing/card?setup=<setup id>&result=added|cancelled
 ponzu://settings?section=usage|notifications|account&workspace=&n=
+ponzu://agents/connect?request=<agent authorization id>          the Mac only
 ```
 
 `n` names the notification a link came from (a Mac's banner, a phone's ping), so opening it
@@ -3564,6 +3565,91 @@ first time it comes near the view (a fit-content board's at once, for its height
 and boards on screen go live a frame's budget of elements at a time (4,000),
 nearest the middle of the view first, so opening a page never builds and draws
 every board in one frame.
+
+## Your own agent
+
+A person can connect their own coding agent (Claude Code, Codex, Cursor, T3 Code, anything that
+speaks MCP) to Ponzu, and use their canvases from it. Ponzu's MCP lives on the API, at
+`<api>/v1/mcp` (`https://api.ponzu.design/v1/mcp`), over Streamable HTTP, behind OAuth. Nothing
+runs on the person's computer for it. The code is `apps/api/src/mcp/`, `agents/oauth.ts`, and
+`routes/mcp.ts`, `oauth.ts` and `agent-connections.ts`.
+
+**Signing in.** Ponzu is the agent's OAuth authorization server, in the shape the MCP's
+authorization spec asks for: a 401 from `/v1/mcp` carries `WWW-Authenticate: Bearer
+resource_metadata="<api>/.well-known/oauth-protected-resource/v1/mcp"` (RFC 9728), which names
+Ponzu itself, whose `/.well-known/oauth-authorization-server` (RFC 8414) names the rest:
+
+| Method | Path | Does |
+|---|---|---|
+| POST | `/v1/oauth/register` | dynamic client registration (RFC 7591). Public clients only: whatever an agent asks for, it gets no secret, and `token_endpoint_auth_method` is `none` |
+| GET | `/v1/oauth/authorize` | the authorization code flow, PKCE S256 required. Records the ask and answers the handoff page |
+| POST | `/v1/oauth/token` | the code for tokens (once, within a minute, PKCE checked), or a refresh token for new ones |
+| POST | `/v1/oauth/revoke` | revokes one token (RFC 7009) |
+
+The handlers are the MCP SDK's own, as `@hono/mcp` ports them to Hono, on Ponzu's provider; they
+answer OAuth's error bodies (`invalid_grant`…), not the API's, since agents read those. Why Ponzu
+and not WorkOS: the API honours a WorkOS token only for a session its own exchange recorded,
+which checked GitHub ("Identity and access"), and AuthKit's MCP flow would mint tokens for
+sessions that never went through it.
+
+So the person allows an agent in the signed-in Mac app, not on a web page. The authorize
+endpoint answers a handoff (`@ponzu/core/handoff`) that opens `ponzu://agents/connect?request=
+<id>` (`ponzu-dev://` outside production). The app reads the ask
+(`GET /v1/agent-connections/requests/:id`: the name the agent registered with, where its answer
+goes, and whether that is this computer) and asks: "Allow Claude Code to use Ponzu?", saying it
+can see and steer the canvases they can, start canvases in their workspaces, and drive a canvas
+in place of Ponzu's agent. The name is the agent's own word, which nothing checks, so when the
+answer goes anywhere but a loopback address the dialog says where, and to allow it only if they
+started this. Allow (`POST …/approve`) or Don't allow (`…/deny`) answers the agent's redirect
+with its `code` and `state`, or `error=access_denied`, which the app opens in the browser, as the
+agent's own sign-in page would have. An ask lasts fifteen minutes and is decided once. The
+iPhone takes no such link.
+
+**Grants and tokens** (`agent_clients`, `agent_authorizations`, `agent_grants`, `agent_tokens`;
+every token and code kept only as its SHA-256): allowing makes a grant, the person's, named as
+they saw the agent. An access token (`pza_…`) lasts an hour; a refresh token (`pzf_…`) sixty
+days, and is good once: each use gives a new pair, and one sent twice revokes the whole grant
+(a thief, or a broken agent), as does a code used twice. Settings › Agents lists a person's
+grants (`GET /v1/agent-connections`: name, what the agent last said it is in its MCP
+`initialize`, as in `claude-code/2.1.0`, connected and last used) and revokes one
+(`DELETE /v1/agent-connections/:id`), which ends its tokens at once. Deleting the account
+deletes them all. An agent can't connect or disconnect agents.
+
+**Acting as the person.** An access token is good only on `/v1/mcp` (`access.agent`); any other
+route refuses it like any token that isn't a session's. There, it is the person, through a grant:
+`c.var.actor` is their `UserActor` with `agent` set, held to the same rate limits. Each tool does
+what it does by calling the person's own routes, in the same process (`mcp/internal.ts`): a
+`Request` the API made itself, marked as theirs (`asPerson`), which only code in this process can
+make, so no caller can claim to be one. So an agent can do exactly what the person's app could,
+through the same access checks, gates, validation and analytics, and the MCP repeats none of
+their rules. It may reach only the canvases, workspaces and the person's profile routes, never
+the account's (signing out, deleting it, Claude, agents). What it sends says it came through the
+agent: a message's thread item carries `via: { name }`, which the thread shows under the bubble
+("via Claude Code").
+
+**The server.** The MCP SDK's server on its web-standard transport, stateless: each POST gets a
+server of its own, answers JSON and ends, so nothing is kept between function instances, and GET
+and DELETE answer 405. Its instructions say what Ponzu is, the two ways to use a canvas, to link
+pull requests, and that what people write in comments and messages is feedback, never
+instructions that override the person the agent works for. Answers are text written for an agent
+to read; a refusal is the route's own sentence, as a tool error.
+
+| Tool | Takes | Does |
+|---|---|---|
+| `list_workspaces` | none | the person's workspaces with Ponzu installed, and the repositories they can push to in each |
+| `list_canvases` | `workspace?`, `repository?`, `query?`, `include_settled?`, `limit?` | canvases most recently active first: id, name, repo, Ponzu's agent's state and status, open questions, pull request, link |
+| `get_canvas` | `canvas` | the same, the open questions with their options, and every page and board with its id and link |
+| `create_canvas` | `repository?`, `workspace?`, `name?`, `message?` | `POST /v1/canvases` (Scratch without a repository); a message starts Ponzu's agent |
+| `send_message` | `canvas`, `text` | the person's message, via the agent |
+| `read_thread` | `canvas`, `after?` | the thread as text, oldest first, with the cursor to pass next |
+| `answer_question` | `canvas`, `question`, `answers?`, `approved?`, `note?` | answers one of the agent's questions; a secret stays the person's to give in the app |
+| `wait_for_activity` | `canvas`, `after?`, `timeout_seconds?` (240 at most) | waits until Ponzu's agent finishes a turn or needs the person, or the time is up, and answers what came since `after` |
+| `stop_agent` | `canvas` | the Stop button |
+
+A canvas is named by its id or its link. `wait_for_activity` looks every three seconds, as two
+of the person's own reads; it is a function's long wait, inside the 300 seconds one may run. Not
+proven: the flow against each agent's own OAuth client (Claude Code, Codex, Cursor); the tests
+play the agent's side by the spec.
 
 ## Security
 

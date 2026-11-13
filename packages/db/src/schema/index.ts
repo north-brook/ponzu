@@ -1,5 +1,6 @@
 export * from "../enums.ts";
 export * from "./accounts.ts";
+export * from "./agents.ts";
 export * from "./billing.ts";
 export * from "./canvases.ts";
 export type { Json } from "./columns.ts";

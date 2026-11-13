@@ -18,6 +18,7 @@ export const CLAUDE_ACCOUNT_STATUSES = ["connected", "expired", "revoked"] as co
 export const DEVICE_PLATFORMS = ["ios", "macos"] as const;
 export const PUSH_ENVIRONMENTS = ["development", "production"] as const;
 export const AUTH_STATE_KINDS = ["github_install", "claude_sign_in"] as const;
+export const AGENT_TOKEN_KINDS = ["access", "refresh"] as const;
 
 export const CANVAS_STATUSES = ["active", "settled"] as const;
 export const AGENT_STATES = ["idle", "waking", "working", "needs_you", "limited"] as const;
@@ -192,6 +193,7 @@ export type AgentState = (typeof AGENT_STATES)[number];
 export type PrState = (typeof PR_STATES)[number];
 export type PrChecks = (typeof PR_CHECKS)[number];
 export type OpKind = (typeof OP_KINDS)[number];
+export type AgentTokenKind = (typeof AGENT_TOKEN_KINDS)[number];
 export type ActorKind = (typeof ACTOR_KINDS)[number];
 export type ThreadItemKind = (typeof THREAD_ITEM_KINDS)[number];
 export type EventKind = (typeof EVENT_KINDS)[number];

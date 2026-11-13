@@ -130,6 +130,7 @@ export function toThreadItem(item: RunnerItem, ctx: ThreadContext): ThreadItem {
           text: item.payload.text,
           from: personOf(item.payload.from, ctx.people),
           attachments: attachmentsOf(item.payload, ctx.assetsUrl),
+          ...(typeof item.payload.via?.name === "string" ? { via: item.payload.via.name } : {}),
         },
       };
     case "comment": {

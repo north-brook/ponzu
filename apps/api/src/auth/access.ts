@@ -6,7 +6,12 @@ import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { limitCaller } from "../http/rate-limits.ts";
 import type { Actor, LeasedRunner, RunnerActor, UserActor } from "./actor.ts";
-import { authenticateRunner, authenticateUser, isRunnerToken } from "./authenticate.ts";
+import {
+  authenticateAgent,
+  authenticateRunner,
+  authenticateUser,
+  isRunnerToken,
+} from "./authenticate.ts";
 
 /*
  * Who may call a route. Every route names one of these as its first handler:
@@ -33,6 +38,19 @@ function declare<Handler extends MiddlewareHandler<any>>(
   return handler;
 }
 
+/**
+ * Requests the API makes to itself on a person's behalf (the MCP, `mcp/internal.ts`), with the
+ * person they are for. Only code in this process can put a request here (a `Request` object
+ * made here), so nothing a caller sends can claim to be one.
+ */
+const onBehalf = new WeakMap<Request, UserActor>();
+
+/** Mark a request this process made as the person's: `access.user` takes it as theirs. */
+export function asPerson(request: Request, actor: UserActor): Request {
+  onBehalf.set(request, actor);
+  return request;
+}
+
 /** The bearer token, or a 401 that says there is none. */
 function bearer(c: Context): string {
   const [scheme, token, ...rest] = (c.req.header("authorization") ?? "").split(" ");
@@ -55,7 +73,7 @@ export const access = {
    * (`http/rate-limits.ts`), so a route cannot forget to be counted.
    */
   user: declare<Declaration<UserActor>>("authenticated", async (c, next) => {
-    const actor = await authenticateUser(c.var.deps, bearer(c));
+    const actor = onBehalf.get(c.req.raw) ?? (await authenticateUser(c.var.deps, bearer(c)));
     c.set("actor", actor);
     await limitCaller(c, actor);
     return next();
@@ -75,6 +93,27 @@ export const access = {
     return next();
   }),
 
+  /**
+   * A person's own agent through Ponzu's MCP: an MCP access token (`pza_…`) as the bearer. The
+   * handler reads the person from `c.var.actor`, with `agent` set. Only the MCP's own route
+   * takes it; everything else it does goes through the person's routes, as them (`asPerson`).
+   * A 401 says where to sign in (`WWW-Authenticate`), which is how an agent finds Ponzu's OAuth.
+   */
+  agent: declare<Declaration<UserActor>>("authenticated", async (c, next) => {
+    try {
+      const actor = await authenticateAgent(c.var.deps, bearer(c), null);
+      c.set("actor", actor);
+      await limitCaller(c, actor);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        const metadata = new URL("/.well-known/oauth-protected-resource/v1/mcp", c.req.url);
+        c.header("www-authenticate", `Bearer resource_metadata="${metadata}"`);
+      }
+      throw error;
+    }
+    return next();
+  }),
+
   /** A runner starting, on the one route that takes the lease: no `X-Ponzu-Runner` yet. */
   runnerStarting: declare<Declaration<RunnerActor>>("authenticated", async (c, next) => {
     const actor = await authenticateRunner(c.var.deps, bearer(c), { taking: true });
@@ -88,8 +127,14 @@ export const access = {
    * posted by people and by its runner). The handler tells them apart by `c.var.actor.kind`.
    */
   userOrRunner: declare<Declaration<Actor>>("authenticated", async (c, next) => {
-    const token = bearer(c);
     const { deps } = c.var;
+    const delegated = onBehalf.get(c.req.raw);
+    if (delegated) {
+      c.set("actor", delegated);
+      await limitCaller(c, delegated);
+      return next();
+    }
+    const token = bearer(c);
     const actor = isRunnerToken(token)
       ? await authenticateRunner(deps, token, { runnerId: c.req.header(RUNNER_HEADER) })
       : await authenticateUser(deps, token);

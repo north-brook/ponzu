@@ -214,6 +214,25 @@ export class FakeBackend {
   readonly repoIdeas = new Map<string, RepoIdeasAnswer[]>();
   /** Each person's own Claude: connecting it, and what their canvases start on. */
   readonly claude: FakeClaude;
+  /**
+   * People's own agents (docs/cloud.md, "Your own agent"): asks waiting in the app
+   * (`askToConnect`), and the agents each person allowed.
+   */
+  readonly agentAsks = new Map<
+    string,
+    { name: string | null; redirectUri: string; expiresAt: string }
+  >();
+  readonly agentGrants = new Map<
+    string,
+    {
+      id: string;
+      userId: string;
+      name: string;
+      client: string | null;
+      createdAt: string;
+      lastUsedAt: string | null;
+    }
+  >();
   /** When each person finished the guided setup steps that leave no other trace. */
   readonly onboarding = new Map<string, { whereAt: string | null; iphoneAt: string | null }>();
   /** Canvases by the person's create key: a create sent again makes nothing new. */
@@ -244,6 +263,17 @@ export class FakeBackend {
     this.realtime = new FakeRealtime((query) => this.rows(query), clock);
     this.claude = new FakeClaude(clock);
     this.settings = new FakeSettings(clock);
+  }
+
+  /**
+   * An agent asks to be allowed, as its OAuth sign-in would: answers the id its
+   * `agents/connect` link names.
+   */
+  askToConnect(name: string | null, redirectUri = "http://127.0.0.1:53123/callback"): string {
+    const id = `aga_${String(++this.ids).padStart(16, "0")}`;
+    const expiresAt = new Date(this.clock.now() + 15 * 60_000).toISOString();
+    this.agentAsks.set(id, { name, redirectUri, expiresAt });
+    return id;
   }
 
   addPerson(input: { login: string; name?: string | null }): FakePerson {
@@ -695,6 +725,66 @@ export class FakeBackend {
           return onboarding();
         }),
       claude: claudeApi,
+      agents: {
+        list: () =>
+          call(() =>
+            [...this.agentGrants.values()]
+              .filter((grant) => grant.userId === person.id)
+              .map(({ userId: _userId, ...grant }) => grant)
+              .reverse(),
+          ),
+        revoke: (id) =>
+          call(() => {
+            const grant = this.agentGrants.get(id);
+            if (grant?.userId !== person.id) {
+              throw new ApiError(404, "not_found", "There is no such connected agent.");
+            }
+            this.agentGrants.delete(id);
+          }),
+        request: (id) =>
+          call(() => {
+            const ask = this.agentAsks.get(id);
+            if (!ask)
+              throw new ApiError(404, "not_found", "This request to connect an agent is over.");
+            const url = new URL(ask.redirectUri);
+            return {
+              id,
+              name: ask.name,
+              redirectHost: url.host,
+              loopback: ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname),
+              expiresAt: ask.expiresAt,
+            };
+          }),
+        approve: (id, name) =>
+          call(() => {
+            const ask = this.agentAsks.get(id);
+            if (!ask)
+              throw new ApiError(404, "not_found", "This request to connect an agent is over.");
+            this.agentAsks.delete(id);
+            const grantId = `agt_${String(++this.ids).padStart(16, "0")}`;
+            this.agentGrants.set(grantId, {
+              id: grantId,
+              userId: person.id,
+              name: name ?? ask.name ?? "Your agent",
+              client: null,
+              createdAt: new Date(this.clock.now()).toISOString(),
+              lastUsedAt: null,
+            });
+            const url = new URL(ask.redirectUri);
+            url.searchParams.set("code", `pzc_fake_${grantId}`);
+            return { redirectUrl: url.toString() };
+          }),
+        deny: (id) =>
+          call(() => {
+            const ask = this.agentAsks.get(id);
+            if (!ask)
+              throw new ApiError(404, "not_found", "This request to connect an agent is over.");
+            this.agentAsks.delete(id);
+            const url = new URL(ask.redirectUri);
+            url.searchParams.set("error", "access_denied");
+            return { redirectUrl: url.toString() };
+          }),
+      },
       github: {
         accounts: () => call(accounts),
         // GitHub is asked again: an install page that was open has finished by now.

@@ -28,6 +28,7 @@ import { quietFocus } from "../cloud/ui/quiet-focus.ts";
 import { paneHeld, ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
 import { CanvasChrome } from "../cloud/window/canvas-chrome.tsx";
+import { AgentConnectDialog } from "./agent-connect.tsx";
 import type { NoticeName, OpenedVia } from "./analytics/events.ts";
 import { useAnalytics, useView } from "./analytics/provider.tsx";
 import { useUsageSharing } from "./analytics/sharing.ts";
@@ -212,6 +213,8 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     null,
   );
   const settingsLinkTaken = useCallback(() => setSettingsLink(null), []);
+  /** A person's own agent asking to use Ponzu as them: the window asks the person. */
+  const [agentAsk, setAgentAsk] = useState<string | null>(null);
 
   useEffect(
     () =>
@@ -229,6 +232,10 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
           if (link.section) {
             setSettingsLink({ section: SETTINGS_FOR_LINK[link.section], at: Date.now() });
           }
+          return;
+        }
+        if (link.kind === "agent_connect") {
+          setAgentAsk(link.requestId);
           return;
         }
         if (link.kind === "github_setup") {
@@ -285,17 +292,32 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     }
   }, [workspace?.id, all, tell]);
 
+  const agentDialog = agentAsk ? (
+    <AgentConnectDialog
+      key={agentAsk}
+      host={host}
+      requestId={agentAsk}
+      onDone={(outcome) => {
+        setAgentAsk(null);
+        if (outcome === "allowed") {
+          tell("agent_connected", "Connected. Go back to your agent: it can use Ponzu now.");
+        }
+      }}
+    />
+  ) : null;
   // Guided setup (FirstRun) holds the window until there is a workspace to work in, so there
   // is none only for the moment GitHub takes one away, before the gates see it.
   if (!all || !workspace) {
     return (
       <AppWindow lights={host.lights} sidebar={null} rail={null} badge={badge}>
         {notice ? <Banner>{notice}</Banner> : null}
+        {agentDialog}
       </AppWindow>
     );
   }
   return (
     <ThisDevice.Provider value={mac.deviceId}>
+      {agentDialog}
       <WorkspaceWindow
         key={workspace.id}
         host={host}

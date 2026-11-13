@@ -122,6 +122,30 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         (await v1.claude.defaults.$patch({ json: body })).json(),
     },
 
+    /** The person's own agents, connected through Ponzu's MCP (docs/cloud.md, "Your own agent"). */
+    agents: {
+      /** The agents they connected and haven't disconnected, newest first. */
+      list: async () => (await v1["agent-connections"].$get()).json(),
+      /** Disconnect one: its tokens stop working at once. */
+      revoke: async (id: string): Promise<void> => {
+        await v1["agent-connections"][":id"].$delete({ param: { id } });
+      },
+      /** An agent's ask to be allowed, as a `agents/connect` link names it. 404 once it's over. */
+      request: async (id: string) =>
+        (await v1["agent-connections"].requests[":id"].$get({ param: { id } })).json(),
+      /** Allow it: answers where the browser goes to hand the agent its code. */
+      approve: async (id: string, name?: string) =>
+        (
+          await v1["agent-connections"].requests[":id"].approve.$post({
+            param: { id },
+            json: name ? { name } : {},
+          })
+        ).json(),
+      /** Refuse it: answers where the browser goes to tell the agent so. */
+      deny: async (id: string) =>
+        (await v1["agent-connections"].requests[":id"].deny.$post({ param: { id } })).json(),
+    },
+
     github: {
       /** What "Where do you build?" lists, as of the last sync. */
       accounts: async () => (await v1.github.accounts.$get()).json(),
