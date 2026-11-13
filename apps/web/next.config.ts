@@ -57,6 +57,13 @@ const nextConfig: NextConfig = {
         source: "/:file*.:ext(png|svg|webp)",
         headers: [{ key: "cache-control", value: "public, max-age=86400" }],
       },
+      // What Ponzu's emails load (public/email, scripts/email-assets.ts): the tile and the
+      // display face. A mail app may fetch the font as a cross-origin request, which needs this
+      // header; whether Apple Mail does was not checked, and allowing it costs nothing.
+      {
+        source: "/email/:file*",
+        headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+      },
     ];
   },
 };

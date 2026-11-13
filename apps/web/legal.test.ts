@@ -163,8 +163,17 @@ test("the privacy policy claims nothing production does not do", () => {
   expect(text).not.toMatch(/Vercel (keeps|stores|records) no/i);
   expect(text).toContain("Vercel does not document whether it keeps a record");
   // Nothing sends pushes or email yet, and the iPhone app does not register for them
-  // (docs/cloud.md "Notifications"; apps/mobile has no push registration).
-  expect(text).toContain("nothing is sent to phones or by email yet");
+  // (docs/cloud.md "Notifications"; apps/mobile has no push registration). Production has no
+  // RESEND_API_KEY, so the email paragraph says what Ponzu will send, in the future tense, and
+  // says first that it sends nothing yet.
+  expect(text).toContain("nothing is sent to phones yet");
+  expect(text).toContain(
+    "### Email\n\nPonzu does not send email yet. When it starts, it will send",
+  );
+  expect(text).not.toMatch(/we (send|email) you/i);
+  // The kinds that can't be turned off say so, and so do the terms (one sentence, below).
+  expect(text).toContain("They can't be turned off.");
+  expect(text).toContain("Emails have no open or click tracking.");
   // Deleting an account revokes the GitHub grant (apps/api/src/account/delete.ts). Production
   // has no PONZU_POSTHOG_PERSONAL_API_KEY, so forget.ts skips PostHog: the page must not say it
   // happens by itself, and says to write to us instead.
@@ -203,6 +212,28 @@ test("the privacy policy claims nothing production does not do", () => {
   expect(text).not.toContain("ponzu telemetry off");
   // The anchor the app's settings will link to.
   expect(source("privacy")).toContain('<H2 id="analytics">');
+});
+
+test("the terms promise billing emails and legal notices can't be turned off, once email is sent", () => {
+  expect(source("terms")).toContain(
+    "Once Ponzu sends email, the billing emails it sends a workspace's admins, and the notices these terms promise by email, are part of the service and can't be turned off.",
+  );
+});
+
+test("Resend is listed for every email Ponzu will send, and as not in use yet", () => {
+  // Production has no RESEND_API_KEY (docs/legal.md, "Subprocessors"), so nothing reaches it.
+  const rows = SUBPROCESSORS.filter((row) => row.name === "Resend");
+  expect(rows).toHaveLength(1);
+  const [resend] = rows;
+  expect(resend?.status).toBe("when-it-ships");
+  for (const kind of [
+    "billing emails",
+    "people joining",
+    "Friday recap",
+    "daily email",
+    "legal notices",
+  ])
+    expect(resend?.purpose).toContain(kind);
 });
 
 test("no legal page states a price", () => {
