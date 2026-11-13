@@ -63,6 +63,11 @@ export const SCENARIOS = [
    * (`features.push`): the ask after a comment, Settings › Notifications, and taps on pings.
    */
   "pings",
+  /**
+   * Maya's Pricing page with something to find (`stockSearch`): the `chat` thread, and her
+   * comment on the Plans board.
+   */
+  "search",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -388,6 +393,51 @@ export async function stockPullRequest(world: FakeWorld): Promise<void> {
   for (const { login, body } of PR_SCENE.comments) github.comment(login, body);
 }
 
+/** What `stockSearch` leaves to be found, for tests to look for. */
+export const SEARCH_SCENE = {
+  /** Finds the Plans board, Maya's ask and her comment on Plans. */
+  query: "plans",
+  comment: "The plans need more contrast on dark",
+  /** Finds the Pricing page by its name. */
+  canvasQuery: "pricing",
+} as const;
+
+/**
+ * Something to find on the Pricing page: its thread as `stockChat` leaves it, and Maya's comment
+ * on the Plans board.
+ */
+export async function stockSearch(world: FakeWorld): Promise<void> {
+  await stockChat(world);
+  const { fake, maya } = world;
+  const pricing = [...fake.canvases.values()].find(
+    (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === "Pricing page",
+  );
+  if (!pricing) return;
+  const at = Date.now();
+  fake.agent(pricing.id).commit([
+    {
+      op: "thread.create",
+      thread: {
+        id: "th_search",
+        artboardId: "ab_plans",
+        x: 120,
+        y: 80,
+        status: "open",
+        createdAt: at,
+        updatedAt: at,
+        messages: [
+          {
+            id: "m_search",
+            author: { kind: "user", id: maya.id, name: maya.name ?? maya.githubLogin },
+            text: SEARCH_SCENE.comment,
+            createdAt: at,
+          },
+        ],
+      },
+    },
+  ]);
+}
+
 export interface FakeCloud extends Backend {
   kind: "fake";
   /** The world now (`reset` makes a new one). */
@@ -458,6 +508,7 @@ export function fakeCloud(
   const asked = new WeakSet<FakeWorld>();
   const pulled = new WeakSet<FakeWorld>();
   const pinged = new WeakSet<FakeWorld>();
+  const searched = new WeakSet<FakeWorld>();
   const storage = opts.storage === undefined ? null : opts.storage;
   /** The scenario a flow asked for at this launch, read once, before the session is. */
   let nextLaunch: Promise<void> | null = null;
@@ -579,6 +630,7 @@ export function fakeCloud(
         "needs-you": signedIn,
         "pull-request": signedIn,
         pings: signedIn,
+        search: signedIn,
       };
       // An API that sends pings, for the scenario that says so; none otherwise.
       world.fake.features = { ...world.fake.features, push: scenario === "pings" };
@@ -626,6 +678,15 @@ export function fakeCloud(
         const current = world;
         session.set({ status: "loading" });
         void stockAsks(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "search" && !searched.has(world)) {
+        searched.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockSearch(current).finally(() => {
           if (world === current) session.set(states[scenario]);
         });
         return true;

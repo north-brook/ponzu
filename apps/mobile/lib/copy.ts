@@ -310,5 +310,35 @@ export const PINGS = {
   openSettings: "Open iOS Settings",
 } as const;
 
+/**
+ * Words the Search tab says (lib/search.ts, components/search-results.tsx; search design §10).
+ * Where the Mac's ⌘K says the same thing (apps/studio/src/cloud/sidebar/search.tsx), these are
+ * its words, and copy.test.ts checks them against its source. The section labels are the
+ * phone's: Threads holds the Mac's Comments and Messages together.
+ */
+export const SEARCH = {
+  placeholder: "Search canvases",
+  canvases: "Canvases",
+  boards: "Boards",
+  threads: "Threads",
+  noResults: (query: string) => `No results for “${query}”`,
+  failed: "Search isn't answering. Try again in a moment.",
+  searching: "Searching…",
+  /** Who said it, when it was the canvas's agent, and when the account is gone. */
+  agent: "Claude",
+  deleted: "Deleted user",
+  resolved: "Resolved",
+  /** A page found: "Page in Pricing page"; a board: "in Pricing page". */
+  pageIn: (canvas: string) => `Page in ${canvas}`,
+  boardIn: (canvas: string) => `in ${canvas}`,
+  /** The before-typing rows' state, ahead of the age (board 3.2's subtitle grammar). */
+  asking: (header: string) => `Asking about ${header}`,
+  waiting: "Waiting for you",
+  working: "Claude is working",
+  settled: "Settled",
+  /** A canvas row's needs-you count, to VoiceOver. */
+  questions: (n: number) => (n === 1 ? "1 question for you" : `${n} questions for you`),
+} as const;
+
 /** What the canvases list says when the workspace has no canvases: where they come from. */
 export const EMPTY_CANVASES = "No canvases yet. Canvases you make in Ponzu show up here.";

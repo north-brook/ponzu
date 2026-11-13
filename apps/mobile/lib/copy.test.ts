@@ -1,7 +1,17 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BLOCKED, CLAUDE, CREATE, EFFORT_LABELS, NEEDS_YOU, PINGS, PR, WHERE } from "./copy";
+import {
+  BLOCKED,
+  CLAUDE,
+  CREATE,
+  EFFORT_LABELS,
+  NEEDS_YOU,
+  PINGS,
+  PR,
+  SEARCH,
+  WHERE,
+} from "./copy";
 
 /*
  * The phone's setup says what the Mac's says. The Mac's words live in its JSX, so this reads
@@ -129,5 +139,29 @@ test("the pull request sheet's button and the tab's words in the Mac's", () => {
     const found =
       tab.includes(`"${said}"`) || tab.includes(` ${said} `) || tab.includes(`>${said}<`);
     expect({ name, found }).toEqual({ name, found: true });
+  }
+});
+
+test("Search in the Mac's ⌘K's words, where they say the same thing", () => {
+  const source = readFileSync(
+    join(import.meta.dir, "../../studio/src/cloud/sidebar/search.tsx"),
+    "utf8",
+  ).replace(/\s+/g, " ");
+  const said = {
+    failed: `>${SEARCH.failed}<`,
+    searching: `>${SEARCH.searching}<`,
+    // The Mac writes the query in place: "No results for “{query.trim()}”".
+    noResults: `>${SEARCH.noResults("{query.trim()}")}<`,
+    canvases: `label="${SEARCH.canvases}"`,
+    boards: `label="${SEARCH.boards}"`,
+    agent: `AGENT_NAME = "${SEARCH.agent}"`,
+    deleted: `DELETED_NAME = "${SEARCH.deleted}"`,
+    resolved: `· ${SEARCH.resolved}\``,
+    // The Mac's template literals, as written: `Page in ${hit.canvas.name}`.
+    pageIn: `\`${SEARCH.pageIn(`$${"{hit.canvas.name}"}`)}\``,
+    boardIn: `\`${SEARCH.boardIn(`$${"{hit.canvas.name}"}`)}\``,
+  };
+  for (const [name, words] of Object.entries(said)) {
+    expect({ name, found: source.includes(words) }).toEqual({ name, found: true });
   }
 });

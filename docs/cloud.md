@@ -3268,6 +3268,14 @@ is: a board or page on the canvas, a comment at its pin, a message in the thread
 back to, at most 20 pages, and marked a moment), a pull request on its tab, and a person as the
 sidebar's filter. apps/studio/src/cloud/README.md "Search" has the details.
 
+**On the iPhone.** The Search tab asks for canvases, boards, comments and messages, and shows
+them as Canvases, Boards and Threads (comments and messages together, newest first, at most 8). A
+board opens in focus on its page, a comment at its pin with its thread open, and a message with
+the chat sheet up at it. Until the answer comes, and whenever the API can't give one (no network,
+an error, or a 404 from an API without this route), the phone matches the canvases it already
+holds by name with the same text rules, and Boards and Threads don't show. docs/mobile.md
+"Search" has the details.
+
 ## Clients
 
 **Desktop.** The shell bundles the studio and serves it from a custom scheme

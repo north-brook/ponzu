@@ -166,6 +166,51 @@ workspace's usage this period, read only: the total, the Mac's line under it
 and the bar, with nothing to raise, add or pay, and no word sending anyone to
 pay elsewhere.
 
+### Search
+
+The Search tab (`app/(tabs)/(search)/search.tsx`, `components/search-results.tsx`,
+with its rules in `lib/search.ts` and its data in `lib/use-search.ts`) has the
+system's search field in its header, "Search canvases".
+
+- **Before typing**, the six canvases changed most recently (settled ones
+  too), with no label: the 64×48 preview, the name, and one line in board
+  3.2's grammar, `[state · ] age [ · branch or Scratch's place]`. The state is
+  "Asking about <the first open question's header>" while the canvas waits on
+  the person (with no branch; "Waiting for you" until its question has been
+  read), "Claude is working" with the age "now" while the agent works or
+  wakes, and "Settled" for a settled one. The board's "Claude" for a canvas
+  the agent changed last is not drawn: the list's rows don't say who did.
+- **Typing** sends the words once typing has rested 150 ms, in the body of
+  `POST /v1/workspaces/:id/search` (never in an address), through
+  `ponzuQueries.search`, asking for `canvases`, `boards`, `comments` and
+  `messages`. The previous answer stays until the next lands.
+- **Sections.** Canvases (the preview, the name with its match marked, the
+  Mac's line "repo · branch", and the needs-you count in a yuzu pill),
+  Boards (a page's or board's mark, "Page in <canvas>" or "in <canvas>", as
+  the Mac says), and Threads: messages and comments together, newest first, at
+  most 8, each with who said it ("Claude" for the agent, "Deleted user" for
+  someone gone), the canvas, the age, and the words around the match. A
+  section with nothing is left out. A hit on a canvas the list doesn't hold is
+  dropped. Matches are on the pith ground.
+- **A press** (a tick) opens the canvas; a page; a board on its page, in
+  focus; a comment at its pin with its thread open (`page`, `artboard`,
+  `thread`, as a ping about it does); a message with the chat sheet up at it
+  (`sheet=chat&message=<seq>`).
+- **When the API can't answer.** Until an answer comes, the canvases the phone
+  holds are matched by name with search's own text rules
+  (`@ponzu/core/search-text`: folded, every word, a short word only at a
+  word's start). With no search route (404, an API from before it), those
+  names are all there is: Boards and Threads never show, and no match says
+  "No results for “q”". With an error, or with no network (the request is
+  held, so it is treated as no answer rather than left searching), the names
+  still show; with none, "Search isn't answering. Try again in a moment."
+  "Searching…" shows only when nothing can be shown for 300 ms.
+- The list keeps clear of the keyboard (`automaticallyAdjustKeyboardInsets`),
+  and a drag puts the keyboard away.
+
+The words that say the same thing as the Mac's ⌘K are its words, checked by
+`lib/copy.test.ts` against the studio's source.
+
 ### New canvas
 
 New canvas (`app/new.tsx`) is a full screen pushed over the list from the
@@ -442,8 +487,9 @@ state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
 (Ava, with no Claude), `canvases` (Maya's list in every state), `chat`
 (the Pricing page's thread with a turn running), `needs-you` (the Pricing
 page waiting on two questions, a plan and a permission), `pull-request` (its
-pull request ready to merge) and `pings` (`needs-you` on an API that sends
-pings). Every other scenario is an API that sends none. With `&relaunch=1`
+pull request ready to merge), `pings` (`needs-you` on an API that sends
+pings) and `search` (the `chat` thread, and Maya's comment on the Plans
+board, to be found). Every other scenario is an API that sends none. With `&relaunch=1`
 the next launch is put in the same state too, once, so a flow can end the app
 and open it from a ping. Only a fake build takes that link. With the authorize
 page running, the fake's install links open its `/install` page, which comes
@@ -828,7 +874,7 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 | Haptic | When |
 | --- | --- |
 | `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup; a workspace picked; the Settled tray opened or closed; a canvas reopened; the project control or Attach pressed; a project, model or effort picked; a send stopped to ask first |
-| `tick` | A canvas opened; Back; a board coming into focus or leaving it; a comment's pin dropped; New canvas opened; a new canvas sent |
+| `tick` | A canvas opened (from the list or a search result); Back; a board coming into focus or leaving it; a comment's pin dropped; New canvas opened; a new canvas sent |
 | `success` | A comment or reply sent; a thread resolved; a new canvas made |
 | `thud` | Sign out; a draft discarded; a canvas settled |
 | `fail` | A sign-in that failed; a comment that didn't send; a settle or reopen that didn't take; a new canvas that couldn't be made |
