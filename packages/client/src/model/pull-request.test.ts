@@ -8,6 +8,8 @@ const pr = (over: Partial<PullRequestSummary> = {}): PullRequestSummary => ({
   checks: "passing",
   mergeable: true,
   autoMerge: false,
+  linkedCount: 0,
+  linkedOpen: 0,
   ...over,
 });
 

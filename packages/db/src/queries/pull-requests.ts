@@ -107,6 +107,8 @@ export async function listPullRequestCanvases(
 export interface StalePullRequest {
   canvasId: string;
   number: number;
+  /** When it was last read; null for never. */
+  readAt: Date | null;
 }
 
 /**
@@ -127,7 +129,7 @@ export async function listStalePullRequests(
   const { readBefore, refreshKind, sweptKind, window, limit } = opts;
   const rows = await run(
     db
-      .select({ canvasId: canvases.id, number: canvases.prNumber })
+      .select({ canvasId: canvases.id, number: canvases.prNumber, readAt: canvases.prReadAt })
       .from(canvases)
       .innerJoin(workspaces, eq(workspaces.id, canvases.workspaceId))
       .where(
@@ -139,14 +141,16 @@ export async function listStalePullRequests(
           isNotNull(workspaces.installationId),
           isNull(workspaces.suspendedAt),
           or(isNull(canvases.prReadAt), lt(canvases.prReadAt, readBefore)),
-          sql`not exists (select 1 from ${jobs} where ${jobs.kind} = ${refreshKind} and ${jobs.completedAt} is null and ${jobs.failedAt} is null and ${jobs.payload}->>'canvasId' = ${canvases.id})`,
+          sql`not exists (select 1 from ${jobs} where ${jobs.kind} = ${refreshKind} and ${jobs.completedAt} is null and ${jobs.failedAt} is null and ${jobs.payload}->>'canvasId' = ${canvases.id} and ${jobs.payload}->>'repoId' is null)`,
           sql`not exists (select 1 from ${jobs} where ${jobs.id} = ${onceId(sweptKind, "")} || ${canvases.id} || ${`@${window}`})`,
         ),
       )
       .orderBy(sql`${canvases.prReadAt} asc nulls first`, canvases.id)
       .limit(limit),
   );
-  return rows.flatMap(({ canvasId, number }) => (number === null ? [] : [{ canvasId, number }]));
+  return rows.flatMap(({ canvasId, number, readAt }) =>
+    number === null ? [] : [{ canvasId, number, readAt }],
+  );
 }
 
 /** What working on a canvas's pull request takes, in one read. */
@@ -223,10 +227,20 @@ export interface PullRequestRead {
   readAt: Date;
 }
 
+/** A canvas as a recorded read left it. */
+export type RecordedPullRequest = Canvas & {
+  /**
+   * The read moved the canvas's pull request into merged or closed: a newer one recorded so, or
+   * the same one that was open before. Only then may the canvas settle (`settleWhenDone`).
+   */
+  finished: boolean;
+};
+
 /**
- * Record what a read of GitHub found about a canvas's pull request, and settle the canvas when
- * the read found it merged. Answers the canvas as it now stands, or null when the read was not
- * applied: there is no such canvas, what is recorded is newer, or it already says all this.
+ * Record what a read of GitHub found about a canvas's pull request. Answers the canvas as it now
+ * stands, or null when the read was not applied: there is no such canvas, what is recorded is
+ * newer, or it already says all this. It never settles the canvas: `finished` says whether the
+ * caller should ask `settleWhenDone`, which weighs the canvas's linked pull requests too.
  *
  * Reads finish out of order, so this keeps only the newest: a read is applied over the one
  * recorded when its pull request's number is higher (a later pull request from the branch), or
@@ -243,8 +257,11 @@ export interface PullRequestRead {
  * a check writes nothing there either. A canvas keeps the entries of its earlier pull requests.
  * An older read can put back an older title until the next read; that is accepted.
  */
-export async function recordPullRequestRead(db: Db, read: PullRequestRead): Promise<Canvas | null> {
-  const merged = read.state === "merged";
+export async function recordPullRequestRead(
+  db: Db,
+  read: PullRequestRead,
+): Promise<RecordedPullRequest | null> {
+  const finished = read.state === "merged" || read.state === "closed";
   const rows = toSearchRows([
     {
       kind: "pull_request",
@@ -268,11 +285,18 @@ export async function recordPullRequestRead(db: Db, read: PullRequestRead): Prom
         sql`exists (select 1 from canvases where id = ${read.canvasId})`,
       )} returning canvas_id`,
     );
+  // What the row said before this statement: the snapshot every part of it reads.
+  const prior = db
+    .$with("pr_prior", {
+      number: sql<number | null>`pr_number`,
+      state: sql<PrState | null>`pr_state`,
+    })
+    .as(sql`select pr_number, pr_state from canvases where id = ${read.canvasId}`);
   const recorded = sql`(${canvases.prNumber}, ${canvases.prState}, ${canvases.prChecks}, ${canvases.prMergeable}, ${canvases.prAutoMerge}, ${canvases.prUpdatedAt})`;
   const found = sql`(${read.number}::integer, ${read.state}::text, ${read.checks}::text, ${read.mergeable}::boolean, ${read.autoMerge}::boolean, ${timeParam(read.updatedAt)}::timestamptz)`;
   const [row] = await run(
     db
-      .with(indexed)
+      .with(indexed, prior)
       .update(canvases)
       .set({
         prNumber: read.number,
@@ -282,12 +306,6 @@ export async function recordPullRequestRead(db: Db, read: PullRequestRead): Prom
         prAutoMerge: read.autoMerge,
         prUpdatedAt: read.updatedAt,
         prReadAt: read.readAt,
-        ...(merged
-          ? {
-              status: "settled",
-              settledAt: sql`coalesce(${canvases.settledAt}, ${timeParam(read.readAt)}::timestamptz)`,
-            }
-          : {}),
       })
       .where(
         and(
@@ -304,9 +322,20 @@ export async function recordPullRequestRead(db: Db, read: PullRequestRead): Prom
           ),
         ),
       )
-      .returning(canvasColumns),
+      .returning({
+        ...canvasColumns,
+        priorNumber: sql<number | null>`(select pr_number from pr_prior)`,
+        priorState: sql<PrState | null>`(select pr_state from pr_prior)`,
+      }),
   );
-  return row ?? null;
+  if (!row) return null;
+  const { priorNumber, priorState, ...canvas } = row;
+  // A raw subquery's integer: a number from one driver, a string from another.
+  const wasFinished =
+    priorNumber !== null &&
+    Number(priorNumber) === read.number &&
+    (priorState === "merged" || priorState === "closed");
+  return { ...canvas, finished: finished && !wasFinished };
 }
 
 /** Keep the agent's words on what the branch changes. Null when there is no such canvas. */

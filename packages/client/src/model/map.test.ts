@@ -43,6 +43,8 @@ const row = (over: Partial<CanvasListRow> = {}): CanvasListRow => ({
   prNumber: null,
   prState: null,
   prChecks: "none",
+  prLinkedCount: 0,
+  prLinkedOpen: 0,
   lastActivityAt: "2026-11-10T10:00:00.000Z",
   createdAt: "2026-11-10T09:00:00.000Z",
   assetKeyRotatedAt: null,
@@ -156,6 +158,8 @@ test("a row: where it lives, whose it is, and what it's waiting on", () => {
     checks: "failing",
     mergeable: null,
     autoMerge: false,
+    linkedCount: 0,
+    linkedOpen: 0,
   });
   // Before the agent makes its branch, and for Scratch.
   expect(toSummary(row({ branch: null }), { people }).project).toMatchObject({

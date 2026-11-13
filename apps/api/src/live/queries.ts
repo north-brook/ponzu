@@ -112,7 +112,8 @@ export const LIVE_QUERIES = {
     sql: `select d.id, d.workspace_id, d.repo_id, r.full_name as repo_full_name, d.owner_id,
                  d.name, d.icon, d.branch, d.status, d.settled_at, d.seq, d.preview_seq,
                  d.agent_state, d.agent_status, d.agent_blocker, d.needs_you_count,
-                 d.pr_number, d.pr_state, d.pr_checks, d.last_activity_at, d.created_at,
+                 d.pr_number, d.pr_state, d.pr_checks, d.pr_linked_count, d.pr_linked_open,
+                 d.last_activity_at, d.created_at,
                  d.asset_key_rotated_at, dr.seen_seq, dr.seen_thread_seq
             from canvases d
             join memberships m on m.workspace_id = d.workspace_id and m.user_id = $1

@@ -91,8 +91,22 @@ export function PullRequestMark({
       />
       #{pr.number}
       {glyph ? <ChecksMark glyph={glyph} tone={tone} /> : null}
+      {pr.linkedCount > 0 ? (
+        <span className={tone === "colored" ? "text-muted" : undefined}>+{pr.linkedCount}</span>
+      ) : null}
     </span>
   );
+}
+
+/** What the mark says aloud: the pull request, and how many more the canvas links. */
+export function pullRequestLabel(pr: PullRequestSummary): string {
+  const more =
+    pr.linkedCount === 1
+      ? " and 1 more linked"
+      : pr.linkedCount > 1
+        ? ` and ${pr.linkedCount} more linked`
+        : "";
+  return `Pull request #${pr.number}${more}`;
 }
 
 /**
@@ -112,11 +126,11 @@ export function PullRequestTab({
   // or dialog (the key is left alone there), and once a press.
   useShortcut("p", onToggle, true, { once: true, when: () => !overlayOpen() });
   return (
-    <Tip label={`Pull request #${pr.number}`} keys={["⌘", "P"]}>
+    <Tip label={pullRequestLabel(pr)} keys={["⌘", "P"]}>
       <Button
         variant="icon"
         aria-pressed={active}
-        aria-label={`Pull request #${pr.number}`}
+        aria-label={pullRequestLabel(pr)}
         onClick={onToggle}
         className={cn(
           "h-7 px-2.5",

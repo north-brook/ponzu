@@ -622,13 +622,31 @@ export type Notice =
   | Exclude<RunnerNotice, { type: "stopped" }>
   /** A person stopped the run: the API names them from the stop event the runner wrote. */
   | { type: "stopped"; by: Person | null }
-  /** Written by the API: the canvas's pull request opened, merged or closed. */
+  /**
+   * Written by the API: the canvas's pull request opened, merged or closed; or, with
+   * `repository`, one it links merged or closed.
+   */
   | {
       type: "pull_request";
+      /** `owner/repo`, for a linked pull request; absent for the branch's own. */
+      repository?: string;
       number: number;
       url: string;
       title: string;
       state: "draft" | "open" | "merged" | "closed";
+    }
+  /**
+   * Written by the API: a pull request was linked to the canvas, by a person, or by their agent
+   * through the MCP (`via`, the agent's name).
+   */
+  | {
+      type: "pull_request_linked";
+      repository: string;
+      number: number;
+      url: string;
+      title: string;
+      state: "draft" | "open" | "merged" | "closed";
+      via: string | null;
     }
   /** Written by the API: the agent did this to the pull request, as `as` on GitHub. */
   | {

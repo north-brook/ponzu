@@ -232,6 +232,13 @@
       "when": 1794584483679,
       "tag": "0032_email",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794605589040,
+      "tag": "0033_canvas_pull_requests",
+      "breakpoints": true
     }
   ]
 }

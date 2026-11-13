@@ -76,6 +76,7 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
   const v1 = rpc.v1;
   const canvas = (id: string) => ({ param: { id } });
   const pullRequest = v1.canvases[":id"]["pull-request"];
+  const pullRequests = v1.canvases[":id"]["pull-requests"];
 
   return {
     /** Everything the app needs at launch: the person, setup progress, their workspaces. */
@@ -429,6 +430,27 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         updateBranch: async (id: string, body: { headSha: string }) =>
           (await pullRequest["update-branch"].$post({ ...canvas(id), json: body })).json(),
       },
+
+      /**
+       * The pull requests the canvas links besides its branch's (docs/cloud.md, "Linked pull
+       * requests"). Every answer is the API's; the head's `prLinkedCount` follows.
+       */
+      pullRequests: {
+        /** The branch's own pull request, if any, and the linked ones, the first linked first. */
+        list: async (id: string) => (await pullRequests.$get(canvas(id))).json(),
+        /**
+         * Links each URL, and answers what happened to each: `linked`, `alreadyLinked`, or
+         * `refused` with a code and a sentence to show.
+         */
+        link: async (id: string, urls: string[]) =>
+          (await pullRequests.$post({ ...canvas(id), json: { urls } })).json(),
+        /** Unlinks one, by the repo id and number the list answers. 404 if it isn't linked. */
+        unlink: async (id: string, repoId: string, number: number): Promise<void> => {
+          await pullRequests[":repoId"][":number"].$delete({
+            param: { id, repoId, number: String(number) },
+          });
+        },
+      },
     },
 
     /*
@@ -601,6 +623,12 @@ export type ThreadPage = Awaited<ReturnType<Canvases["thread"]>>;
 export type PullRequestTab = Awaited<ReturnType<Canvases["pullRequest"]["get"]>>;
 /** One changed file and its diff. */
 export type PullRequestFile = Awaited<ReturnType<Canvases["pullRequest"]["file"]>>;
+/** A canvas's pull requests: its branch's, and those it links. */
+export type CanvasPullRequests = Awaited<ReturnType<Canvases["pullRequests"]["list"]>>;
+/** A pull request a canvas links. */
+export type LinkedPullRequest = CanvasPullRequests["linked"][number];
+/** What linking one pull request did. */
+export type LinkResult = Awaited<ReturnType<Canvases["pullRequests"]["link"]>>["results"][number];
 
 async function putBytes(
   fetch: Fetch,

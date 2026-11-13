@@ -247,6 +247,8 @@ test("the chrome's mark comes from the canvas's head, and its button from the AP
     prChecks: "passing" as const,
     prMergeable: true,
     prAutoMerge: false,
+    prLinkedCount: 2,
+    prLinkedOpen: 1,
   };
   expect(prSummary(head)).toEqual({
     number: 412,
@@ -254,6 +256,8 @@ test("the chrome's mark comes from the canvas's head, and its button from the AP
     checks: "passing",
     mergeable: true,
     autoMerge: false,
+    linkedCount: 2,
+    linkedOpen: 1,
   });
   expect(prSummary({ ...head, prNumber: null, prState: null })).toBeNull();
 
@@ -310,6 +314,8 @@ test("an answer kept from before is offered only while the row and the head stil
     checks: API_PULL.checks.state,
     mergeable: null,
     autoMerge: false,
+    linkedCount: 0,
+    linkedOpen: 0,
   };
   // The same pull request, as it was: Merge, from the first frame.
   expect(offeredTab({ tab: kept, confirmed: false }, now)).toBe(kept);

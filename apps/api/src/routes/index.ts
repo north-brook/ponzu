@@ -3,6 +3,7 @@ import type { AppEnv } from "../http/context.ts";
 import { account } from "./account.ts";
 import { auth } from "./auth.ts";
 import { canvasPullRequest } from "./canvas-pull-request.ts";
+import { canvasPullRequests } from "./canvas-pull-requests.ts";
 import { canvasThread } from "./canvas-thread.ts";
 import { canvases } from "./canvases.ts";
 import { claude } from "./claude.ts";
@@ -36,6 +37,7 @@ export const v1 = new Hono<AppEnv>()
   .route("/canvases", canvases)
   .route("/canvases", canvasThread)
   .route("/canvases", canvasPullRequest)
+  .route("/canvases", canvasPullRequests)
   .route("/repos", repoIdeas)
   .route("/", environments)
   .route("/", usage)

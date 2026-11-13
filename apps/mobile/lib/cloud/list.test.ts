@@ -41,6 +41,8 @@ function row(over: Partial<CanvasListRow> = {}): CanvasListRow {
     prNumber: null,
     prState: null,
     prChecks: "none",
+    prLinkedCount: 0,
+    prLinkedOpen: 0,
     lastActivityAt: "2026-11-10T12:00:00.000Z",
     createdAt: "2026-11-01T12:00:00.000Z",
     seenSeq: 1,

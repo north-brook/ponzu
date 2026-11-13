@@ -1,6 +1,11 @@
-import { enqueueJob, listStalePullRequests, recordOnce } from "@ponzu/db";
+import {
+  enqueueJob,
+  listStaleLinkedPullRequests,
+  listStalePullRequests,
+  recordOnce,
+} from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
-import { REFRESH_JOB } from "./refresh.ts";
+import { REFRESH_JOB, type RefreshRequest, requestKey } from "./refresh.ts";
 
 /*
  * The sweep for pull requests whose webhooks were all lost (docs/cloud.md, "Pull requests").
@@ -14,6 +19,9 @@ import { REFRESH_JOB } from "./refresh.ts";
  * the most a deployment spends on it, spread over every installation. A quiet pull request is
  * read again once a window, which is all its webhooks being lost could cost: 300 of them a
  * window before the oldest are read twice as seldom.
+ *
+ * Linked pull requests (docs/cloud.md, "Linked pull requests") are swept in the same budget:
+ * the oldest read of both kinds first.
  */
 
 /** How long a pull request may go unread before the sweep reads it, and the sweep's window. */
@@ -34,21 +42,38 @@ export async function sweepPullRequests(
 ): Promise<number> {
   const at = now.getTime();
   const window = new Date(at - (at % SWEEP_STALE_MS)).toISOString();
-  const stale = await listStalePullRequests(db, {
+  const query = {
     readBefore: new Date(at - SWEEP_STALE_MS),
     refreshKind: REFRESH_JOB,
     sweptKind: SWEPT_KIND,
     window,
     limit,
-  });
+  };
+  const [branches, links] = await Promise.all([
+    listStalePullRequests(db, query),
+    listStaleLinkedPullRequests(db, query),
+  ]);
+  const stale: { request: RefreshRequest; readAt: number }[] = [
+    ...branches.map(({ canvasId, number, readAt }) => ({
+      request: { canvasId, number } satisfies RefreshRequest,
+      readAt: readAt?.getTime() ?? 0,
+    })),
+    ...links.map(({ canvasId, repoId, number, readAt }) => ({
+      request: { canvasId, repoId, number } satisfies RefreshRequest,
+      readAt: readAt.getTime(),
+    })),
+  ]
+    .sort((a, b) => a.readAt - b.readAt)
+    .slice(0, limit);
   let swept = 0;
-  for (const { canvasId, number } of stale) {
+  for (const { request } of stale) {
+    const key = requestKey(request);
     // An overlapping run took this one first.
-    if (!(await recordOnce(db, { kind: SWEPT_KIND, key: `${canvasId}@${window}` }))) continue;
+    if (!(await recordOnce(db, { kind: SWEPT_KIND, key: `${key}@${window}` }))) continue;
     const job = await enqueueJob(db, {
       kind: REFRESH_JOB,
-      key: `sweep:${canvasId}:${window}`,
-      payload: { canvasId, number },
+      key: `sweep:${key}:${window}`,
+      payload: request,
       runAt: now,
     });
     if (job) swept++;
