@@ -92,8 +92,11 @@ export async function applyInvoice(
   if (after === "payment_failed" && applied.attempts > applied.attemptsBefore) {
     deps.analytics.capture("invoice payment failed", { attempt: applied.attempts, reason }, group);
   }
-  if (applied.firstFailure) {
-    // Once a period, on the first failed attempt: notify's own key keeps it to one a person.
+  if (after === "payment_failed") {
+    // Once a period: the notification's dedupe key (the notice, the workspace and the period)
+    // keeps it to one row a person however often this runs. It is asked on every failed read,
+    // not only the first, so a job that stored the failure and stopped before this still pings
+    // when it is tried again.
     const amountCents = applied.totalCents ?? applied.chargedCents;
     await notify(deps, {
       kind: "billing",
@@ -102,9 +105,13 @@ export async function applyInvoice(
       notice: "payment_failed",
       amountCents,
     });
+  }
+  if (applied.firstFailure) {
     deps.analytics.capture("billing notice", { kind: "payment_failed" }, group);
   }
-  if ((after === "paid" || after === "void") && before !== after) {
+  if (after === "paid" || after === "void") {
+    // On every read that finds it settled, not only the first: a job that stored `paid` and
+    // stopped before this ran is tried again, and finds the status already moved.
     await clearPastDueIfSettled(deps.db, { workspaceId });
   }
   if (after === "paid" && before !== "paid") {

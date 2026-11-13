@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { sampleDoc } from "@ponzu/core/fixtures";
 import { applyInvoiceState, billingPeriods, getWorkspace, setCard, usageEvents } from "@ponzu/db";
 import type { InvoiceState } from "../deps/payments.ts";
 import { NOTIFY_JOB } from "../notifications/notify.ts";
-import { call, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
+import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, TEST_CRON_SECRET, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 import {
   CLOSE_JOB,
@@ -457,6 +458,60 @@ describe("closing a period", () => {
     });
     expect(invoicesOf(ws)).toHaveLength(1);
   });
+
+  test("a stretch awake since before the period, never cut, is cut at its end and counted", async () => {
+    // Awake since November 30 at 22:00 and not metered since: the read alone would count none
+    // of it in December, since a stretch counts in the period it began in.
+    const ws = await team();
+    const canvas = await canvasIn(t, ws, "maya", sampleDoc());
+    await t.db.execute(
+      `insert into sandboxes (canvas_id, state, awake_since, awake_user_id)
+       values ('${canvas.id}', 'awake', '2025-11-30T22:00:00Z', '${ws.people.maya!.userId}')`,
+    );
+    const period = await withBilling("observe", () => closePeriod(t.deps, december(ws)));
+    // All of December awake: 744 hours at 5 credits an hour.
+    expect(period).toMatchObject({ status: "unbilled", usedCredits: 3_720 });
+    const [sandbox] = await rows(
+      `select awake_since from sandboxes where canvas_id = '${canvas.id}'`,
+    );
+    expect(new Date(sandbox!.awake_since as string)).toEqual(JAN_1);
+  });
+
+  test("someone who joined after the period ended is not counted for it", async () => {
+    const ws = await workspaceWithRepo(t, { maya: "admin", ines: "write", leo: "write" });
+    await t.db.execute(
+      `update workspaces set billing_period_anchor = '2025-10-01T00:00:00Z' where id = '${ws.id}'`,
+    );
+    await t.db.execute(
+      `update memberships set created_at = '2025-01-01T00:00:00Z' where workspace_id = '${ws.id}'`,
+    );
+    await t.db.execute(
+      `update memberships set created_at = '2026-01-01T00:05:00Z'
+        where workspace_id = '${ws.id}' and user_id = '${ws.people.leo!.userId}'`,
+    );
+    await used(ws, 400);
+    const period = await withBilling("observe", () => closePeriod(t.deps, december(ws)));
+    expect(period).toMatchObject({ people: 2, freeCredits: 200, billedCredits: 1_800 });
+  });
+
+  test("a close run again after the next one moved on leaves the next close where it is", async () => {
+    const ws = await team();
+    await used(ws, 1);
+    await t.db.execute(
+      `update workspaces set billing_next_close_at = '${JAN_1.toISOString()}' where id = '${ws.id}'`,
+    );
+    await withBilling("observe", () => closePeriod(t.deps, december(ws)));
+    expect((await getWorkspace(t.db, ws.id))!.billingNextCloseAt).toEqual(
+      new Date("2026-02-01T00:00:00Z"),
+    );
+    // January closed too, meanwhile; December's job runs once more.
+    const march = new Date("2026-03-01T00:00:00Z");
+    await t.db.execute(
+      `update workspaces set billing_next_close_at = '${march.toISOString()}' where id = '${ws.id}'`,
+    );
+    await withBilling("observe", () => closePeriod(t.deps, december(ws)));
+    expect((await getWorkspace(t.db, ws.id))!.billingNextCloseAt).toEqual(march);
+  });
 });
 
 describe("invoice webhooks", () => {
@@ -472,6 +527,13 @@ describe("invoice webhooks", () => {
       const payload = row.payload as Record<string, unknown>;
       return payload.workspaceId === ws.id && payload.notice === "payment_failed";
     });
+
+  /** The payment_failed notifications people were given: one a person, however often asked. */
+  const failedNotifications = async (ws: Workspace) =>
+    rows(
+      `select user_id, body from notifications
+        where workspace_id = '${ws.id}' and kind = 'billing_payment_failed'`,
+    );
 
   test("a failed payment marks the workspace past due and pings once; paid clears it", async () => {
     const { ws, invoiceId } = await charged();
@@ -489,16 +551,28 @@ describe("invoice webhooks", () => {
       pastDueInvoiceUrl: `https://invoice.stripe.test/i/${invoiceId}`,
     });
     expect(workspace.pastDueAt).not.toBeNull();
-    expect(await failedPings(ws)).toEqual([
-      {
-        payload: expect.objectContaining({
-          kind: "billing",
-          notice: "payment_failed",
-          amountCents: 10_000,
-          periodStart: DEC_1.toISOString(),
-        }),
-      },
+    const pings = await failedPings(ws);
+    expect(pings.length).toBeGreaterThan(0);
+    for (const ping of pings) {
+      expect(ping.payload).toMatchObject({
+        kind: "billing",
+        notice: "payment_failed",
+        amountCents: 10_000,
+        periodStart: DEC_1.toISOString(),
+      });
+    }
+    // Two failed attempts, one notification: to Maya, the admin, and not to Ines.
+    expect(await failedNotifications(ws)).toEqual([
+      { user_id: ws.people.maya!.userId, body: expect.stringContaining("$100") },
     ]);
+    expect(
+      t.analytics.events.filter(
+        (e) =>
+          e.event === "billing notice" &&
+          e.properties.kind === "payment_failed" &&
+          e.groups?.workspace === ws.id,
+      ),
+    ).toHaveLength(1);
     expect(
       t.analytics.events.filter(
         (e) => e.event === "invoice payment failed" && e.groups?.workspace === ws.id,
@@ -546,6 +620,27 @@ describe("invoice webhooks", () => {
     expect(await periodOf(ws)).toMatchObject({ status: "paid" });
     expect((await getWorkspace(t.db, ws.id))!.pastDueAt).toBeNull();
     expect(await failedPings(ws)).toEqual([]);
+  });
+
+  test("a failure stored by a job that stopped before pinging still pings on the retry", async () => {
+    const { ws, invoiceId } = await charged();
+    t.payments.failInvoice(invoiceId);
+    // The first try stored the failure, then died before it told anyone.
+    await applyInvoiceState(t.db, {
+      workspaceId: ws.id,
+      stripeInvoiceId: invoiceId,
+      status: "payment_failed",
+      attempts: 1,
+      nextAttemptAt: null,
+      invoiceNumber: null,
+      hostedInvoiceUrl: null,
+      taxCents: 0,
+      totalCents: 10_000,
+      at: new Date(t.clock.now()),
+    });
+    await withBilling("on", () => deliver(invoiceEvent("invoice.payment_failed", invoiceId)));
+    expect(await failedNotifications(ws)).toHaveLength(1);
+    expect((await getWorkspace(t.db, ws.id))!.pastDueAt).not.toBeNull();
   });
 
   test("two reads applied in the wrong order never take a period back", async () => {
@@ -614,6 +709,51 @@ describe("invoice webhooks", () => {
     });
     expect(await periodOf(ws)).toMatchObject({ status: "invoiced" });
     expect(t.logs.some((line) => line.event === "stripe_invoice_foreign")).toBe(true);
+  });
+
+  test("an event naming another workspace than its invoice's changes neither", async () => {
+    const { ws, invoiceId } = await charged();
+    const other = await billedTeam();
+    await withBilling("on", async () => {
+      t.payments.failInvoice(invoiceId);
+      const marks = { ...t.payments.invoices.get(invoiceId)!.metadata };
+      expect(
+        await deliver(
+          invoiceEvent("invoice.payment_failed", invoiceId, {
+            ...marks,
+            ponzu_workspace_id: other.id,
+          }),
+        ),
+      ).toBe(200);
+    });
+    expect(await periodOf(ws)).toMatchObject({ status: "invoiced" });
+    expect((await getWorkspace(t.db, ws.id))!.pastDueAt).toBeNull();
+    expect((await getWorkspace(t.db, other.id))!.pastDueAt).toBeNull();
+  });
+
+  test("paid stored by a job that stopped before clearing past due: the retry clears it", async () => {
+    const { ws, invoiceId } = await charged();
+    await withBilling("on", async () => {
+      t.payments.failInvoice(invoiceId);
+      await deliver(invoiceEvent("invoice.payment_failed", invoiceId));
+    });
+    expect((await getWorkspace(t.db, ws.id))!.pastDueAt).not.toBeNull();
+    // The first try stored `paid`, then died before it cleared past due.
+    t.payments.payInvoice(invoiceId);
+    await applyInvoiceState(t.db, {
+      workspaceId: ws.id,
+      stripeInvoiceId: invoiceId,
+      status: "paid",
+      attempts: 2,
+      nextAttemptAt: null,
+      invoiceNumber: null,
+      hostedInvoiceUrl: null,
+      taxCents: 0,
+      totalCents: 10_000,
+      at: new Date(t.clock.now()),
+    });
+    await withBilling("on", () => deliver(invoiceEvent("invoice.paid", invoiceId)));
+    expect(await getWorkspace(t.db, ws.id)).toMatchObject({ pastDueAt: null, billingGate: "ok" });
   });
 });
 
