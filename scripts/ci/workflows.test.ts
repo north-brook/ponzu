@@ -26,6 +26,21 @@ import { VERCEL_CLI } from "./schedules.ts";
 
 const DIR = join(import.meta.dir, "../../.github/workflows");
 
+/**
+ * Runs a command to its end and gives back its output and exit code. Awaited, never spawnSync:
+ * Bun 1.4.2's spawnSync can lose a child's exit in a `bun test --parallel` worker and wait on it
+ * forever (oven-sh/bun#47257), which is what emptied this file's step output on CI.
+ */
+async function spawn(cmd: string[], options: { cwd?: string; env?: Record<string, string> } = {}) {
+  const child = Bun.spawn(cmd, { ...options, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { code, stdout, stderr };
+}
+
 interface Step {
   name?: string;
   uses?: string;
@@ -372,8 +387,8 @@ describe("deploy-api.yml", () => {
     expect(JSON.stringify(deploy)).not.toContain("id-token");
   });
 
-  test("VERCEL_API_PROD_PROJECT_ID appears nowhere", () => {
-    const hits = Bun.spawnSync(
+  test("VERCEL_API_PROD_PROJECT_ID appears nowhere", async () => {
+    const hits = await spawn(
       [
         "git",
         "grep",
@@ -386,8 +401,8 @@ describe("deploy-api.yml", () => {
       { cwd: join(import.meta.dir, "../..") },
     );
     // git grep exits 1 when nothing matches.
-    expect(hits.stdout.toString()).toBe("");
-    expect(hits.exitCode).toBe(1);
+    expect(hits.stdout).toBe("");
+    expect(hits.code).toBe(1);
   });
 
   test("only the production job's Neon steps set the default branch's guard", () => {
@@ -469,6 +484,24 @@ describe("every workflow", () => {
       '[ "$WORKFLOWS" = success ]',
     );
   });
+
+  test("ci.yml's tests run under the watchdog, cut off a minute before the job's own limit", () => {
+    const tests = load("ci.yml").jobs.tests as Job & { "timeout-minutes": number };
+    // The deadline counts from the job's first step.
+    expect(tests.steps[0]?.run).toBe('echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"');
+    const run = tests.steps.find((s) => s.name === "Tests")?.run ?? "";
+    expect(run).toContain(`deadline=$((JOB_STARTED + ${tests["timeout-minutes"]} * 60 - 60))`);
+    expect(run).toMatch(
+      /bun scripts\/ci\/test-watchdog\.ts --deadline "\$deadline" --trace "\$results\/running" -- \\\n\s*bun test --parallel /,
+    );
+    // The trace the watchdog reads is kept by the first preload.
+    const bunfig = Bun.TOML.parse(
+      readFileSync(join(import.meta.dir, "../../bunfig.toml"), "utf8"),
+    ) as {
+      test: { preload: string[] };
+    };
+    expect(bunfig.test.preload[0]).toBe("./scripts/ci/test-trace.ts");
+  });
 });
 
 describe("uptime.yml", () => {
@@ -521,12 +554,13 @@ describe("release.yml's auto-merge", () => {
    * Runs the step's own script under bash -e, as Actions does, with a fake gh on PATH that
    * answers the open PR and its manifest and records every call.
    */
-  function runStep(options: {
+  interface StepOptions {
     pr: unknown;
     proposed?: Record<string, string>;
     held?: string;
     apiFails?: boolean;
-  }) {
+  }
+  async function runStep(options: StepOptions) {
     const dir = mkdtempSync(join(tmpdir(), "auto-merge-"));
     mkdirSync(join(dir, "bin"));
     const gh = join(dir, "bin", "gh");
@@ -544,7 +578,7 @@ describe("release.yml's auto-merge", () => {
     chmodSync(gh, 0o755);
     const log = join(dir, "gh.log");
     writeFileSync(log, "");
-    const result = Bun.spawnSync(["bash", "-e", "-c", step.run as string], {
+    const result = await spawn(["bash", "-e", "-c", step.run as string], {
       cwd: join(import.meta.dir, "../.."),
       env: {
         PATH: `${join(dir, "bin")}:${process.env.PATH}`,
@@ -561,9 +595,8 @@ describe("release.yml's auto-merge", () => {
       },
     });
     const calls = readFileSync(log, "utf8").trim().split("\n").filter(Boolean);
-    const out = result.stdout.toString();
     rmSync(dir, { recursive: true });
-    return { code: result.exitCode, calls, out };
+    return { code: result.code, calls, out: result.stdout };
   }
   const pr = (title: string, autoMerge = false) => ({
     number: 5,
@@ -573,8 +606,11 @@ describe("release.yml's auto-merge", () => {
   });
   const merges = (calls: string[]) => calls.filter((c) => c.startsWith("pr merge"));
 
-  test("a minor release PR gets squash auto-merge", () => {
-    const run = runStep({ pr: pr(`chore(main): release ${MINOR}`), proposed: { ".": MINOR } });
+  test("a minor release PR gets squash auto-merge", async () => {
+    const run = await runStep({
+      pr: pr(`chore(main): release ${MINOR}`),
+      proposed: { ".": MINOR },
+    });
     expect(run.code).toBe(0);
     expect(run.calls).toContain(
       "api -H Accept: application/vnd.github.raw+json repos/o/r/contents/.release-please-manifest.json?ref=abc123",
@@ -582,14 +618,17 @@ describe("release.yml's auto-merge", () => {
     expect(merges(run.calls)).toEqual(["pr merge 5 --repo o/r --squash --auto"]);
   });
 
-  test("a major release PR is never auto-merged, and loses auto-merge it had", () => {
-    const fresh = runStep({ pr: pr(`chore(main): release ${MAJOR}`), proposed: { ".": MAJOR } });
+  test("a major release PR is never auto-merged, and loses auto-merge it had", async () => {
+    const fresh = await runStep({
+      pr: pr(`chore(main): release ${MAJOR}`),
+      proposed: { ".": MAJOR },
+    });
     expect(fresh.code).toBe(0);
     expect(merges(fresh.calls)).toEqual([]);
     expect(fresh.out).toContain(
       `::notice title=Release PR #5 is held for a person to merge::${MAJOR} is a major release`,
     );
-    const had = runStep({
+    const had = await runStep({
       pr: pr(`chore(main): release ${MAJOR}`, true),
       proposed: { ".": MAJOR },
     });
@@ -597,13 +636,15 @@ describe("release.yml's auto-merge", () => {
     expect(merges(had.calls)).toEqual(["pr merge 5 --repo o/r --disable-auto"]);
   });
 
-  test("RELEASES_HELD, a malformed title or a manifest that disagrees holds", () => {
-    for (const run of [
-      runStep({ pr: pr(`chore(main): release ${MINOR}`), proposed: { ".": MINOR }, held: "ponzu" }),
-      runStep({ pr: pr(`chore(main): release v${MINOR}`), proposed: { ".": MINOR } }),
-      runStep({ pr: pr(`chore(main): release ${MINOR}`), proposed: { ".": MAJOR } }),
-      runStep({ pr: pr("chore(main): release 1.0\n::error::x %"), proposed: {} }),
-    ]) {
+  test("RELEASES_HELD, a malformed title or a manifest that disagrees holds", async () => {
+    const held: StepOptions[] = [
+      { pr: pr(`chore(main): release ${MINOR}`), proposed: { ".": MINOR }, held: "ponzu" },
+      { pr: pr(`chore(main): release v${MINOR}`), proposed: { ".": MINOR } },
+      { pr: pr(`chore(main): release ${MINOR}`), proposed: { ".": MAJOR } },
+      { pr: pr("chore(main): release 1.0\n::error::x %"), proposed: {} },
+    ];
+    for (const options of held) {
+      const run = await runStep(options);
       expect(run.code).toBe(0);
       expect(merges(run.calls)).toEqual([]);
       expect(run.out).toContain("is held for a person to merge");
@@ -611,8 +652,8 @@ describe("release.yml's auto-merge", () => {
     }
   });
 
-  test("an unreadable PR manifest fails the step and merges nothing", () => {
-    const run = runStep({
+  test("an unreadable PR manifest fails the step and merges nothing", async () => {
+    const run = await runStep({
       pr: pr(`chore(main): release ${MINOR}`),
       proposed: { ".": MINOR },
       apiFails: true,
@@ -621,8 +662,8 @@ describe("release.yml's auto-merge", () => {
     expect(merges(run.calls)).toEqual([]);
   });
 
-  test("no open release PR does nothing", () => {
-    const run = runStep({ pr: null });
+  test("no open release PR does nothing", async () => {
+    const run = await runStep({ pr: null });
     expect(run.code).toBe(0);
     expect(run.calls.length).toBe(1);
   });
@@ -637,7 +678,7 @@ describe("release.yml's auto-merge", () => {
     expect(job.steps.at(-1)?.name).toBe("Turn off auto-merge when the hold could not be decided");
   });
 
-  test("when the hold could not be decided, auto-merge the PR already had is turned off", () => {
+  test("when the hold could not be decided, auto-merge the PR already had is turned off", async () => {
     const last = job.steps.at(-1) as Step & { if?: string };
     expect(last.if).toBe("failure()");
     expect(last.env).toEqual({ APP: expr("matrix.app"), GH_TOKEN: expr("secrets.RELEASE_TOKEN") });
@@ -656,10 +697,10 @@ describe("release.yml's auto-merge", () => {
       ].join("\n"),
     );
     chmodSync(gh, 0o755);
-    const run = (numbers: string) => {
+    const run = async (numbers: string) => {
       const log = join(dir, `gh-${numbers || "none"}.log`);
       writeFileSync(log, "");
-      const result = Bun.spawnSync(["bash", "-e", "-c", last.run as string], {
+      const result = await spawn(["bash", "-e", "-c", last.run as string], {
         env: {
           PATH: `${join(dir, "bin")}:${process.env.PATH}`,
           APP: "ponzu",
@@ -669,14 +710,14 @@ describe("release.yml's auto-merge", () => {
         },
       });
       const calls = readFileSync(log, "utf8").trim().split("\n").filter(Boolean);
-      return { code: result.exitCode, calls, out: result.stdout.toString() };
+      return { code: result.code, calls, out: result.stdout };
     };
-    const had = run("5");
+    const had = await run("5");
     expect(had.code).toBe(0);
     expect(had.calls[0]).toContain("--jq .[] | select(.autoMergeRequest != null) | .number");
     expect(merges(had.calls)).toEqual(["pr merge 5 --repo o/r --disable-auto"]);
     expect(had.out).toContain("::warning title=Auto-merge turned off on release PR #5::");
-    const none = run("");
+    const none = await run("");
     expect(none.code).toBe(0);
     expect(merges(none.calls)).toEqual([]);
     rmSync(dir, { recursive: true });

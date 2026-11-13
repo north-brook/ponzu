@@ -1,0 +1,16 @@
+{
+  "Simulator Target Bundle": "design.ponzu.app.dev",
+  "aps": {
+    "alert": { "title": "Pricing page", "body": "Pull request #401 is ready to merge." },
+    "sound": "default",
+    "thread-id": "cnv_0000000000000011"
+  },
+  "body": {
+    "v": 1,
+    "n": "ntf_maestro_2",
+    "k": "pr_ready",
+    "c": "cnv_0000000000000011",
+    "w": "ws_0000000000000007",
+    "o": "pull-request"
+  }
+}

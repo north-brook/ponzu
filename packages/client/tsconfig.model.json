@@ -1,0 +1,12 @@
+{
+  // The shared rules (src/model) run on the phone as they are, so they may use nothing a browser
+  // alone has. A list of DOM names would miss the next one (`matchMedia`, `location`), so the
+  // compiler checks them against the language's own library, with no DOM and no Bun types. The
+  // typecheck job runs this ("Lint, typecheck, build" in ci.yml, and `bun run typecheck`).
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "files": ["src/model/index.ts", "react-native-globals.d.ts"]
+}

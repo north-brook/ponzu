@@ -582,8 +582,9 @@ repaint something or say what isn't so. The usual swaps:
   `LANDING_BEAT_MS` (1400) the thread's pane closes on its usual easing and that is remembered as
   the toggle would; it stays open, remembered so, if since the send the person moved the pointer
   into it, pressed, focused, typed or scrolled there, and the toggle or ⌥⌘B pressed then is the
-  person's say. Only a send from the create page has a beat; another canvas opened, or the
-  create page again, before it ends leaves the pane closed. A send that fails comes back to the
+  person's say. The in-memory host's tests hold the beat until they end it (`?beat=held`,
+  app/fake-host.ts), so nothing they do inside it races the clock. Only a send from the create
+  page has a beat; another canvas opened, or the create page again, before it ends leaves the pane closed. A send that fails comes back to the
   page as it was (words, images, project, the caret in the field), the error said, and nothing
   travels back; a second press while it goes does nothing. With reduced motion nothing travels
   or eases and it ends the same. A window resized or a pane's edge taken hold of mid-way lands

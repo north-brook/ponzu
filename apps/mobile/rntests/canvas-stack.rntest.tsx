@@ -5,9 +5,15 @@ import { CanvasStack } from "../components/canvas-stack";
 import { canvasStatus } from "../lib/canvas/status";
 
 /** The stack as the canvas screen draws it for a head row. */
-function Stack(head: Parameters<typeof canvasStatus>[0], prNumber: number | null = null) {
+function Stack(
+  head: Parameters<typeof canvasStatus>[0],
+  prNumber: number | null = null,
+  onChat: () => void = () => {},
+) {
   const status = canvasStatus(head, { status: "ready", doc: null });
-  return <CanvasStack bottom={42} right={16} prNumber={prNumber} chat={status.chat} />;
+  return (
+    <CanvasStack bottom={42} right={16} prNumber={prNumber} chat={status.chat} onChat={onChat} />
+  );
 }
 
 const head = (over: Partial<NonNullable<Parameters<typeof canvasStatus>[0]>> = {}) => ({
@@ -38,13 +44,26 @@ describe("the canvas's floating stack", () => {
     },
   );
 
-  test("needs you: no count is shown, since the phone can't answer a question yet", async () => {
+  test("needs you: Chat wears the count, and says it to VoiceOver", async () => {
     await render(Stack(head({ agentState: "needs_you", needsYouCount: 2 })));
     const hidden = { includeHiddenElements: true };
-    expect(screen.queryByTestId("stack-chat-badge", hidden)).toBeNull();
-    expect(screen.queryByText("2", hidden)).toBeNull();
-    expect(screen.getByLabelText("Chat")).toBeTruthy();
+    expect(screen.getByTestId("stack-chat-badge", hidden)).toBeTruthy();
+    expect(screen.getByText("2", hidden)).toBeTruthy();
+    // The badge itself is hidden from VoiceOver: Chat's label carries the count.
+    expect(screen.queryByTestId("stack-chat-badge")).toBeNull();
+    expect(screen.getByLabelText("Chat, Ponzu has 2 questions")).toBeTruthy();
     expect(screen.queryByTestId("stack-chat-working")).toBeNull();
+  });
+
+  test("needs you outranks working, and one question is said as one", async () => {
+    await render(Stack(head({ agentState: "working", needsYouCount: 1 })));
+    expect(screen.getByLabelText("Chat, Ponzu has a question")).toBeTruthy();
+    expect(screen.getByText("1", { includeHiddenElements: true })).toBeTruthy();
+  });
+
+  test("past 99, the count says 99+", async () => {
+    await render(Stack(head({ agentState: "needs_you", needsYouCount: 140 })));
+    expect(screen.getByText("99+", { includeHiddenElements: true })).toBeTruthy();
   });
 
   test("the pull request's button shows once there is one", async () => {
@@ -52,21 +71,29 @@ describe("the canvas's floating stack", () => {
     expect(screen.getByLabelText("Pull request #412")).toBeTruthy();
   });
 
-  test("Chat and the pull request say they come in the next update; nothing is dead", async () => {
+  test("Chat opens the chat, and the pull request its sheet, with no alert in between", async () => {
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
-    await render(Stack(head(), 412));
+    const onChat = jest.fn();
+    const onPullRequest = jest.fn();
+    const status = canvasStatus(head(), { status: "ready", doc: null });
+    await render(
+      <CanvasStack
+        bottom={42}
+        right={16}
+        prNumber={412}
+        chat={status.chat}
+        onChat={onChat}
+        onPullRequest={onPullRequest}
+      />,
+    );
     for (const id of ["stack-pr", "stack-chat"]) {
       expect(screen.getByTestId(id).props.accessibilityState).not.toMatchObject({ disabled: true });
     }
     await fireEvent.press(screen.getByTestId("stack-chat"));
-    expect(alert).toHaveBeenLastCalledWith(
-      "Chat isn't on the iPhone yet. It comes in the next update.",
-    );
+    expect(onChat).toHaveBeenCalledTimes(1);
     await fireEvent.press(screen.getByTestId("stack-pr"));
-    expect(alert).toHaveBeenLastCalledWith(
-      "Pull requests aren't on the iPhone yet. They come in the next update.",
-    );
-    expect(alert).toHaveBeenCalledTimes(2);
+    expect(onPullRequest).toHaveBeenCalledTimes(1);
+    expect(alert).not.toHaveBeenCalled();
     alert.mockRestore();
   });
 

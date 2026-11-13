@@ -11,6 +11,6 @@ module.exports = {
   setupFiles: ["<rootDir>/jest.setup.js"],
   // The workspace packages are TypeScript source, and these ship ES modules: all transformed.
   transformIgnorePatterns: [
-    "node_modules/(?!(\\.bun/[^/]+/node_modules/)?((jest-)?react-native|@react-native(-community)?|@react-native-async-storage|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg|@hugeicons/.*|@tanstack/.*|hono|@neon/.*|nativewind|react-native-css|@ungap/.*|posthog-react-native|@react-native-menu/.*|parse5|entities|standard-navigation))",
+    "node_modules/(?!(\\.bun/[^/]+/node_modules/)?((jest-)?react-native|@react-native(-community)?|@react-native-async-storage|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg|@hugeicons/.*|@tanstack/.*|hono|@neon/.*|nativewind|react-native-css|@ungap/.*|posthog-react-native|@react-native-menu/.*|parse5|entities|standard-navigation|micromark.*|mdast-util-.*|unist-util-.*|decode-named-character-reference|character-entities.*|devlop|ccount|escape-string-regexp|markdown-table|longest-streak|zwitch))",
   ],
 };

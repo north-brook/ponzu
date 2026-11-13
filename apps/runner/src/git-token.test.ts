@@ -1,10 +1,11 @@
 import { afterAll, expect, test } from "bun:test";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GitCredentialRequest, GitCredentialResponse } from "./api/protocol.ts";
 import { fingerprint, GitCredentials, type Probe, receivePackProbe } from "./git-token.ts";
+import { agentShell, text } from "./save/shell.ts";
 import { serveCredentials } from "./server.ts";
 
 /*
@@ -32,8 +33,11 @@ const ENV = {
   GIT_TERMINAL_PROMPT: "0",
 };
 
-function sh(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" }).trim();
+// Awaited, never execFileSync: Bun 1.4.2's sync spawns can lose a child's exit in a
+// `bun test --parallel` worker and wait on it forever (oven-sh/bun#47257).
+const shell = agentShell(undefined, ENV);
+async function sh(cwd: string, ...args: string[]): Promise<string> {
+  return text(await shell(["git", ...args], { cwd })).trim();
 }
 
 function temp(prefix: string): string {
@@ -73,17 +77,17 @@ function mintingApi(minted: Map<string, number>) {
  * `/north/fern.git`, with GitHub's manners: no credential is a 401 that asks for one, an unknown
  * one is a 401, and a known one younger than `freshMs` is a 404 "Repository not found.".
  */
-function gitServer(minted: Map<string, number>, freshMs: number) {
+async function gitServer(minted: Map<string, number>, freshMs: number) {
   const root = temp("ponzu-gitsrv-");
   const bare = join(root, "north", "fern.git");
-  sh(root, "init", "-q", "--bare", "-b", "main", bare);
+  await sh(root, "init", "-q", "--bare", "-b", "main", bare);
   const seed = join(root, "seed");
-  sh(root, "init", "-q", "-b", "main", seed);
+  await sh(root, "init", "-q", "-b", "main", seed);
   writeFileSync(join(seed, "README.md"), "fern\n");
-  sh(seed, "add", ".");
-  sh(seed, "commit", "-qm", "First");
-  sh(seed, "push", "-q", bare, "main");
-  const backend = join(sh(root, "--exec-path"), "git-http-backend");
+  await sh(seed, "add", ".");
+  await sh(seed, "commit", "-qm", "First");
+  await sh(seed, "push", "-q", bare, "main");
+  const backend = join(await sh(root, "--exec-path"), "git-http-backend");
   const refused: number[] = [];
 
   const server = Bun.serve({
@@ -162,13 +166,13 @@ function cgi(program: string, env: Record<string, string>, body: Uint8Array): Pr
 }
 
 /** A checkout of the server's repository with a new commit on the canvas's branch. */
-function checkout(server: { bare: string }) {
+async function checkout(server: { bare: string }) {
   const work = join(temp("ponzu-gitwork-"), "fern");
-  sh(server.bare, "clone", "-q", server.bare, work);
-  sh(work, "switch", "-qc", "pz/onboarding");
+  await sh(server.bare, "clone", "-q", server.bare, work);
+  await sh(work, "switch", "-qc", "pz/onboarding");
   writeFileSync(join(work, "flow.html"), "<p>Welcome</p>\n");
-  sh(work, "add", ".");
-  sh(work, "commit", "-qm", "Add the onboarding flow");
+  await sh(work, "add", ".");
+  await sh(work, "commit", "-qm", "Add the onboarding flow");
   return work;
 }
 
@@ -215,11 +219,11 @@ function socketFor(credentials: GitCredentials): string {
 
 test("as it was: a push the instant the canvas's first token is minted gets 'Repository not found'", async () => {
   const minted = new Map<string, number>();
-  const server = gitServer(minted, 1_500);
+  const server = await gitServer(minted, 1_500);
   const api = mintingApi(minted);
   // No check: the token goes to git as the API hands it out, as before the fix.
   const credentials = new GitCredentials({ api, probe: async () => 200, event: () => {} });
-  const work = checkout(server);
+  const work = await checkout(server);
 
   const pushed = await push(work, server.url, socketFor(credentials));
 
@@ -232,7 +236,7 @@ test("as it was: a push the instant the canvas's first token is minted gets 'Rep
 
 test("a push the instant the canvas's first token is minted lands: the runner waits until GitHub honours it", async () => {
   const minted = new Map<string, number>();
-  const server = gitServer(minted, 1_500);
+  const server = await gitServer(minted, 1_500);
   const api = mintingApi(minted);
   const events: Record<string, unknown>[] = [];
   const credentials = new GitCredentials({
@@ -240,13 +244,13 @@ test("a push the instant the canvas's first token is minted lands: the runner wa
     probe: receivePackProbe(),
     event: (name, fields) => events.push({ name, ...fields }),
   });
-  const work = checkout(server);
+  const work = await checkout(server);
 
   const pushed = await push(work, server.url, socketFor(credentials));
 
   expect(pushed).toMatchObject({ ok: true });
-  expect(sh(server.bare, "rev-parse", "refs/heads/pz/onboarding")).toBe(
-    sh(work, "rev-parse", "HEAD"),
+  expect(await sh(server.bare, "rev-parse", "refs/heads/pz/onboarding")).toBe(
+    await sh(work, "rev-parse", "HEAD"),
   );
   // GitHub refused the new token at first, and git got it only once GitHub honoured it.
   expect(server.refused.length).toBeGreaterThan(0);

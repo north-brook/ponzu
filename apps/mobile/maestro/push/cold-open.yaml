@@ -1,0 +1,13 @@
+appId: design.ponzu.app.dev
+name: push-cold-open
+---
+# Part 4: a cold start. Seed `pings` for this launch and the next
+# (`relaunch=1`), then end the app. run.sh sends cold-permission.apns, a
+# needs-you ping for the Pricing page's permission, which cold-tap.yaml taps
+# from the home screen.
+- runFlow: ../shared/start.yaml
+- openLink: ponzu-dev://dev?seed=pings&relaunch=1
+- extendedWaitUntil:
+    visible: "Pricing page, .*site.*"
+    timeout: 30000
+- stopApp

@@ -128,10 +128,10 @@ describe("the signed manifest", () => {
 
   test.skipIf(!Bun.which("gpg"))(
     "gpg verifies the recorded manifest with the recorded key, and refuses it changed by one hash",
-    () => {
+    async () => {
       const key = join(FIXTURES, "claude-code.asc");
       const sig = join(FIXTURES, "manifest-2.1.322.json.sig");
-      expect(verifySignature(key, join(FIXTURES, "manifest-2.1.322.json"), sig)).toBeNull();
+      expect(await verifySignature(key, join(FIXTURES, "manifest-2.1.322.json"), sig)).toBeNull();
       const dir = mkdtempSync(join(tmpdir(), "ponzu-bump-test-"));
       try {
         const tampered = join(dir, "manifest.json");
@@ -142,7 +142,7 @@ describe("the signed manifest", () => {
             "0".repeat(64),
           ),
         );
-        expect(verifySignature(key, tampered, sig)).toBe("gpg said BADSIG");
+        expect(await verifySignature(key, tampered, sig)).toBe("gpg said BADSIG");
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

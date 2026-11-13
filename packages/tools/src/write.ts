@@ -488,7 +488,6 @@ export const writeTools = [
         ctx,
         args.moves.flatMap((m) => [m.id, m.before, m.after, m.parent]),
       );
-      const doc = canvas.doc;
       const ops: Op[] = [];
       // Nodes moved so far to each `after` sibling or parent index. Moves that
       // share a spot line up after one another, in the order given, rather than
@@ -498,6 +497,8 @@ export const writeTools = [
       const movedAt = new Map<string, number>();
       // Apply one by one so later moves see earlier ones.
       for (const [step, move] of args.moves.entries()) {
+        // Read again each time: a canvas on a replica is a new document after each op.
+        const doc = canvas.doc;
         const spot = move.after
           ? `after ${move.after}`
           : !move.before && move.parent && move.index !== undefined

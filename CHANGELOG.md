@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.2.0](https://github.com/north-brook/ponzu/compare/v2.1.1...v2.2.0) (2026-11-13)
+
+
+### Features
+
+* **mobile:** chat, questions, pull requests, pings, comment pictures and search on iphone ([#600](https://github.com/north-brook/ponzu/issues/600)) ([7099b71](https://github.com/north-brook/ponzu/commit/7099b71ea5302b240a8372e2c1a0b3e6f0d50633))
+
+## [2.1.1](https://github.com/north-brook/ponzu/compare/v2.1.0...v2.1.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **studio:** draw a comment's picture without copying whole boards in the window ([#588](https://github.com/north-brook/ponzu/issues/588)) ([526e564](https://github.com/north-brook/ponzu/commit/526e56425042d17d60f2cf221f0e68217f3f801f))
+* **studio:** let go of a closed canvas when another opens ([#581](https://github.com/north-brook/ponzu/issues/581)) ([5f803ba](https://github.com/north-brook/ponzu/commit/5f803bac4b3715522162b6ebeef1141143b0d1a1))
+
+
+### Performance Improvements
+
+* **core:** keep unchanged boards when an op applies instead of cloning the whole document ([#587](https://github.com/north-brook/ponzu/issues/587)) ([7465110](https://github.com/north-brook/ponzu/commit/7465110ad65c05b0ce36c67d70513ec473a4c3e1))
+
 ## [2.1.0](https://github.com/north-brook/ponzu/compare/v2.0.0...v2.1.0) (2026-11-13)
 
 

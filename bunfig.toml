@@ -1,0 +1,5 @@
+[test]
+# The test databases are made before any test starts, not inside the first one's timeout. The
+# trace comes first, so a file that hangs while the database preload runs is still named; it does
+# nothing unless CI's watchdog (scripts/ci/test-watchdog.ts) sets PONZU_TEST_TRACE.
+preload = ["./scripts/ci/test-trace.ts", "./packages/db/src/test-preload.ts"]

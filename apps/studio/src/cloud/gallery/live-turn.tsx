@@ -7,6 +7,7 @@
  * thread sits above it, for reading up while it ends.
  */
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { AgentActivity, ThreadItem } from "../model.ts";
 import { ThreadRail } from "../thread/rail.tsx";
 import { TipProvider } from "../ui/tooltip.tsx";
@@ -104,10 +105,17 @@ export function LiveTurnRail({ earlier = false }: { earlier?: boolean }) {
       new Promise<void>((done) => {
         for (const step of SCRIPT)
           timers.current.push(
-            window.setTimeout(() => {
-              if (step.items) setItems(step.items);
-              if (step.agent) setAgent(step.agent);
-            }, step.at),
+            // Each step its own commit, made before its timer returns. Left to React, steps whose
+            // timers a busy page runs back to back are batched into one render, and a state
+            // between them never reaches the page, which no test of every state can then see.
+            window.setTimeout(
+              () =>
+                flushSync(() => {
+                  if (step.items) setItems(step.items);
+                  if (step.agent) setAgent(step.agent);
+                }),
+              step.at,
+            ),
           );
         timers.current.push(window.setTimeout(done, SCRIPT.at(-1)!.at + 200));
       });

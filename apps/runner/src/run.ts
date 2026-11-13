@@ -391,6 +391,12 @@ export class Runner {
   private pushes: Promise<void> = Promise.resolve();
   /** Create PR asked for a push during a turn: made when the turn ends. */
   private pushAsked = false;
+  /**
+   * How many times Create PR has asked for a push. A push asked for before the latest Create PR
+   * that then fails says nothing of it: the API forgot the last push's error when the person
+   * pressed Create PR, and the push that press asked for, after this one, says how it went.
+   */
+  private pushAsks = 0;
   /** A push the person may want to know is happening: the state says so while it lasts. */
   private pushingNow = false;
   /** The canvas's branch against GitHub, as the last push found it. */
@@ -1139,6 +1145,11 @@ export class Runner {
       // Create PR, with commits only this sandbox holds: pushed without the agent. During a turn
       // the agent's git may be mid-rebase or pushing itself, so the push waits for the turn's end.
       this.ack(event.id, false);
+      this.pushAsks++;
+      // As the API did when the person pressed it: the last push's error is forgotten, so a
+      // report of it still waiting to go never says it again while the new push runs.
+      const branch = this.state.current.branch;
+      if (branch?.error) this.state.set({ branch: { ...branch, error: null } });
       if (this.working) this.pushAsked = true;
       else void this.push("asked");
       return;
@@ -1907,6 +1918,7 @@ export class Runner {
       return true;
     };
     let answer: PushOutcome | null = null;
+    const asks = this.pushAsks;
     const run = async () => {
       try {
         const ahead = await pusher.unpushed();
@@ -1918,6 +1930,11 @@ export class Runner {
         const outcome = await pusher.push({ ...opts, held });
         this.branch = outcome;
         answer = outcome;
+        if (outcome.failure && this.pushAsks !== asks) {
+          // Create PR came while this push waited or tried: its own push, next, says how it went.
+          this.log(`pushing the branch failed before Create PR's push: ${outcome.failure.said}`);
+          return;
+        }
         const error = outcome.failure
           ? pushFailureText(outcome.failure, {
               branch: pusher.branchName,

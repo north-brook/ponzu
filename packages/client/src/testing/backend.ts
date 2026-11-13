@@ -1260,12 +1260,12 @@ export class FakeBackend {
             canvas.assets.set(ref, file.type);
             return { id: this.id("up"), ref, url: `${assetsUrl(canvas)}${ref}` };
           }),
-        uploadCommentPicture: (id, messageId, files) =>
+        uploadCommentPicture: (id, messageId, files, format = "webp") =>
           call(() => {
             const canvas = writable(id);
             return (["light", "dark"] as const).map((theme) => {
               const upload = this.id("up");
-              const ref = `comments/${messageId}-${theme}-${upload.slice(-6)}.webp`;
+              const ref = `comments/${messageId}-${theme}-${upload.slice(-6)}.${format}`;
               canvas.pictures.set(upload, { ref, bytes: files[theme], userId: person.id });
               return upload;
             });

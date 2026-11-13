@@ -282,13 +282,9 @@ export function CreateView({
       );
     } catch (failure) {
       // Back to the page as it was: the words, the images, the project; nothing travels back.
+      // The page gives the caret back to the field as it shows it again (create-page.tsx).
       setLaunched(false);
       onLaunchFailed();
-      requestAnimationFrame(() =>
-        document
-          .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
-          ?.focus({ preventScroll: true }),
-      );
       // At a billing limit nothing was made: the wall holds the prompt, and sends it again with
       // the same create key once the limit lifts.
       if (wall?.refused(failure, { kind: "create", run: () => latestSend.current() })) return;

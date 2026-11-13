@@ -32,8 +32,8 @@ import {
 /** What a line can lead to: the canvas, the pull request tab, the browser. */
 export interface LineHandlers {
   /**
-   * The picture of where the viewer's own comment was left while their app is still making its
-   * files: the same scene, drawn live (the canvas draws it).
+   * What stands in for the picture of where the viewer's own comment was left while their app
+   * is still making its files (the canvas gives its ground, never a live copy of the boards).
    */
   renderDrawing: (messageId: string) => ReactNode;
   /** Takes the canvas to a comment: its page, its pin in the middle, its thread open. */

@@ -102,6 +102,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("the edge hints only once the pointer rests on it, with the column-resize cursor", async () => {
+    await atRest(page);
     const x = await sidebarEdgeX();
     const line = () =>
       page
@@ -111,15 +112,56 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect(
       await page.locator("#sidebar-pane-edge").evaluate((el) => getComputedStyle(el).cursor),
     ).toBe("col-resize");
-    // Swept across: nothing shows.
-    await page.mouse.move(x - 60, GRIP_Y);
-    await page.mouse.move(x + 60, GRIP_Y, { steps: 6 });
-    expect(await line()).toBe(NOTHING);
-    // Resting there: the quiet line (--c-dry), after the linger.
-    await page.mouse.move(x, GRIP_Y);
-    await page.waitForTimeout(100);
-    expect(await line()).toBe(NOTHING);
-    await page.waitForTimeout(600);
+    // The line waits out the linger on the page's own clock, held here where it starts: how long
+    // the pointer's moves take to arrive (a busy machine's round trips can outlast the 300 ms)
+    // then changes nothing, and the linger is stepped through as the product times it.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Animation.enable");
+    await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+    try {
+      // Swept across, however long it was over the edge on the way: nothing shows.
+      await page.mouse.move(x - 60, GRIP_Y);
+      await page.mouse.move(x + 60, GRIP_Y, { steps: 6 });
+      expect(await line()).toBe(NOTHING);
+      // Resting there: the quiet line (--c-dry), after the linger and not before.
+      await page.mouse.move(x, GRIP_Y);
+      const linger = () =>
+        page.locator("#sidebar-pane-edge > span").evaluate((el) => {
+          const fade = el
+            .getAnimations()
+            .find(
+              (a) =>
+                (a as Animation & { transitionProperty?: string }).transitionProperty ===
+                "background-color",
+            );
+          if (!fade) return null;
+          const { delay, duration } = fade.effect!.getComputedTiming();
+          return { delay: Number(delay), duration: Number(duration) };
+        });
+      await waitUntil(async () => (await linger()) !== null);
+      const { delay, duration } = (await linger())!;
+      const tokens = await page.evaluate(() => {
+        const css = getComputedStyle(document.documentElement);
+        const ms = (name: string) => {
+          const value = css.getPropertyValue(name).trim();
+          return Number.parseFloat(value) * (/\ds$/.test(value) ? 1000 : 1);
+        };
+        return { linger: ms("--dur-linger"), hover: ms("--dur-hover") };
+      });
+      expect(delay).toBe(tokens.linger);
+      expect(duration).toBe(tokens.hover);
+      const at = (ms: number) =>
+        page.locator("#sidebar-pane-edge > span").evaluate((el, ms) => {
+          for (const a of el.getAnimations()) a.currentTime = ms;
+        }, ms);
+      await at(delay - 1);
+      expect(await line()).toBe(NOTHING);
+      await at(delay + duration);
+      expect(await line()).toBe("rgb(201, 197, 188)");
+    } finally {
+      await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+      await cdp.detach();
+    }
     expect(await line()).toBe("rgb(201, 197, 188)");
     // On the canvas's side of the gutter, under the chrome's divider: never in the gutter's
     // middle, a few pixels off it.
@@ -131,6 +173,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("dragging the sidebar's edge moves it with the pointer, the chrome in the same frame", async () => {
+    await atRest(page);
     const x = await sidebarEdgeX();
     await page.mouse.move(x, GRIP_Y);
     await page.mouse.down();
@@ -170,6 +213,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("the rail's edge drags the same way, and the chrome's divider follows it", async () => {
+    await atRest(page);
     const before = await geometry(page);
     const x = await railEdgeX();
     await page.mouse.move(x, GRIP_Y);
@@ -192,20 +236,41 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("toggled closed and open, a pane eases both ways and comes back at its width", async () => {
+    await atRest(page);
+    // Widths of the person's own, not the mockup's, to come back to: set by keys, as by hand.
+    await page.locator("#sidebar-pane-edge").focus();
+    await page.keyboard.press("Shift+ArrowRight");
+    await page.locator("#thread-pane-edge").focus();
+    await page.keyboard.press("Shift+ArrowLeft");
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    const sidebarWidth = PANES.sidebar.default + 50;
+    const railWidth = PANES.rail.default + 50;
+    await waitUntil(async () => {
+      const ui = await saved(page);
+      return ui?.sidebarWidth === sidebarWidth && ui.railWidth === railWidth;
+    });
     const toggle = page.getByRole("button", { name: "Toggle sidebar" });
     const easing = await watchEasing(page);
     await toggle.click();
-    // Easing, then closed: its panel eased on the panes' clock, rather than jumping.
-    expect(await page.locator("[data-pane-motion]").count()).toBe(1);
+    // Easing, then closed: the window wore the mark, and its panel eased on the panes' clock,
+    // rather than jumping. Both are caught as they happen, not looked for afterwards: the mark
+    // is on for --dur-pane, which a busy machine's round trip can outlast.
     const ms = await page.evaluate(() => {
       // The build may write it in seconds (".22s").
       const value = getComputedStyle(document.documentElement).getPropertyValue("--dur-pane");
       return Number.parseFloat(value) * (/\ds\s*$/.test(value) ? 1000 : 1);
     });
     expect(ms).toBeGreaterThan(0);
-    expect(await easing()).toContainEqual({ target: "sidebar-pane", property: "flex-grow", ms });
+    // Read once the panel has closed, so every transition it started has been seen.
     await waitUntil(async () => (await geometry(page)).sidebar < 0.5);
     await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
+    const eased = await easing();
+    expect(eased.marked).toBe(true);
+    expect(eased.transitions).toContainEqual({
+      target: "sidebar-pane",
+      property: "flex-grow",
+      ms,
+    });
     const closed = await geometry(page);
     // The canvas comes to 6 from the window's edge, and the edge can't be taken hold of.
     expect(closed.mainLeft).toBeCloseTo(6, 0);
@@ -213,8 +278,8 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     await toggle.click();
     await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
     const open = await geometry(page);
-    expect(open.sidebar).toBeCloseTo(344, 0);
-    expect(open.chromeLeftEnd + 4).toBeCloseTo(344, 0);
+    expect(open.sidebar).toBeCloseTo(sidebarWidth, 0);
+    expect(open.chromeLeftEnd + 4).toBeCloseTo(sidebarWidth, 0);
 
     // The rail the same, with its toggle.
     const thread = page.getByRole("button", { name: "Thread" });
@@ -226,23 +291,24 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect((await geometry(page)).mainRight).toBeCloseTo(WIDTH - 6, 0);
     await thread.click();
     await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
-    expect((await geometry(page)).rail).toBeCloseTo(460, 0);
+    expect((await geometry(page)).rail).toBeCloseTo(railWidth, 0);
     // A toggle doesn't change the width that's kept.
-    expect(await saved(page)).toMatchObject({ sidebarWidth: 344, railWidth: 460 });
+    expect(await saved(page)).toMatchObject({ sidebarWidth, railWidth });
   });
 
   test("an edge moves with the arrow keys, shows the focus ring, and Enter leaves the pane open", async () => {
+    await atRest(page);
     const edge = page.locator("#sidebar-pane-edge");
     await edge.focus();
     await page.keyboard.press("ArrowRight");
-    expect((await geometry(page)).sidebar).toBeCloseTo(354, 0);
+    expect((await geometry(page)).sidebar).toBeCloseTo(310, 0);
     await page.keyboard.press("Shift+ArrowLeft");
-    expect((await geometry(page)).sidebar).toBeCloseTo(304, 0);
+    expect((await geometry(page)).sidebar).toBeCloseTo(260, 0);
     await page.keyboard.press("ArrowLeft");
-    expect((await geometry(page)).sidebar).toBeCloseTo(294, 0);
+    expect((await geometry(page)).sidebar).toBeCloseTo(250, 0);
     await page.keyboard.press("Enter");
-    expect((await geometry(page)).sidebar).toBeCloseTo(294, 0);
-    await waitUntil(async () => (await saved(page))?.sidebarWidth === 294);
+    expect((await geometry(page)).sidebar).toBeCloseTo(250, 0);
+    await waitUntil(async () => (await saved(page))?.sidebarWidth === 250);
     expect(await edge.evaluate((el) => el.matches(":focus-visible"))).toBe(true);
     // Reached with Tab, as the keyboard does (focus a script gave after a click stays quiet):
     // the line, in the ring's colour.
@@ -260,12 +326,12 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     const rail = page.locator("#thread-pane-edge");
     await rail.focus();
     await page.keyboard.press("ArrowLeft");
-    expect((await geometry(page)).rail).toBeCloseTo(470, 0);
-    await waitUntil(async () => (await saved(page))?.railWidth === 470);
+    expect((await geometry(page)).rail).toBeCloseTo(370, 0);
+    await waitUntil(async () => (await saved(page))?.railWidth === 370);
     // Read out as the pane's width, whichever side it's on (the library's own value is the
     // panel before the edge: the canvas, for the rail).
     await waitUntil(
-      async () => (await rail.getAttribute("aria-valuetext")) === "Thread, 470 pixels",
+      async () => (await rail.getAttribute("aria-valuetext")) === "Thread, 370 pixels",
     );
     // Home: the pane at its narrowest; End: at its widest. The same on both sides.
     await page.keyboard.press("Home");
@@ -285,6 +351,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("dragging an edge leaves focus where it was", async () => {
+    await atRest(page);
     const message = page.getByRole("textbox", { name: "Message" });
     await message.click();
     await page.keyboard.type("hello");
@@ -309,6 +376,17 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("double-clicking an edge returns its pane to the mockup's width", async () => {
+    await atRest(page);
+    // Both away from it first, by keys.
+    await page.locator("#sidebar-pane-edge").focus();
+    await page.keyboard.press("Shift+ArrowRight");
+    await page.locator("#thread-pane-edge").focus();
+    await page.keyboard.press("Shift+ArrowLeft");
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await waitUntil(async () => {
+      const ui = await saved(page);
+      return ui?.sidebarWidth === 350 && ui.railWidth === 410;
+    });
     const x = await sidebarEdgeX();
     await page.mouse.dblclick(x, GRIP_Y);
     expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.default, 0);
@@ -321,6 +399,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("the chrome's dividers are handles for their panes too: a drag sizes one, a double click resets it", async () => {
+    await atRest(page);
     const grip = async (pane: "sidebar" | "rail") => {
       const b = await box(page, `[data-chrome-grip="${pane}"]`);
       return { x: b.x + b.width / 2, y: b.y + b.height / 2, width: b.width, height: b.height };
@@ -394,6 +473,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("a small window keeps the canvas its room, and gives the panes theirs back", async () => {
+    await atRest(page);
     // Both panes as wide as they go: the keys stop at the limit.
     await page.locator("#sidebar-pane-edge").focus();
     for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+ArrowRight");
@@ -424,6 +504,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("in a small window, dragging one edge stops at the canvas and leaves the other pane be", async () => {
+    await atRest(page);
     await page.mouse.dblclick(await sidebarEdgeX(), GRIP_Y);
     await page.mouse.dblclick(await railEdgeX(), GRIP_Y);
     await page.setViewportSize({ width: 1100, height: HEIGHT });
@@ -459,6 +540,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 
   test("opened in a small window, wide panes share the shortfall, and widen again with it", async () => {
+    await atRest(page);
     await page.evaluate(() => {
       const key = Object.keys(localStorage).find((k) => k.startsWith("ponzu.ui."))!;
       const ui = JSON.parse(localStorage.getItem(key)!);
@@ -501,6 +583,48 @@ async function openTheCanvas(page: Page) {
   await page.locator('[data-board-name][title="Welcome"]').waitFor();
   await page.locator("#thread").waitFor();
   await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
+}
+
+/**
+ * The window as each test after the first starts from it: 1440 by 900, the pointer let go of
+ * and on the canvas, nothing focused, both panes open at the mockup's widths and kept so, and
+ * nothing easing. Where the test before left it so, this changes nothing; where one failed part
+ * way, the next still starts where it should, and a failure stays its own.
+ */
+async function atRest(page: Page) {
+  await page.mouse.up();
+  await page.setViewportSize({ width: WIDTH, height: HEIGHT });
+  await page.mouse.move(WIDTH / 2, HEIGHT / 2);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const still = async () => (await page.locator("[data-pane-motion]").count()) === 0;
+  for (const [pane, toggle] of [
+    ["sidebar", "Toggle sidebar"],
+    ["rail", "Thread"],
+  ] as const) {
+    if ((await geometry(page))[pane] > 0.5) continue;
+    await page.getByRole("button", { name: toggle }).click();
+    await waitUntil(async () => (await still()) && (await geometry(page))[pane] > 0.5);
+  }
+  await waitUntil(still);
+  for (const [pane, edge] of [
+    ["sidebar", "#sidebar-pane-edge"],
+    ["rail", "#thread-pane-edge"],
+  ] as const) {
+    if (Math.round((await geometry(page))[pane]) === PANES[pane].default) continue;
+    const b = await box(page, edge);
+    await page.mouse.dblclick(b.x + b.width / 2, GRIP_Y);
+  }
+  await page.mouse.move(WIDTH / 2, HEIGHT / 2);
+  await waitUntil(async () => {
+    const g = await geometry(page);
+    const ui = await saved(page);
+    return (
+      Math.round(g.sidebar) === PANES.sidebar.default &&
+      Math.round(g.rail) === PANES.rail.default &&
+      ui?.sidebarWidth === PANES.sidebar.default &&
+      ui.railWidth === PANES.rail.default
+    );
+  });
 }
 
 async function box(page: Page, selector: string) {
@@ -562,19 +686,27 @@ function measure() {
   };
 }
 
+interface Easing {
+  /** Whether the window wore `data-pane-motion` at any moment since. */
+  marked: boolean;
+  /** What eased, on which property, for how long. */
+  transitions: { target: string; property: string; ms: number }[];
+}
+
 /**
- * Watches, from now, for the transitions the panes' panels start: each caught as the change that
- * starts it lands (a MutationObserver, before a frame is drawn), so none can have finished first,
- * however few frames the machine paints. The function it gives back stops watching and says
- * what eased, on which property, for how long.
+ * Watches, from now, for the transitions the panes' panels start, and for the window's
+ * `data-pane-motion`: each caught as the change that starts it lands (a MutationObserver, before
+ * a frame is drawn), so none can have finished first, however few frames the machine paints or
+ * however long the test's round trips take. The function it gives back stops watching and says
+ * what it saw.
  */
-async function watchEasing(
-  page: Page,
-): Promise<() => Promise<{ target: string; property: string; ms: number }[]>> {
+async function watchEasing(page: Page): Promise<() => Promise<Easing>> {
   await page.evaluate(() => {
     type Seen = { target: string; property: string; ms: number };
     const seen = new Map<Animation, Seen>();
+    let marked = !!document.querySelector("[data-pane-motion]");
     const look = () => {
+      if (document.querySelector("[data-pane-motion]")) marked = true;
       for (const a of document.getAnimations()) {
         const target = (a.effect as KeyframeEffect | null)?.target;
         if (seen.has(a) || !("transitionProperty" in a) || !(target instanceof Element)) continue;
@@ -588,18 +720,13 @@ async function watchEasing(
     };
     const observer = new MutationObserver(look);
     observer.observe(document.body, { subtree: true, attributes: true, childList: true });
-    (window as unknown as { easing: () => Seen[] }).easing = () => {
+    (window as unknown as { easing: () => unknown }).easing = () => {
       look();
       observer.disconnect();
-      return [...seen.values()];
+      return { marked, transitions: [...seen.values()] };
     };
   });
-  return () =>
-    page.evaluate(() =>
-      (
-        window as unknown as { easing: () => { target: string; property: string; ms: number }[] }
-      ).easing(),
-    );
+  return () => page.evaluate(() => (window as unknown as { easing: () => Easing }).easing());
 }
 
 /** What the window keeps for Maya between launches. */

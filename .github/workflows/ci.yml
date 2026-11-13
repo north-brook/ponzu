@@ -137,6 +137,8 @@ jobs:
           check typecheck-mobile bunx tsc -p apps/mobile/tsconfig.json --noEmit
           check typecheck-desktop bunx tsc -p apps/desktop/tsconfig.json --noEmit
           check typecheck-api bunx tsc -p apps/api/tsconfig.json --noEmit
+          # The shared rules the phone runs, against the language's library with no DOM.
+          check typecheck-model bunx tsc -p packages/client/tsconfig.model.json --noEmit
           check studio bun run --filter @ponzu/studio build
           check web bun run --filter @ponzu/web build
           # Builds the API the way Vercel does and loads the bundle in Node.
@@ -148,7 +150,7 @@ jobs:
           check migrations bun scripts/ci/migrations.ts
           wait
           failed=0
-          for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api runner migrations; do
+          for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api typecheck-model studio web api runner migrations; do
             echo "::group::$name"
             cat "$RUNNER_TEMP/$name.log"
             echo "::endgroup::"
@@ -211,6 +213,9 @@ jobs:
       TIMINGS: ~/.cache/ponzu-ci/bun-timings.json
       STRIPE_MOCK_URL: http://localhost:12111
     steps:
+      # The tests' watchdog counts its deadline from here, the job's first step.
+      - name: Note when the job started
+        run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -244,16 +249,26 @@ jobs:
           bun apps/studio/scripts/prebuild-tests.ts "$RUNNER_TEMP/studio-tests"
           echo "PONZU_PREBUILT_STUDIO=$RUNNER_TEMP/studio-tests" >> "$GITHUB_ENV"
       - name: Tests
-        # Test files run in their own workers; the Chromium ones take most of the time. Every
-        # worker that makes a test database migrates its first one (half a second alone), and
-        # with every worker starting at once that has taken longer than bun's default five
-        # seconds for a test or a hook, so they get twenty. A push records each file's time
-        # for the runs after it. Every test's result also goes to JUnit XML, uploaded below,
-        # so which test failed when can be asked of the artifacts rather than the logs.
+        # Test files run in their own workers; the Chromium ones take most of the time. The test
+        # databases are made in bun's preload (bunfig.toml), before any test, not inside the first
+        # test's timeout. Tests and hooks still get twenty seconds, not bun's default five: that
+        # was set before the move, and what else still needs it has not been measured. A push
+        # records each file's time for the runs after it. Every test's result also goes to JUnit
+        # XML, uploaded below, so which test failed when can be asked of the artifacts rather
+        # than the logs.
+        #
+        # A test that blocks its worker's thread blocks bun's own timeout too, and the run then
+        # prints nothing more until the job's limit cancels it; the last file printed is only the
+        # last to finish. So bun runs under scripts/ci/test-watchdog.ts: a minute before the
+        # job's 10-minute limit (the whole job usually takes two), it names each test file still
+        # running and how far it got, prints the process tree, and ends the run, so the upload
+        # below still happens. The deadline's minutes are the job's timeout-minutes
+        # (workflows.test.ts holds them equal).
         run: |
           timings=${TIMINGS/#\~/$HOME}
           results="$RUNNER_TEMP/test-results"
           mkdir -p "$(dirname "$timings")" "$results"
+          deadline=$((JOB_STARTED + 10 * 60 - 60))
           # bun refuses a timings file it can't parse, and every push would then save the same
           # one again, so one bad cache would fail every run after it. Exactly one JSON document
           # of the right shape passes (`-s` reads them all: jq alone would accept two in a row).
@@ -264,7 +279,8 @@ jobs:
           update=()
           if [ "$GITHUB_EVENT_NAME" = push ]; then update=(--update-timings); fi
           status=0
-          bun test --parallel --timeout 20000 --timings "$timings" "${update[@]}" \
+          bun scripts/ci/test-watchdog.ts --deadline "$deadline" --trace "$results/running" -- \
+            bun test --parallel --timeout 20000 --timings "$timings" "${update[@]}" \
             --reporter=junit --reporter-outfile="$results/junit.xml" || status=$?
           if [ -f "$timings" ]; then cp "$timings" "$results/"; fi
           exit $status

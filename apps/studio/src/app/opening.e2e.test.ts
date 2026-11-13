@@ -23,35 +23,44 @@ interface Painted {
   room: number;
 }
 
-function firstPaint(page: Page, selector: string): Promise<Painted> {
-  return page.evaluate(
-    (selector) =>
-      new Promise<Painted>((resolve) => {
-        const look = (): Painted => {
-          const header = document.querySelector("header")!;
-          const mark = header.querySelector<HTMLElement>('button[aria-label^="Pull request #"]');
-          const action = header.querySelector<HTMLElement>(
-            '[data-arrival="action"] > :not([aria-hidden]) button',
-          );
-          const room = header.querySelector('[data-arrival="action"]');
-          return {
-            mark: mark && {
-              x: mark.getBoundingClientRect().x,
-              label: mark.getAttribute("aria-label")!,
-            },
-            action: action && {
-              x: action.getBoundingClientRect().x,
-              label: action.textContent!.trim(),
-            },
-            room: room?.getBoundingClientRect().width ?? 0,
-          };
+/**
+ * Clicks `selector` in the page and measures the frame it paints first. The measuring is started
+ * in the page and its answer left on the window, which the test then reads: no evaluate waits on
+ * a promise in the page for longer than it takes to run.
+ */
+async function firstPaint(page: Page, selector: string): Promise<Painted> {
+  await page.evaluate((selector) => {
+    const w = window as { painted?: Painted | null };
+    w.painted = null;
+    void new Promise<Painted>((resolve) => {
+      const look = (): Painted => {
+        const header = document.querySelector("header")!;
+        const mark = header.querySelector<HTMLElement>('button[aria-label^="Pull request #"]');
+        const action = header.querySelector<HTMLElement>(
+          '[data-arrival="action"] > :not([aria-hidden]) button',
+        );
+        const room = header.querySelector('[data-arrival="action"]');
+        return {
+          mark: mark && {
+            x: mark.getBoundingClientRect().x,
+            label: mark.getAttribute("aria-label")!,
+          },
+          action: action && {
+            x: action.getBoundingClientRect().x,
+            label: action.textContent!.trim(),
+          },
+          room: room?.getBoundingClientRect().width ?? 0,
         };
-        document.querySelector<HTMLElement>(selector)!.click();
-        // The click's render and the canvas's opening land before the next frame is painted.
-        requestAnimationFrame(() => resolve(look()));
-      }),
-    selector,
-  );
+      };
+      document.querySelector<HTMLElement>(selector)!.click();
+      // The click's render and the canvas's opening land before the next frame is painted.
+      requestAnimationFrame(() => resolve(look()));
+    }).then((painted) => {
+      w.painted = painted;
+    });
+  }, selector);
+  await waitUntil(() => page.evaluate(() => !!(window as { painted?: Painted | null }).painted));
+  return page.evaluate(() => (window as { painted?: Painted | null }).painted!);
 }
 
 describe.skipIf(!chromiumPath)("opening a canvas, its answers slow", () => {
@@ -69,23 +78,38 @@ describe.skipIf(!chromiumPath)("opening a canvas, its answers slow", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.url}?as=returning&latency=${LATENCY}`);
     await page.locator("[data-canvas-row]").first().waitFor({ timeout: 30_000 });
-    // Two canvases on the team's repo, each with a draft pull request.
-    ids = await page.evaluate(async () => {
+    // Two canvases on the team's repo, each with a draft pull request. Made in the page, the
+    // answer (LATENCY on) left on the window and read from there: no evaluate waits on a
+    // promise in the page for longer than it takes to run.
+    type Made = { ids?: typeof ids; failed?: string };
+    await page.evaluate(() => {
+      const made: Made = {};
+      (window as { made?: Made }).made = made;
       const w = window.ponzuFake!;
       const api = w.backend.connect(w.me).api;
       const first = [...w.backend.canvases.values()][0]!;
-      const second = await api.canvases.create({
-        workspaceId: w.workspaceId,
-        repoId: first.repoId!,
-        name: "Pricing page",
-      });
-      for (const id of [first.id, second.id]) {
-        const github = w.backend.canvas(id).github!;
-        github.push([{ path: "src/hero.tsx", additions: 12 }]);
-        github.open("maya", "Calmer hero");
-      }
-      return { first: first.id, second: second.id };
+      api.canvases
+        .create({ workspaceId: w.workspaceId, repoId: first.repoId!, name: "Pricing page" })
+        .then((second) => {
+          for (const id of [first.id, second.id]) {
+            const github = w.backend.canvas(id).github!;
+            github.push([{ path: "src/hero.tsx", additions: 12 }]);
+            github.open("maya", "Calmer hero");
+          }
+          made.ids = { first: first.id, second: second.id };
+        })
+        .catch((error: unknown) => {
+          made.failed = String(error);
+        });
     });
+    const made = () => page.evaluate(() => (window as { made?: Made }).made!);
+    await waitUntil(async () => {
+      const now = await made();
+      return !!(now.ids || now.failed);
+    });
+    const { ids: both, failed } = await made();
+    if (!both) throw new Error(`The second canvas wasn't made: ${failed}`);
+    ids = both;
     // The create page, with both rows saying their pull requests.
     await page.getByRole("button", { name: "New canvas" }).click();
     await waitUntil(() =>
@@ -113,7 +137,15 @@ describe.skipIf(!chromiumPath)("opening a canvas, its answers slow", () => {
     );
 
   test("the first time: the mark from the row at once, the action's room held, and the action lands in it", async () => {
-    const painted = await firstPaint(page, row(ids.first));
+    // Its answers kept in hand until the first frame is measured: the frame is the one before
+    // they are in however long the machine takes to paint it, not only while LATENCY outlasts it.
+    await page.evaluate(() => window.ponzuFake!.holdAnswers());
+    let painted: Painted;
+    try {
+      painted = await firstPaint(page, row(ids.first));
+    } finally {
+      await page.evaluate(() => window.ponzuFake!.releaseAnswers());
+    }
     expect(painted.mark?.label).toMatch(/^Pull request #\d+$/);
     expect(painted.action).toBeNull();
     // Ready's room, unseen: the mark already stands where it will.

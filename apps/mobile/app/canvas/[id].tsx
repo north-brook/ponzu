@@ -1,10 +1,13 @@
+import type { Person } from "@ponzu/client/model";
+import { useSessionState } from "@ponzu/client/react";
 import { linkTarget, type Thread } from "@ponzu/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
 import { onlineManager } from "@tanstack/react-query";
-import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import { type Href, router, useLocalSearchParams, useNavigation } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { AppState, Linking, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
   Easing,
@@ -17,12 +20,15 @@ import type { FromCanvas } from "../../canvas/protocol";
 import { CanvasPlaceholder } from "../../components/canvas-placeholder";
 import { CanvasStack } from "../../components/canvas-stack";
 import { type CanvasHandle, CanvasView } from "../../components/canvas-view";
+import { ChatSheet } from "../../components/chat-sheet";
 import { BarButton } from "../../components/chrome";
 import { Composer, initialMode, type Mode } from "../../components/composer";
 import { DraftSheet } from "../../components/draft-sheet";
 import { Glass, GlassGroup } from "../../components/glass";
 import { Back, PageIcon } from "../../components/icons";
 import { CanvasHint, MoveBar } from "../../components/move-bar";
+import { PingAsk } from "../../components/ping-ask";
+import { PrSheet } from "../../components/pr-sheet";
 import { Sheet } from "../../components/sheet";
 import { Shimmer } from "../../components/shimmer";
 import { ThreadSheet } from "../../components/thread-sheet";
@@ -35,10 +41,12 @@ import {
   type Spot,
   statusOp,
 } from "../../lib/canvas/comments";
+import { type LocalPicture, PicturePage, phonePictures } from "../../lib/canvas/pictures";
 import { canvasStatus, previewUrl } from "../../lib/canvas/status";
 import { useCanvasHead, useCanvasSource, useCanvasView } from "../../lib/canvas/use-canvas";
 import { backend } from "../../lib/cloud/backend";
-import { COMMENT_WORDS } from "../../lib/copy";
+import { config } from "../../lib/cloud/config";
+import { CANVAS_WORDS, COMMENT_WORDS } from "../../lib/copy";
 import {
   draftKey,
   drafts,
@@ -49,15 +57,25 @@ import {
   useDrafts,
 } from "../../lib/drafts";
 import { select, success, thud, tick } from "../../lib/haptics";
+import { pathOf, threadLink } from "../../lib/links";
+import { setListNotice } from "../../lib/list-notice";
 import { pageIconImage } from "../../lib/page-icons";
+import { safeHref } from "../../lib/prose";
+import { canvasOnScreen, setOnScreen } from "../../lib/push/foreground";
+import { dismissFor } from "../../lib/push/native";
+import { canvasOf } from "../../lib/push/payload";
+import { usePings } from "../../lib/push/pings";
 import { Juice } from "../../lib/slice";
 import { useTheme } from "../../lib/theme";
 import { EASE_OUT } from "../../lib/tokens";
+import { useSeen } from "../../lib/use-seen";
 import { useWindowInsets } from "../../lib/window-insets";
 
 const ease = Easing.bezier(...EASE_OUT);
 /** The canvas's bar: 6pt above and below its 44pt controls. */
 const BAR = 56;
+/** The chat sheet's top edge, over the header's glass (board 3.8), below the status bar. */
+const CHAT_TOP = 58;
 
 // Unsent words are kept on disk, so an app iOS evicted or killed still has them (lib/drafts.ts).
 drafts.setStorage(AsyncStorage);
@@ -79,11 +97,21 @@ function leave() {
  * Comments are left where they're about: hold on the canvas, or press Comment and tap, and the
  * field floats up, typed or said. A pin opens its thread, to read, reply, resolve or reopen.
  * Each is one op through the replica (lib/canvas/comments.ts): on the canvas at once, its words
- * kept in their draft (lib/drafts.ts, on disk) until the API has them. The chat and pull
- * request sheets come with their own slices; until then their buttons are shown and unavailable.
+ * kept in their draft (lib/drafts.ts, on disk) until the API has them. Chat opens the canvas's
+ * thread in its sheet (components/chat-sheet.tsx), to read Ponzu, say something, attach
+ * pictures or stop a turn. The pull request button, shown once the canvas has one, opens its
+ * sheet (components/pr-sheet.tsx), to look it over and take its next action, Merge among them.
  *
  * Opened from a row, a link or a push: `page` and `artboard` say where to open (a board on its
- * page, or a page, as @ponzu/core's `linkTarget` reads them).
+ * page, or a page, as @ponzu/core's `linkTarget` reads them); `sheet=chat` opens the chat, at
+ * `message=<seq>` when it names one, and `question=<id>` (a push's) opens it at that question;
+ * `sheet=pull-request` opens the pull request sheet. A tap on a ping adds `ping=<id>`: a canvas
+ * the person can no longer open then goes back to the canvases with a line saying so.
+ *
+ * While it is on screen with the app in front, a ping about it shows no banner, the pings about
+ * it leave Notification Center, and (while the API sends pings) its presence says the person is
+ * looking, so the API holds back pings about it. After the first comment sent from this phone,
+ * it may ask about pings (components/ping-ask.tsx).
  */
 export default function CanvasScreen() {
   const params = useLocalSearchParams<{
@@ -94,6 +122,7 @@ export default function CanvasScreen() {
     question?: string;
     thread?: string;
     message?: string;
+    ping?: string;
   }>();
   const canvasId = params.id;
   const { color, scheme } = useTheme();
@@ -103,10 +132,14 @@ export default function CanvasScreen() {
   const insets = { ...safe, left: windowInsets.left, right: windowInsets.right };
   const { width } = useWindowDimensions();
   const { source, bridge, state, me } = useCanvasSource(canvasId);
+  const session = useSessionState(backend.session);
+  /** The person's GitHub login: on the pull request, their own words read "You". */
+  const viewerLogin = session.status === "signed_in" ? session.user.githubLogin : null;
   const head = useCanvasHead(canvasId);
   const view = useCanvasView(canvasId);
   const doc = state.doc;
   const status = canvasStatus(head, state);
+  const pings = usePings();
   const canvas = useRef<CanvasHandle>(null);
   /**
    * The person may comment: the API said they can push to its repo, and it is open (not the last
@@ -145,6 +178,28 @@ export default function CanvasScreen() {
   const assetsUrl = source?.assetBase ?? view.data?.assetsUrl ?? null;
   const name = head?.name ?? view.data?.name ?? (state.path || doc?.name || "");
 
+  // The picture of where each comment and reply the person sends was left, drawn by the page as
+  // it is sent and kept with it once the API has it, as the Mac does (lib/canvas/pictures.ts).
+  const picturePage = useMemo(() => new PicturePage((msg) => canvas.current?.post(msg)), []);
+  useEffect(() => () => picturePage.close(), [picturePage]);
+  const [pictures, setPictures] = useState<ReadonlyMap<string, LocalPicture>>(() => new Map());
+  useEffect(() => {
+    if (!source || !me) return;
+    const made = phonePictures({
+      canvasId,
+      meId: me.id,
+      source,
+      api: backend.api.canvases,
+      page: picturePage,
+    }).start();
+    const off = made.subscribe(() => setPictures(made.getSnapshot()));
+    return () => {
+      off();
+      made.close();
+      setPictures(new Map());
+    };
+  }, [source, me?.id, canvasId, picturePage]);
+
   // The agent's boards get the ring.
   const ringed = status.working.join(" ");
   useEffect(() => bridge?.setWorking(status.working), [bridge, ringed]);
@@ -171,6 +226,33 @@ export default function CanvasScreen() {
       net();
     };
   }, [source]);
+
+  // On screen with the app in front: a ping about this canvas shows no banner, those already
+  // shown leave Notification Center, and the API hears the person is looking (only while it
+  // sends pings, so nothing changes until then).
+  const looking = useSeen();
+  useEffect(() => {
+    if (looking) {
+      setOnScreen(canvasId);
+      void dismissFor(canvasId, canvasOf);
+    } else if (canvasOnScreen() === canvasId) setOnScreen(null);
+  }, [looking, canvasId]);
+  useEffect(
+    () => () => {
+      if (canvasOnScreen() === canvasId) setOnScreen(null);
+    },
+    [canvasId],
+  );
+  useEffect(() => {
+    if (pings.on) source?.setFocused(looking);
+  }, [source, looking, pings.on]);
+
+  // Opened from a ping, and no longer the person's to open: back to the canvases, saying so.
+  useEffect(() => {
+    if (!params.ping || status.mood !== "gone") return;
+    setListNotice(CANVAS_WORDS.gone);
+    router.dismissTo("/canvases");
+  }, [params.ping, status.mood]);
 
   // Where a link opens, once the doc names it: a board on its page, or a page.
   const opening = useMemo(
@@ -219,6 +301,32 @@ export default function CanvasScreen() {
   useEffect(() => {
     if (params.thread) setThreadId(params.thread);
   }, [params.thread]);
+  /**
+   * The chat sheet is up (iPhone design §9): opened by Chat, or by a link or push (`sheet=chat`,
+   * and maybe `message=<seq>` to open at). Only by Chat does its field take the keyboard.
+   */
+  const [chat, setChat] = useState(params.sheet === "chat");
+  const [chatFocus, setChatFocus] = useState(false);
+  /**
+   * The pull request sheet is up (iPhone design §11): opened by the stack's button, a pull
+   * request line in the chat, or a link or push (`sheet=pull-request`).
+   */
+  const [pullRequest, setPullRequest] = useState(params.sheet === "pull-request");
+  useEffect(() => {
+    if (params.sheet === "pull-request") {
+      setChat(false);
+      setPullRequest(true);
+      return;
+    }
+    if (params.sheet !== "chat") return;
+    setPullRequest(false);
+    setChatFocus(false);
+    setChat(true);
+  }, [params.sheet, params.message, params.question, params.ping]);
+  const chatQuestion =
+    params.question && /^[A-Za-z0-9_-]{1,64}$/.test(params.question) ? params.question : null;
+  const chatMessage =
+    params.message && /^\d{1,15}$/.test(params.message) ? Number(params.message) : null;
   const [mode, setMode] = useState<Mode>(initialMode);
   /** How far a sheet over the canvas rises: the pin it's about stays above it. */
   const [sheet, setSheet] = useState(0);
@@ -228,6 +336,8 @@ export default function CanvasScreen() {
   const [note, setNote] = useState<string | null>(null);
   /** Why something sent from a sheet that has since closed didn't go: under the title. */
   const [notice, setNotice] = useState<string | null>(null);
+  /** The ask about pings, after a comment sent from this phone (lib/push/ask.ts). */
+  const [asking, setAsking] = useState(false);
   /** Comments, replies and resolves sent and not yet answered. */
   const [waiting, setWaiting] = useState(0);
   const thread = doc?.threads.find((t) => t.id === threadId) ?? null;
@@ -330,9 +440,12 @@ export default function CanvasScreen() {
         case "drawn":
           setDrawn(true);
           break;
+        case "picture":
+          picturePage.heard(msg);
+          break;
       }
     },
-    [canvasId],
+    [canvasId, picturePage],
   );
 
   /** Sent, and answered: a refusal's words go where the person will see them. */
@@ -381,6 +494,8 @@ export default function CanvasScreen() {
         setError(words);
       } else setNotice(words);
     });
+    // The API has it: the first comment from this phone may ask about pings.
+    if (await pings.afterComment().catch(() => false)) setAsking(true);
   };
   const reply = async (text: string, _mode: Mode) => {
     if (!source || !thread || !me) throw new Error("The canvas isn't open yet.");
@@ -409,6 +524,93 @@ export default function CanvasScreen() {
       if (threadRef.current?.id === id) setNote(words);
       else setNotice(words);
     });
+  };
+
+  /* The chat (iPhone design §9). */
+  /** The person as the thread names them: their bubbles, until the API's own items come. */
+  const chatMe = useMemo<Person | null>(
+    () =>
+      me
+        ? { id: me.id ?? "", name: me.name, login: me.name, avatarUrl: me.avatarUrl ?? null }
+        : null,
+    [me],
+  );
+  const openChat = () => {
+    tick();
+    setThreadId(null);
+    setPending(null);
+    setPlacing(false);
+    setHolding(null);
+    setNotice(null);
+    setPullRequest(false);
+    setChatFocus(true);
+    setChat(true);
+  };
+  /** The chat is gone: the thread is read as far as it held. */
+  const closeChat = (readSeq: number | null) => {
+    setChat(false);
+    setChatFocus(false);
+    if (head) {
+      backend.api.canvases
+        .seen(canvasId, { seq: head.seq, ...(readSeq !== null ? { threadSeq: readSeq } : {}) })
+        .catch(() => {});
+    }
+  };
+  /** The pull request sheet, from the stack's button: whatever else was up gives way. */
+  const openPullRequest = () => {
+    tick();
+    setThreadId(null);
+    setPending(null);
+    setPlacing(false);
+    setHolding(null);
+    setNotice(null);
+    setPullRequest(true);
+  };
+  /** A pull request line in the chat: the chat is read as far as it held, and the sheet opens. */
+  const openPullRequestFromChat = (readSeq: number | null) => {
+    closeChat(readSeq);
+    setPullRequest(true);
+  };
+  /** Shows a page, or a board on its page, from the chat: the sheet has gone by then. */
+  const showPlace = (at: { pageId?: string; artboardId?: string }) => {
+    const pageOf = at.artboardId
+      ? doc?.pages.find((p) => p.artboards.some((a) => a.id === at.artboardId))?.id
+      : at.pageId;
+    if (pageOf && doc?.pages.some((p) => p.id === pageOf) && pageOf !== page?.id) {
+      setPageId(pageOf);
+      canvas.current?.post({ t: "page", pageId: pageOf });
+    }
+    if (at.artboardId && pageOf) canvas.current?.post({ t: "focus", artboardId: at.artboardId });
+  };
+  /** A comment's picture in the chat: the sheet goes, the canvas goes to the pin, its thread opens. */
+  const openCommentFromChat = (id: string, readSeq: number | null) => {
+    closeChat(readSeq);
+    const pin = doc?.threads.find((t) => t.id === id);
+    if (!pin) return;
+    showPlace(pin.artboardId ? { artboardId: pin.artboardId } : { pageId: pin.pageId });
+    setThreadId(id);
+  };
+  /**
+   * A link in Ponzu's reply: a page or board of this canvas is shown in place, with the sheet
+   * gone; another canvas opens, with this one's sheet closed and its thread read as a swipe
+   * leaves it; anything else prose.ts let through leaves the app.
+   */
+  const openLink = (url: string, readSeq: number | null) => {
+    const route = threadLink(url, config().scheme);
+    if (route?.id === canvasId) {
+      closeChat(readSeq);
+      showPlace({ pageId: route.params.page, artboardId: route.params.artboard });
+      return;
+    }
+    if (route) {
+      closeChat(readSeq);
+      router.push(pathOf(route) as Href);
+      return;
+    }
+    const href = safeHref(url);
+    if (!href) return;
+    if (/^mailto:/i.test(href)) Linking.openURL(href).catch(() => {});
+    else WebBrowser.openBrowserAsync(href).catch(() => {});
   };
 
   // Unsent words for this canvas: the pins of new comments left unsent (but the one being
@@ -508,7 +710,11 @@ export default function CanvasScreen() {
   // Under the title, most pressing first: a comment that didn't go, one waiting to, the canvas.
   const queued = waiting > 0 && state.status === "offline" ? COMMENT_WORDS.queued : null;
   const line = notice ?? queued ?? (placeholderLine ? null : status.line);
-  const sheetUp = Boolean(pending || thread || holding || movingDraft);
+  const sheetUp = Boolean(
+    pending || thread || holding || movingDraft || chat || pullRequest || asking,
+  );
+  const offline =
+    state.status === "offline" || !onlineManager.isOnline() ? CANVAS_WORDS.offline : null;
   const foot = Math.max(insets.bottom, 16) + 8;
   return (
     <View testID="canvas" style={{ flex: 1, backgroundColor: color.canvas }}>
@@ -656,7 +862,9 @@ export default function CanvasScreen() {
           bottom={foot}
           right={16 + insets.right}
           prNumber={head?.prNumber ?? null}
+          onPullRequest={openPullRequest}
           chat={status.chat}
+          onChat={openChat}
           commenting={placing}
           commentHint={readOnly}
           onComment={
@@ -754,6 +962,54 @@ export default function CanvasScreen() {
             tick();
             canvas.current?.post({ t: "place" });
             setMovingDraft(null);
+          }}
+        />
+      )}
+      {chat && chatMe && (
+        <ChatSheet
+          canvasId={canvasId}
+          head={head}
+          canvas={view.data}
+          doc={doc}
+          me={chatMe}
+          pictures={pictures}
+          readOnly={readOnly}
+          offline={offline}
+          focus={chatFocus && (head?.needsYouCount ?? 0) === 0}
+          message={chatMessage}
+          question={chatQuestion}
+          repoName={view.data?.repo?.fullName ?? null}
+          onDismiss={closeChat}
+          onOpenComment={openCommentFromChat}
+          onOpenLink={openLink}
+          onOpenPullRequest={openPullRequestFromChat}
+          top={Math.max(CHAT_TOP, safe.top + 4)}
+          right={insets.right}
+        />
+      )}
+      {/* Only once the canvas is open for the person signed in now (`me`), as the chat. */}
+      {pullRequest && !chat && me && (
+        <PrSheet
+          canvasId={canvasId}
+          head={head}
+          viewerLogin={viewerLogin}
+          blocked={readOnly ?? offline}
+          onDismiss={() => setPullRequest(false)}
+          top={Math.max(CHAT_TOP, safe.top + 4)}
+          right={insets.right}
+        />
+      )}
+      {/* After the comment's field has gone, and over nothing else. */}
+      {asking && !pending && !thread && !holding && !chat && !pullRequest && (
+        <PingAsk
+          right={insets.right}
+          onTurnOn={async () => {
+            await pings.turnOn();
+            setAsking(false);
+          }}
+          onNotNow={() => {
+            setAsking(false);
+            void pings.notNow();
           }}
         />
       )}

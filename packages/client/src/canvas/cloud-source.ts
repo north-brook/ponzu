@@ -87,11 +87,12 @@ export class CloudSource implements CanvasSource {
   private opListeners = new Set<OpListener>();
   private unsavedListeners = new Set<(unsaved: Unsaved) => void>();
 
+  /**
+   * The canvas's replica. `state.doc` is its document itself, not a copy: the replica never
+   * changes a document in place, and what an op leaves alone stays the same object, so a
+   * comment leaves every board as it was for whatever draws them.
+   */
   private replica: Replica | null = null;
-  /** The replica's document as last copied into `state`: it changes its own in place. */
-  private copied: Doc | null = null;
-  /** A copy made for the op listeners, for `state` to take up. */
-  private fresh: Doc | null = null;
   private head: CanvasHeadRow | null = null;
   /** When the file links were last reset, as of the address in `assetBase`. */
   private rotatedAt: string | null = null;
@@ -285,10 +286,10 @@ export class CloudSource implements CanvasSource {
       replica.onOp((op, actor, doc, info) => {
         // The API's version of an op made here: `state` takes it, but it is not news.
         if (info.echo) return;
-        this.fresh ??= structuredClone(doc);
         for (const listener of this.opListeners) {
           try {
-            listener(op, actor, this.fresh);
+            // The replica's own document, which `state` takes up when the replica says it changed.
+            listener(op, actor, doc);
           } catch (error) {
             // Motion only: a listener that fails must never hold the document back.
             console.error("[ponzu] op listener failed:", error);
@@ -312,14 +313,10 @@ export class CloudSource implements CanvasSource {
     this.keepPresent();
   }
 
-  /** `state` from the replica, with the document copied when it changed. */
+  /** `state` from the replica: its document, which is a new object whenever it changed. */
   private synced(): void {
     const replica = this.replica!;
-    let doc = this.state.doc;
-    if (this.fresh) doc = this.fresh;
-    else if (replica.doc !== this.copied) doc = structuredClone(replica.doc);
-    this.fresh = null;
-    this.copied = replica.doc;
+    const doc = replica.doc;
     const changed = doc !== this.state.doc;
     this.set({
       status: this.failure ? "error" : replica.offline ? "offline" : "ready",

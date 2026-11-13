@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { launchChromium, type TestChromium } from "@ponzu/render/testing";
+import { bundle, canvasCss } from "./dom-lib.ts";
 
 /*
  * Dragging page tabs along the bar to reorder them, in a real browser with a
@@ -10,13 +10,6 @@ import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
  */
 
 type Page = Parameters<NonNullable<ChromiumOptions["preparePage"]>>[0];
-type Browser = { newPage(): Promise<Page>; close(): Promise<void> };
-const { chromium: playwright } = (await import(
-  Bun.resolveSync(
-    "playwright-core",
-    dirname(Bun.resolveSync("@ponzu/render/chromium", import.meta.dir)),
-  )
-)) as { chromium: { launch(o: object): Promise<Browser> } };
 const chromium = findChromium();
 setDefaultTimeout(30_000);
 
@@ -48,33 +41,17 @@ window.pzMount = (names) => {
 `;
 
 describe.skipIf(!chromium)("reordering pages in Chromium", () => {
-  let browser: Browser;
+  let browser: TestChromium;
   let page: Page;
   let code: string;
   let css: string;
 
   beforeAll(async () => {
-    const dir = import.meta.dir;
-    const entry = join(dir, ".pages-entry.tsx");
-    await Bun.write(entry, ENTRY);
-    const built = await Bun.build({
-      entrypoints: [entry],
-      target: "browser",
-      format: "esm",
-      define: { "process.env.NODE_ENV": '"production"' },
-    });
-    await Bun.file(entry).delete();
-    if (!built.success) throw new AggregateError(built.logs, "bundle failed");
-    code = await built.outputs[0]!.text();
-    const out = join(tmpdir(), `pz-pages-${process.pid}.css`);
-    const tw = Bun.spawnSync(
-      [join(dir, "../node_modules/.bin/tailwindcss"), "-i", join(dir, "styles.css"), "-o", out],
-      { stderr: "pipe" },
-    );
-    if (tw.exitCode !== 0) throw new Error(tw.stderr.toString());
-    css = await Bun.file(out).text();
-    await Bun.file(out).delete();
-    browser = await playwright.launch({ executablePath: chromium!, headless: true });
+    [code, css] = await Promise.all([
+      bundle("pages", ENTRY, { "process.env.NODE_ENV": '"production"' }),
+      canvasCss(),
+    ]);
+    browser = await launchChromium(chromium!);
   });
   afterAll(() => browser?.close());
 
