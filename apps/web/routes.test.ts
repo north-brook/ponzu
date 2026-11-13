@@ -134,7 +134,17 @@ test("the tree has the pages the site is made of", () => {
   expect(pages.map((p) => p.route)).toContain("/canvases/[id]");
   expect(metadata).toContain("/sitemap.xml");
   expect(statics).toContain("/badge.svg");
-  for (const ok of ["/", "/gh/o/r/a.design", "/canvases/cnv_1", "/designs/des_1", "/badge.svg"])
+  for (const ok of [
+    "/",
+    "/gh/o/r/a.design",
+    "/canvases/cnv_1",
+    "/designs/des_1",
+    "/badge.svg",
+    // Where emails' links land (app/settings), and what emails load (public/email).
+    "/settings?section=usage&workspace=ws_1",
+    "/email/tile-96.png",
+    "/email/funnel-display-600.woff2",
+  ])
     expect(resolves(ok)).toBe(true);
   for (const missing of ["/nope", "/share", "/gh", "/canvases", "/download/mac/x"])
     expect(resolves(missing)).toBe(false);

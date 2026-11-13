@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { AgentChange, Presence } from "@ponzu/core";
 import {
   agentWorking,
+  cloudStandbyPath,
   isStill,
   listenForStill,
   STILL_MS,
@@ -92,4 +93,20 @@ test("between edits, it falls back to the newest changes in the log, on this pag
 test("an agent working elsewhere isn't working here", () => {
   expect(agentWorking([agent({ working: ["x"], file: "/other.design" })], "/k.design")).toBe(false);
   expect(agentWorking([agent({ working: ["x"], file: "/k.design" })], "/k.design")).toBe(true);
+});
+
+test("on Ponzu Cloud, standby follows the boards the agent is working on, on this page only", () => {
+  const page = new Set(["ab_1", "ab_2", "ab_3"]);
+  const head = (agentState: string, agentArtboards: string[]) => ({ agentState, agentArtboards });
+  expect(cloudStandbyPath(head("working", ["ab_2", "ab_9", "ab_1", "ab_2"]), page)).toEqual([
+    "ab_2",
+    "ab_1",
+  ]);
+  // Waking, asking, asleep or idle: nothing to watch, so no standby.
+  for (const state of ["waking", "needs_you", "idle", "limited"]) {
+    expect(cloudStandbyPath(head(state, ["ab_1"]), page)).toEqual([]);
+  }
+  // Working on another page only.
+  expect(cloudStandbyPath(head("working", ["ab_9"]), page)).toEqual([]);
+  expect(cloudStandbyPath(undefined, page)).toEqual([]);
 });

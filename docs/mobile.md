@@ -12,8 +12,9 @@ data layer, pairing, Tailscale and the camera are gone. iPhone 1.1.0, in
 TestFlight, has launch, sign-in, setup, the canvases list, search, new
 canvas, a live canvas with comments and comment pictures, the chat, needs
 you, the pull request with Merge, and pings, which are built but stay off
-until the API sends them (below, "Pings"). Still to come: the filter, the
-rest of iPad and iPhone Duo, standby, analytics, and the last of settings.
+until the API sends them (below, "Pings"). Since then: the list's filter, the
+chat beside the canvas on an iPad, and standby on iPhone Duo (below). Still to
+come: analytics, and the last of settings.
 
 ## Layout
 
@@ -158,6 +159,26 @@ The Canvases tab is the Mac sidebar at phone size (`components/canvas-list.tsx`,
 - While nothing has come the rows' shapes stand in, in the chip colour, and
   the lockup's slice juices. A workspace with no canvases shows a faint trace
   of rows and "No canvases yet. Canvases you make in Ponzu show up here."
+
+**The filter** is the Mac sidebar's filter menu as a sheet
+(`components/filter-sheet.tsx`, `app/filter.tsx`), in its words, on the
+shared rules in `@ponzu/client/model` (`filter.ts`). Filter sits in the
+header beside New canvas once the workspace has active canvases, and reads "Filter
+(on)" to VoiceOver, drawn selected, while a filter is on. The sheet has
+Person (Everyone, You, then the workspace's other members, one at a time; a
+personal workspace has none) and Repo (each repo with active canvases and
+then Scratch, with how many). Each choice changes the active rows at once; the
+settled tray isn't filtered, and unchecking the last project is no filter, as
+on the Mac. Until the workspace's members are known, a person chosen before
+counts as everyone, since whose a canvas is isn't known yet. Clear filter, in the sheet while a filter is on,
+puts everything back. A filter that keeps nothing says "No canvases match this
+filter." with Clear filter under it, never the empty workspace's trace. The
+filter is kept per person and per workspace (`ponzu.filter.<userId>`,
+`lib/cloud/filter.ts`) and comes back on the next launch; a kept repo with no
+canvases now, or someone gone from the workspace, is dropped as it is read
+(`pruneFilter`), so an old filter never hides every canvas. The list waits
+for the kept filter to be read rather than show everything first. Search and New
+canvas's first offer look at every canvas, whatever the filter.
 
 The workspace in view is kept per person (`ponzu.workspace.<userId>`) and is
 one choice for the whole app (`lib/cloud/workspace.ts`): settings lists the
@@ -492,8 +513,9 @@ state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
 (the Pricing page's thread with a turn running), `needs-you` (the Pricing
 page waiting on two questions, a plan and a permission), `pull-request` (its
 pull request ready to merge), `pings` (`needs-you` on an API that sends
-pings) and `search` (the `chat` thread, and Maya's comment on the Plans
-board, to be found). Every other scenario is an API that sends none. With `&relaunch=1`
+pings), `search` (the `chat` thread, and Maya's comment on the Plans
+board, to be found) and `filter` (Maya's canvases beside her teammate Jun's,
+a Checkout in site and a settled Sign-up form in app). Every other scenario is an API that sends none. With `&relaunch=1`
 the next launch is put in the same state too, once, so a flow can end the app
 and open it from a ping. Only a fake build takes that link. With the authorize
 page running, the fake's install links open its `/install` page, which comes
@@ -849,19 +871,27 @@ centred over the canvas at most 560pt wide (`SHEET_MAX` in
 
 ## iPhone Duo and iPad
 
-Layouts follow the window's size, never the model (`lib/duo-layout.ts`), so
-iPhone Duo's displays, an iPad and an iPad window in Stage Manager or Split
-View all take the layout their space calls for. An iPhone keeps to portrait;
-an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
-`app.json`).
+Layouts follow the window's size, never the model (`lib/duo-layout.ts`,
+`lib/duo.ts`), so iPhone Duo's displays, an iPad and an iPad window in Stage
+Manager or Split View all take the layout their space calls for. An iPhone
+keeps to portrait; an iPad turns freely (`UISupportedInterfaceOrientations~ipad`
+in `app.json`).
 
-- **The canvas.** A window whose shorter side is under 600pt is a phone's:
-  the canvas's own bar and the comment field. Otherwise the system's bars hold
-  Back, the page and Comments. Comments are an inset panel beside the canvas
-  in a window 900 points wide or more.
-- **The sheet.** In any window 700pt or wider (an iPad), and on the inner
-  display sideways, a sheet floats centred, at most 560pt wide (`sheetMax`),
-  riding 8pt above the keyboard instead of docking into it.
+- **The canvas** keeps its own bar (Back, the name, the page) and its
+  floating stack in every window.
+- **Sheets.** In a window 700pt or wider (an iPad either way up), and on the
+  inner display sideways, the comment field and the thread, chat, pull
+  request and draft sheets float centred, at most 560pt wide (`sheetMax`),
+  riding 8pt above the keyboard instead of docking into it. Narrower, as in
+  a Split View third, they span the window as on an iPhone.
+- **The chat docks** beside the canvas in a window 900pt or wider, flat
+  (`chatPanel`: a 13-inch iPad either way up, an 11-inch one sideways, the
+  inner display sideways with its rail): a 344pt panel at the trailing edge,
+  under the canvas's bar. The page's insets leave it out, so a canvas not yet
+  moved frames its boards in what is left (one the person has panned stays
+  where it is), and its stack and bar stay in reach beside it; Chat there
+  closes the panel, as far as it was read, and the pull request button
+  closes it before its sheet opens. Partly folded, the chat stays a sheet.
 - **The tabs** are named on an iPad, where the tab bar is a row of names
   across the top that VoiceOver reads by name; on an iPhone they're marks,
   together in one bar. Search is a plain tab, not the system's search tab

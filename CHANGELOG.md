@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.4.0](https://github.com/north-brook/ponzu/compare/v2.3.4...v2.4.0) (2026-11-13)
+
+
+### Features
+
+* **mobile:** the chat docks beside the canvas on an ipad, and standby follows ponzu on iphone duo ([#624](https://github.com/north-brook/ponzu/issues/624)) ([f04eb6a](https://github.com/north-brook/ponzu/commit/f04eb6adc229c87fd1cef46345cfa82ecf347255))
+
+## [2.3.4](https://github.com/north-brook/ponzu/compare/v2.3.3...v2.3.4) (2026-11-13)
+
+
+### Performance Improvements
+
+* **studio:** draw a comment's picture out of the person's window ([#601](https://github.com/north-brook/ponzu/issues/601)) ([ea77ad8](https://github.com/north-brook/ponzu/commit/ea77ad8985ba2f70e2d097c97c6a20bec8826821))
+
 ## [2.3.3](https://github.com/north-brook/ponzu/compare/v2.3.2...v2.3.3) (2026-11-13)
 
 

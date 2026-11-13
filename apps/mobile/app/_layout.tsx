@@ -97,6 +97,16 @@ export default function RootLayout() {
                       contentStyle: { backgroundColor: color.bg },
                     }}
                   />
+                  {/* The list's filter, a sheet from its header. */}
+                  <Stack.Screen
+                    name="filter"
+                    options={{
+                      presentation: "formSheet",
+                      sheetAllowedDetents: [0.6, 1],
+                      sheetGrabberVisible: true,
+                      contentStyle: { backgroundColor: color.bg },
+                    }}
+                  />
                   {/* New canvas: a full screen pushed over the list; its picker, a sheet. */}
                   <Stack.Screen name="new" />
                   <Stack.Screen

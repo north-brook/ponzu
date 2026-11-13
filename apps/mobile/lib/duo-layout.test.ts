@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   CREASE,
+  chatPanel,
   commentsButton,
   designColumns,
   duoLayout,
@@ -200,4 +201,19 @@ test("an iPad's comment sheet floats centred, upright and sideways", () => {
 test("an iPad's comments button is bottom right, under bars across the top", () => {
   expect(commentsButton(duoLayout(pad13Sideways, false, false))).toBe("toolbar");
   expect(commentsButton(duoLayout(pad11, false, false))).toBe("toolbar");
+});
+
+test("the chat docks beside the canvas only where there is room for both, flat", () => {
+  // An iPad 900pt or wider, either way up, and the inner display sideways with its rail.
+  for (const w of [pad13, pad13Sideways, pad11Sideways]) {
+    expect(chatPanel(duoLayout(w, false, false))).toBe(true);
+  }
+  expect(chatPanel(duoLayout(innerSideways, true, false))).toBe(true);
+  // An iPhone, the outer display, an 11-inch iPad upright, an iPad mini, and Split View narrow.
+  for (const w of [iphone, small, outer, pad11, mini, { width: 507, height: 1032 }]) {
+    expect(chatPanel(duoLayout(w, false, false))).toBe(false);
+  }
+  // Folded, the canvas keeps one half: the chat stays a sheet.
+  expect(chatPanel(duoLayout(innerSideways, true, true))).toBe(false);
+  expect(chatPanel(duoLayout(innerUpright, false, true))).toBe(false);
 });

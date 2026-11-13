@@ -12,8 +12,9 @@ import { DownloadArrow, Slice } from "./icons";
 import { DOWNLOAD, TESTFLIGHT } from "./links";
 
 /*
- * Hands a canvas to the app: the canvas link page (app/canvases/[id]) knows the app's link from
- * its path and passes it as `to`. A browser says nothing when no app takes the link, so the page
+ * Hands a canvas, or Settings, to the app: the canvas link page (app/canvases/[id]) and the
+ * settings page (app/settings), which emails link to, know the app's link from their address and
+ * pass it as `to`, and `what` says which of the two the page's words are about. A browser says nothing when no app takes the link, so the page
  * watches: launching an app takes the page's focus or hides it. If neither happens in two seconds,
  * Ponzu isn't installed and the page offers it: the Mac download, or on an iPhone, word of the
  * TestFlight beta. Focus that leaves later, once the person answers the browser's prompt, still
@@ -33,8 +34,32 @@ const WAIT = HANDOFF_WAIT_MS;
 
 type State = "opening" | "opened" | "missing" | "invalid";
 
-/** `to` is the app's link, or null when the page's path can't name a canvas. */
-export function OpenInApp({ to }: { to: string | null }) {
+/** What a link opens, in the words the page uses for it once the app hasn't taken it. */
+const WORDS = {
+  canvas: {
+    missing: (app: string) => `Open this canvas in ${app}.`,
+    lead: "This is a canvas in Ponzu.",
+    get: "Get the app to see it.",
+  },
+  settings: {
+    missing: (app: string) => `Open Settings in ${app}.`,
+    lead: "This link opens Settings in Ponzu.",
+    get: "Get the app, then open the link again.",
+  },
+} as const;
+
+/**
+ * `to` is the app's link, or null when the page's path can't name a canvas (a settings link always
+ * has one: every part of it is optional).
+ */
+export function OpenInApp({
+  to,
+  what = "canvas",
+}: {
+  to: string | null;
+  what?: keyof typeof WORDS;
+}) {
+  const words = WORDS[what];
   const [state, setState] = useState<State>(to ? "opening" : "invalid");
   /** Stops the attempt in flight: its timer and its watch for the app taking focus. */
   const stop = useRef<() => void>(undefined);
@@ -85,7 +110,7 @@ export function OpenInApp({ to }: { to: string | null }) {
     return (
       <div className="flex flex-col items-center gap-8 text-center animate-swap">
         <div className="flex flex-col items-center gap-3.5">
-          <h1 className={missingTitle}>Open this canvas in {app.name}.</h1>
+          <h1 className={missingTitle}>{words.missing(app.name)}</h1>
           <p className={missingBody}>
             {app.name} didn't open. On a Mac with it installed, open it and try again.
           </p>
@@ -102,10 +127,8 @@ export function OpenInApp({ to }: { to: string | null }) {
     return (
       <div className="flex flex-col items-center gap-8 text-center animate-swap">
         <div className="flex flex-col items-center gap-3.5">
-          <h1 className={missingTitle}>Open this canvas in Ponzu.</h1>
-          <p className={missingBody}>
-            This is a canvas in Ponzu. Ponzu for iPhone is in a TestFlight beta.
-          </p>
+          <h1 className={missingTitle}>{words.missing("Ponzu")}</h1>
+          <p className={missingBody}>{words.lead} Ponzu for iPhone is in a TestFlight beta.</p>
         </div>
         <div className="flex flex-col items-center gap-3.5">
           {TESTFLIGHT ? (
@@ -128,8 +151,10 @@ export function OpenInApp({ to }: { to: string | null }) {
     return (
       <div className="flex flex-col items-center gap-8 text-center animate-swap">
         <div className="flex flex-col items-center gap-3.5">
-          <h1 className={missingTitle}>Open this canvas in Ponzu.</h1>
-          <p className={missingBody}>This is a canvas in Ponzu. Get the app to see it.</p>
+          <h1 className={missingTitle}>{words.missing("Ponzu")}</h1>
+          <p className={missingBody}>
+            {words.lead} {words.get}
+          </p>
         </div>
         <div className="flex flex-col items-center gap-3.5">
           <a className={cta} href={DOWNLOAD}>

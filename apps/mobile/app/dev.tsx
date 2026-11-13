@@ -10,7 +10,7 @@ import { brand } from "../lib/tokens";
  * The fake backend only (PONZU_BACKEND=fake): `ponzu-dev://dev?seed=<scenario>` puts the app in
  * a state to look at or test (lib/cloud/backend.fake.ts names them: signed-out, signed-in,
  * empty, github-reauth, too-old, setup-where, setup-claude, canvases, chat, needs-you,
- * pull-request, pings), then starts again from the launch screen; with `relaunch=1`, the next
+ * pull-request, pings, search, filter), then starts again from the launch screen; with `relaunch=1`, the next
  * launch is put in it too. A real build has no
  * way in: lib/links.ts sends its dev links to the launch screen, and this does nothing there.
  */

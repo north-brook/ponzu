@@ -78,3 +78,12 @@ test("the report puts dev-key rows in their own section, with their own rates", 
   expect(below).toContain("| exact: opened_pull_request | 0% (0/1) |");
   expect(below).toContain("### A7: Case A7");
 });
+
+test("a kept row whose turn never ran gets no date", () => {
+  const skipped = { ...row("A9"), error: "not run: turn budget" };
+  const kept = keptRows({ ...recorded, cases: [skipped, row("A1")] }, DEV, null);
+  expect(kept.map((r) => [r.id, r.ran ?? null])).toEqual([
+    ["A9", null],
+    ["A1", { at: recorded.at, commit: recorded.commit }],
+  ]);
+});

@@ -56,6 +56,8 @@ import {
   unsent,
   useDrafts,
 } from "../../lib/drafts";
+import { useDuoLayout } from "../../lib/duo";
+import { chatPanel, PANEL_WIDTH, sheetMax } from "../../lib/duo-layout";
 import { select, success, thud, tick } from "../../lib/haptics";
 import { pathOf, threadLink } from "../../lib/links";
 import { setListNotice } from "../../lib/list-notice";
@@ -66,9 +68,11 @@ import { dismissFor } from "../../lib/push/native";
 import { canvasOf } from "../../lib/push/payload";
 import { usePings } from "../../lib/push/pings";
 import { Juice } from "../../lib/slice";
+import { cloudStandbyPath, FOLLOW } from "../../lib/standby";
 import { useTheme } from "../../lib/theme";
 import { EASE_OUT } from "../../lib/tokens";
 import { useSeen } from "../../lib/use-seen";
+import { StandbyAwake, StillSensor, useFollow, useStandby } from "../../lib/use-standby";
 import { useWindowInsets } from "../../lib/window-insets";
 
 const ease = Easing.bezier(...EASE_OUT);
@@ -123,6 +127,7 @@ export default function CanvasScreen() {
     thread?: string;
     message?: string;
     ping?: string;
+    standby?: string;
   }>();
   const canvasId = params.id;
   const { color, scheme } = useTheme();
@@ -131,6 +136,11 @@ export default function CanvasScreen() {
   const windowInsets = useWindowInsets();
   const insets = { ...safe, left: windowInsets.left, right: windowInsets.right };
   const { width } = useWindowDimensions();
+  // An iPad or iPhone Duo's inner display (lib/duo-layout.ts): sheets float centred at most
+  // `SHEET_MAX` wide, and in a window with room the chat docks beside the canvas as a panel.
+  const layout = useDuoLayout();
+  const wideSheet = sheetMax(layout, width);
+  const docksChat = chatPanel(layout);
   const { source, bridge, state, me } = useCanvasSource(canvasId);
   const session = useSessionState(backend.session);
   /** The person's GitHub login: on the pull request, their own words read "You". */
@@ -306,6 +316,8 @@ export default function CanvasScreen() {
    * and maybe `message=<seq>` to open at). Only by Chat does its field take the keyboard.
    */
   const [chat, setChat] = useState(params.sheet === "chat");
+  /** Chat pressed again with the chat docked: it closes itself, saying how far it was read. */
+  const [chatClosing, setChatClosing] = useState(false);
   const [chatFocus, setChatFocus] = useState(false);
   /**
    * The pull request sheet is up (iPhone design §11): opened by the stack's button, a pull
@@ -537,6 +549,7 @@ export default function CanvasScreen() {
   );
   const openChat = () => {
     tick();
+    setChatClosing(false);
     setThreadId(null);
     setPending(null);
     setPlacing(false);
@@ -546,9 +559,15 @@ export default function CanvasScreen() {
     setChatFocus(true);
     setChat(true);
   };
+  /** Chat pressed with the chat docked: it goes (ChatSheet `closing`), read as far as it held. */
+  const closeDockedChat = () => {
+    tick();
+    setChatClosing(true);
+  };
   /** The chat is gone: the thread is read as far as it held. */
   const closeChat = (readSeq: number | null) => {
     setChat(false);
+    setChatClosing(false);
     setChatFocus(false);
     if (head) {
       backend.api.canvases
@@ -565,6 +584,8 @@ export default function CanvasScreen() {
     setHolding(null);
     setNotice(null);
     setPullRequest(true);
+    // A docked chat gives way, read as far as it held, as the chat's own pull request line does.
+    if (chatDocked) setChatClosing(true);
   };
   /** A pull request line in the chat: the chat is read as far as it held, and the sheet opens. */
   const openPullRequestFromChat = (readSeq: number | null) => {
@@ -658,8 +679,35 @@ export default function CanvasScreen() {
     setMovingDraft(null);
   }, [writable]);
 
-  // Writing or reading a comment keeps the chrome, focused board or not.
-  const bare = Boolean(focusedBoard) && !moving && !pending && !thread && !holding;
+  // Standby (lib/standby.ts): iPhone Duo set down standing or as a tent while Ponzu works on
+  // this page. The page alone on black, the camera going from board to board as it works.
+  const pageBoards = useMemo(() => new Set(page?.artboards.map((a) => a.id)), [page]);
+  const standbyBoards = cloudStandbyPath(head, pageBoards);
+  const standbyKey = standbyBoards.join(",");
+  const following = useMemo(() => standbyBoards, [standbyKey]);
+  // Nothing the person is in the middle of: a sheet, a comment being placed, the pings ask.
+  const nothingUp =
+    !pending && !thread && !holding && !movingDraft && !chat && !pullRequest && !asking && !placing;
+  const {
+    standby: standingBy,
+    listen,
+    setStill,
+  } = useStandby(
+    following.length > 0 && nothingUp,
+    params.standby === "1" && backend.kind === "fake",
+  );
+  const standby = standingBy && nothingUp;
+  const follow = useFollow(following, standby, FOLLOW);
+  useEffect(() => {
+    if (follow) canvas.current?.post({ t: "follow", artboardId: follow, ms: FOLLOW.move });
+  }, [follow]);
+
+  /** The chat docked beside the canvas (an iPad's window, `chatPanel`), once it can be drawn. */
+  const chatDocked = chat && docksChat && Boolean(chatMe);
+  // Writing or reading a comment keeps the chrome, focused board or not, and so does a docked
+  // chat beside it; standby has none.
+  const bare =
+    standby || (Boolean(focusedBoard) && !moving && !pending && !thread && !holding && !chatDocked);
   const navigation = useNavigation();
   useEffect(() => {
     navigation.setOptions({ autoHideHomeIndicator: bare });
@@ -691,10 +739,20 @@ export default function CanvasScreen() {
   };
   const manyPages = (doc?.pages.length ?? 0) > 1;
 
+  /** What the docked chat takes at the trailing edge, its gap included. */
+  const besideChat = chatDocked ? PANEL_WIDTH + 8 : 0;
+  // The page frames its boards in what the panel leaves (the rail's side too) when it reframes.
   const canvasInsets = useMemo(
-    () => ({ top: insets.top + BAR, right: 0, bottom: insets.bottom, left: 0 }),
-    [insets.top, insets.bottom],
+    () => ({
+      top: insets.top + BAR,
+      right: besideChat ? besideChat + 8 + insets.right : 0,
+      bottom: insets.bottom,
+      left: 0,
+    }),
+    [insets.top, insets.bottom, insets.right, besideChat],
   );
+  /** What a sheet over the canvas keeps clear at the trailing edge: the rail, and a docked chat. */
+  const sheetRight = insets.right + besideChat;
 
   if (status.mood === "gone") return <Gone line={status.line!} />;
 
@@ -710,14 +768,21 @@ export default function CanvasScreen() {
   // Under the title, most pressing first: a comment that didn't go, one waiting to, the canvas.
   const queued = waiting > 0 && state.status === "offline" ? COMMENT_WORDS.queued : null;
   const line = notice ?? queued ?? (placeholderLine ? null : status.line);
+  // A docked chat leaves the canvas and its stack in reach, Chat there closing it.
   const sheetUp = Boolean(
-    pending || thread || holding || movingDraft || chat || pullRequest || asking,
+    pending || thread || holding || movingDraft || (chat && !chatDocked) || pullRequest || asking,
   );
   const offline =
     state.status === "offline" || !onlineManager.isOnline() ? CANVAS_WORDS.offline : null;
   const foot = Math.max(insets.bottom, 16) + 8;
   return (
     <View testID="canvas" style={{ flex: 1, backgroundColor: color.canvas }}>
+      {listen && <StillSensor onStill={setStill} />}
+      {standby && (
+        <View testID="standby" accessibilityLabel="Standby">
+          <StandbyAwake />
+        </View>
+      )}
       {bridge && assetsUrl && (
         <CanvasView
           ref={canvas}
@@ -733,6 +798,7 @@ export default function CanvasScreen() {
           thread={threadId}
           moving={movingDraft}
           page={shownPage}
+          standby={standby}
           onMessage={onMessage}
         />
       )}
@@ -860,11 +926,11 @@ export default function CanvasScreen() {
       {!bare && !sheetUp && (
         <CanvasStack
           bottom={foot}
-          right={16 + insets.right}
+          right={16 + sheetRight}
           prNumber={head?.prNumber ?? null}
           onPullRequest={openPullRequest}
           chat={status.chat}
-          onChat={openChat}
+          onChat={chatDocked ? closeDockedChat : openChat}
           commenting={placing}
           commentHint={readOnly}
           onComment={
@@ -885,7 +951,8 @@ export default function CanvasScreen() {
           testID="comment-sheet"
           // No sheet: the field alone floats over the canvas, above the keyboard.
           bare
-          right={insets.right}
+          right={sheetRight}
+          maxWidth={wideSheet}
           onDismiss={() => {
             setPending(null);
             setError(null);
@@ -933,7 +1000,8 @@ export default function CanvasScreen() {
           return (
             <DraftSheet
               text={d.text}
-              right={insets.right}
+              right={sheetRight}
+              maxWidth={wideSheet}
               onOpen={() => {
                 setHolding(null);
                 openDraft(holding);
@@ -957,7 +1025,7 @@ export default function CanvasScreen() {
           key={movingDraft}
           bottom={Math.max(34, insets.bottom)}
           left={0}
-          width={width - insets.right}
+          width={width - sheetRight}
           onDone={() => {
             tick();
             canvas.current?.post({ t: "place" });
@@ -983,8 +1051,12 @@ export default function CanvasScreen() {
           onOpenComment={openCommentFromChat}
           onOpenLink={openLink}
           onOpenPullRequest={openPullRequestFromChat}
-          top={Math.max(CHAT_TOP, safe.top + 4)}
+          // Docked, under the canvas's bar, which stays in reach; as a sheet, over it.
+          top={docksChat ? insets.top + BAR + 4 : Math.max(CHAT_TOP, safe.top + 4)}
           right={insets.right}
+          maxWidth={docksChat ? undefined : wideSheet}
+          panel={docksChat ? PANEL_WIDTH : undefined}
+          closing={chatClosing}
         />
       )}
       {/* Only once the canvas is open for the person signed in now (`me`), as the chat. */}
@@ -997,12 +1069,13 @@ export default function CanvasScreen() {
           onDismiss={() => setPullRequest(false)}
           top={Math.max(CHAT_TOP, safe.top + 4)}
           right={insets.right}
+          maxWidth={wideSheet}
         />
       )}
       {/* After the comment's field has gone, and over nothing else. */}
-      {asking && !pending && !thread && !holding && !chat && !pullRequest && (
+      {asking && !pending && !thread && !holding && (!chat || chatDocked) && !pullRequest && (
         <PingAsk
-          right={insets.right}
+          right={sheetRight}
           onTurnOn={async () => {
             await pings.turnOn();
             setAsking(false);
@@ -1016,7 +1089,8 @@ export default function CanvasScreen() {
       {thread && !pending && (
         <ThreadSheet
           key={thread.id}
-          right={insets.right}
+          right={sheetRight}
+          maxWidth={wideSheet}
           thread={thread}
           me={me ?? { id: "", name: "" }}
           file={canvasId}

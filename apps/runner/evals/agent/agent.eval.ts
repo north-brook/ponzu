@@ -844,7 +844,15 @@ export function keptRows(
   for (const row of recorded.cases as CaseResult[]) {
     const here = (row.ranOn ?? null) === run.ranOn;
     if (here && (!only || only.includes(row.id))) continue;
-    kept.push({ ...row, ran: row.ran ?? { at: recorded.at, commit: recorded.commit } });
+    // A row whose turn never ran (stopped by the cap or the turn budget) gets no date: it ran
+    // nowhere, and the report must not say it did.
+    const ranNever = row.error?.startsWith("not run") ?? false;
+    const { ran: _ran, ...rest } = row;
+    kept.push(
+      row.ran || !ranNever
+        ? { ...rest, ran: row.ran ?? { at: recorded.at, commit: recorded.commit } }
+        : rest,
+    );
   }
   return kept;
 }
