@@ -1,7 +1,7 @@
 /*
- * The email's look as numbers (designs/email.md §4): the handoff page's colours
+ * The email's look as numbers (the email plan §4): the handoff page's colours
  * (packages/core/src/handoff.ts), every email link's landing, with the dark action in yuzu. The
- * light design is the real one; dark is added where a mail app honours `prefers-color-scheme`,
+ * light look is the real one; dark is added where a mail app honours `prefers-color-scheme`,
  * and the light one must survive a mail app that inverts it.
  */
 

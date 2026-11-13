@@ -1,5 +1,5 @@
 /*
- * @ponzu/email: Ponzu's emails as React Email templates (designs/email.md). Only @ponzu/api
+ * @ponzu/email: Ponzu's emails as React Email templates (the email plan). Only @ponzu/api
  * depends on it. It never imports @ponzu/canvas, @ponzu/render, @ponzu/server, @ponzu/db or
  * resend, and apps/mobile never imports it (surface.test.ts).
  */

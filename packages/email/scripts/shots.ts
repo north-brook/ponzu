@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * The pictures of the emails (designs/email.md §7), for the founder to look at and for a
+ * The pictures of the emails (the email plan §7), for the founder to look at and for a
  * reviewer to see a change: each fixture below drawn in headless Chromium, in light and dark
  * (`prefers-color-scheme` emulated), at a phone's 390px and a desktop's 720px, plus a forced
  * inversion (`filter: invert(1) hue-rotate(180deg)` on the light phone render, pictures turned

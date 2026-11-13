@@ -12,7 +12,7 @@ import {
 } from "./words.ts";
 
 /*
- * The sentences designs/email.md §1 and §3.7 settle, pinned exactly. The expected/ files pin
+ * The sentences the email plan §1 and §3.7 settle, pinned exactly. The expected/ files pin
  * each whole email; these pin the rules that build subjects from names and numbers.
  */
 
@@ -135,7 +135,7 @@ describe("the Friday recap", () => {
     );
     expect(recapWords.moreCanvases(2)).toBe("And 2 more canvases.");
     expect(recapWords.closing).toBe("Have a good weekend.");
-    // Not "one click": the footer link opens a page with one button (designs/email.md §3.7).
+    // Not "one click": the footer link opens a page with one button (the email plan §3.7).
     expect(recapWords.first).toBe(
       "This is your first Friday recap. It comes only in weeks when a pull request from a canvas you own is merged. The link below turns it off.",
     );

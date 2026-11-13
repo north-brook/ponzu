@@ -1,5 +1,5 @@
 /*
- * Every fixed sentence an email says (designs/email.md §1, §3.7 and §4), as pure functions, so
+ * Every fixed sentence an email says (the email plan §1, §3.7 and §4), as pure functions, so
  * the words are reviewed as text and words.test.ts pins each one. Names come in raw and are made
  * safe here (text.ts); money, dates and a ping's sentence come in finished, from the API, so an
  * email cannot disagree with its ping.

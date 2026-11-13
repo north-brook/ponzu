@@ -1,5 +1,5 @@
 /*
- * The daily digest (designs/email.md §1.7), restyled: canvas-first subjects, each group's name
+ * The daily digest (the email plan §1.7), restyled: canvas-first subjects, each group's name
  * as a heading and its ping sentences as link rows. The sentences are copy.ts's, passed in.
  */
 import { Footer, Layout, Mark, Paragraph, Title } from "../components/layout.tsx";

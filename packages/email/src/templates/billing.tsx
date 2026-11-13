@@ -1,5 +1,5 @@
 /*
- * The four billing emails (designs/email.md §1.1 to §1.4), one template switched by notice:
+ * The four billing emails (the email plan §1.1 to §1.4), one template switched by notice:
  * free credits used, 80% of the cap, the cap reached, and a payment that didn't go through. To
  * every admin (the person, for a personal workspace), can't be turned off, carry no
  * List-Unsubscribe. Calm, not red: the fact is the title, then what waits and the one action

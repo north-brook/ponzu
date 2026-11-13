@@ -1,5 +1,5 @@
 /*
- * The legal notices Ponzu's terms and privacy policy promise by email (designs/email.md §1.8),
+ * The legal notices Ponzu's terms and privacy policy promise by email (the email plan §1.8),
  * one template switched by notice: billing starts, a price rise, a terms change, a privacy
  * change, shutdown and a suspension. Sent only by the founder's script, never by a trigger;
  * no preference, no List-Unsubscribe.

@@ -1,5 +1,5 @@
 /*
- * The letter every email is (designs/email.md §4): one centred column on white, the yuzu tile,
+ * The letter every email is (the email plan §4): one centred column on white, the yuzu tile,
  * a title, a paragraph or two, at most one action, a hairline and the footer. Table-based where
  * classic Outlook needs it (React Email's Container), inline styles from tokens, and one style
  * block for what only a style block can say: the dark theme where a mail app honours it, the

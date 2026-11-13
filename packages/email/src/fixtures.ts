@@ -3,7 +3,7 @@
  * render each one and pin its subject, preview and text part (expected/<name>.txt); the
  * pictures (scripts/shots.ts) and the preview server (emails/) draw them.
  *
- * The examples follow designs/email.md §1: a workspace "Northbrook", a $100 cap, a period that
+ * The examples follow the email plan §1: a workspace "Northbrook", a $100 cap, a period that
  * resets at midnight UTC on December 9, a payment of $123.40 and a reader in New York.
  */
 import { SITE_URL } from "./brand.ts";

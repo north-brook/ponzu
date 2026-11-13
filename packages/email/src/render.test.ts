@@ -12,7 +12,7 @@ import { renderEmail } from "./render.ts";
 const EXPECTED = resolve(import.meta.dir, "../expected");
 const update = process.env.PONZU_UPDATE_EXPECTED === "1";
 
-/** The hosts an email may link to (designs/email.md §7). GitHub only for a legal page's history. */
+/** The hosts an email may link to (the email plan §7). GitHub only for a legal page's history. */
 const HOSTS = new Set(["ponzu.design", new URL(API_URL).host, "invoice.stripe.com", "github.com"]);
 
 const decode = (text: string) =>

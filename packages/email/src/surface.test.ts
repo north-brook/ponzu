@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /*
- * What @ponzu/email may touch (designs/email.md §3.1): plain data in, strings out. It never
+ * What @ponzu/email may touch (the email plan §3.1): plain data in, strings out. It never
  * imports the canvas, the renderer, the server, the database or Resend (the API's mail seam is
  * the only importer of `resend`), and the iPhone app never imports it.
  */
@@ -39,7 +39,7 @@ test("the package's code imports nothing it must not", () => {
   }
 });
 
-test("its dependencies are React Email and React, pinned as the design says", () => {
+test("its dependencies are React Email and React, pinned as the plan says", () => {
   const pkg = JSON.parse(readFileSync(join(PACKAGE, "package.json"), "utf8"));
   expect(Object.keys(pkg.dependencies).sort()).toEqual(["react", "react-dom", "react-email"]);
   expect(pkg.dependencies["react-email"]).toBe("6.11.5");

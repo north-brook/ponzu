@@ -1,5 +1,5 @@
 /*
- * People joined (designs/email.md §1.5): who joined an organisation's workspace, rolled up, to
+ * People joined (the email plan §1.5): who joined an organisation's workspace, rolled up, to
  * its admins. No button, because nothing needs doing, and no avatars, so the email fetches
  * nothing from GitHub.
  */

@@ -1,5 +1,5 @@
 /*
- * The Friday recap (designs/email.md §1.6 and §5): the canvases a person owns whose pull
+ * The Friday recap (the email plan §1.6 and §5): the canvases a person owns whose pull
  * requests merged this week, newest merge first. Canvas names and pull request numbers only:
  * no repository names, no pull request titles (the agent wrote them), no pictures, no hours,
  * no credits and no call to do more. The counts-only form carries no canvas name anywhere.
@@ -27,7 +27,7 @@ export interface RecapProps {
   canvases: readonly RecapCanvas[];
   /** The first recap this person ever gets: it introduces itself. */
   first: boolean;
-  /** Counts only, no canvas names (the founder's choice, designs/email.md §1.6). */
+  /** Counts only, no canvas names (the founder's choice, the email plan §1.6). */
   countsOnly: boolean;
   unsubscribeUrl: string;
 }

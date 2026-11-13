@@ -1,6 +1,6 @@
 # @ponzu/email
 
-Ponzu's emails as React Email templates. The design is `.context/cloud/program/designs/email.md` in the program; docs/cloud.md gains an "Email" section when the send path lands.
+Ponzu's emails as React Email templates. The plan is `email.md` in the build program's plans (outside this repository); docs/cloud.md gains an "Email" section when the send path lands.
 
 - `src/words.ts` holds every fixed sentence. `expected/<fixture>.txt` pins each fixture's subject, preview and text part, so a change to what an email says shows up in the diff. After changing words on purpose, run `PONZU_UPDATE_EXPECTED=1 bun test packages/email` and read the diff.
 - `src/render.ts` renders an email to `{ subject, preview, html, text }`. The API sends those strings through its mail seam (`apps/api/src/deps/mail.ts`), so `resend` stays imported by one file. Rendering is deterministic: every date and amount comes in as a finished string.
