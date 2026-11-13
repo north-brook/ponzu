@@ -44,6 +44,8 @@ describe("what counts as a change", () => {
     expect(compare("fps", aggregate([40, 42, 44]), aggregate([58, 59, 60]))).toBe("better");
     // Under 10%: same, even apart.
     expect(compare("mainMs", aggregate([100, 101, 102]), aggregate([105, 106, 107]))).toBe("same");
+    // A few ms, however large a share: noise.
+    expect(compare("mainMs", aggregate([60, 61, 62]), aggregate([69, 70, 71]))).toBe("same");
     // Fewer than three rounds: never called.
     expect(compare("mainMs", aggregate([100, 105]), aggregate([300, 310]))).toBe("same");
   });

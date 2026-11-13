@@ -225,10 +225,11 @@ export function aggregate(values: number[]): Aggregate {
 export type Verdict = "better" | "worse" | "same";
 
 /**
- * Whether head differs from base by more than noise: by 3% for a count and 10% for a time, and
- * past both builds' own spread (their rounds' ranges don't overlap), and by more than a hair (1
- * ms, 1 fps, one element). A time is never called from fewer than three rounds a build. Counts mostly repeat to within a percent or two, but a few lean on
- * timing (how many frames a redraw lands in, how React batches), and the spread tells those apart.
+ * Whether head differs from base by more than noise: by 3% for a count and 10% for a time, past
+ * both builds' own spread (their rounds' ranges don't overlap), and by more than a hair (one
+ * element, 1 fps, 10 ms). A time is never called from fewer than three rounds a build. Counts
+ * mostly repeat to within a percent or two, but a few lean on timing (how many frames a redraw
+ * lands in, how React batches), and the spread tells those apart.
  */
 export function compare(name: string, base: Aggregate, head: Aggregate): Verdict {
   const info = METRICS[name];
@@ -239,7 +240,9 @@ export function compare(name: string, base: Aggregate, head: Aggregate): Verdict
   // Two rounds of a time don't overlap one time in three by chance alone: a time needs three.
   if (info.kind === "time" && (base.n < 3 || head.n < 3)) return "same";
   const apart = head.min > base.max || head.max < base.min || (base.n === 1 && head.n === 1);
-  const real = rel >= (info.kind === "count" ? 0.03 : 0.1) && Math.abs(diff) >= 1 && apart;
+  // A few ms of main thread in a gesture of two seconds is noise however large a share.
+  const floor = info.unit === "ms" ? 10 : 1;
+  const real = rel >= (info.kind === "count" ? 0.03 : 0.1) && Math.abs(diff) >= floor && apart;
   if (!real) return "same";
   const up = diff > 0;
   return up === (info.better === "higher") ? "better" : "worse";
