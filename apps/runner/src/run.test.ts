@@ -650,6 +650,88 @@ test("Create PR after a failed push: the old error is not said again while the n
   expect(s.api.branch?.error).toBeNull();
 });
 
+test("Create PR while an earlier push is still trying: that push's failure is not said over the new try", async () => {
+  // The turn's push is held at its first try until the runner has taken Create PR, then fails
+  // on every try of its own; the push Create PR asked for, which waits behind it, finds GitHub
+  // fixed. So the turn's failure always ends after the API forgot the old error.
+  let api: FakeRunnerApi | undefined;
+  let askedId: string | undefined;
+  let pushes = 0;
+  const s = await onRepo(
+    {},
+    {
+      beforeGit: async (args) => {
+        if (args[0] !== "push") return;
+        pushes++;
+        if (pushes === 1) await until(() => askedId && api?.delivered.includes(askedId), 5_000);
+        // The turn's push tries three times (pushWaitsMs [5, 5]); the fourth is Create PR's.
+        if (pushes === 4) await git(s.work, "remote", "set-url", "origin", s.origin);
+      },
+    },
+  );
+  api = s.api;
+  await git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  // What an earlier push said, as the API holds it.
+  s.api.branch = { unpushed: 1, error: "Ponzu couldn't push pz/hero to north/fern (gone)." };
+  s.run.ready();
+  await firstTurn(s);
+  const head = await s.commit();
+  s.run.end();
+  await until(() => s.api.states.some((st) => st.status === "Pushing to GitHub"), 5_000);
+
+  const asked = s.api.states.length;
+  askedId = s.api.askToPush().id;
+  s.runner.poke();
+  await until(async () => (await s.onGithub()) === head, 10_000);
+  await until(() => s.api.branch?.unpushed === 0 && s.api.lastState?.state === "idle", 5_000);
+  expect(pushes).toBe(4);
+  // From Create PR on, every report of the branch says only how the new try went.
+  const after = s.api.states.slice(asked).filter((st) => st.branch !== undefined);
+  expect(after.map((st) => st.branch?.error ?? null)).toEqual(after.map(() => null));
+  expect(s.api.branch?.error).toBeNull();
+  expect(notices(s.api, "error")).toEqual([]);
+});
+
+test("Create PR before a failed push's report reached the API: the report never says it after", async () => {
+  // The API refuses state reports from the turn's end until the runner has taken Create PR, so
+  // the failure's report is still waiting to go then. The push Create PR asked for is held at
+  // git until a report has landed, so that report is made while the new push runs.
+  let api: FakeRunnerApi | undefined;
+  let asked = 0;
+  let pushes = 0;
+  const s = await onRepo(
+    {},
+    {
+      beforeGit: async (args) => {
+        if (args[0] !== "push" || ++pushes !== 4) return;
+        api?.failing.delete("putState");
+        await until(() => (api?.states.length ?? 0) > asked, 5_000);
+        await git(s.work, "remote", "set-url", "origin", s.origin);
+      },
+    },
+  );
+  api = s.api;
+  await git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await firstTurn(s);
+  const head = await s.commit();
+  s.api.failing.set("putState", new TypeError("fetch failed"));
+  s.run.end();
+  // The push gave up (the thread heard), and its report could not go.
+  await until(() => notices(s.api, "error").length === 1, 5_000);
+  expect(pushes).toBe(3);
+
+  asked = s.api.states.length;
+  s.api.askToPush();
+  s.runner.poke();
+  await until(async () => (await s.onGithub()) === head, 10_000);
+  await until(() => s.api.branch?.unpushed === 0 && s.api.lastState?.state === "idle", 5_000);
+  const after = s.api.states.slice(asked).filter((st) => st.branch !== undefined);
+  expect(after.length).toBeGreaterThan(0);
+  expect(after.map((st) => st.branch?.error ?? null)).toEqual(after.map(() => null));
+  expect(s.api.branch?.error).toBeNull();
+});
+
 test("Create PR during a turn waits for the turn to end, so the agent's git is left alone", async () => {
   const s = await onRepo();
   s.run.ready();
