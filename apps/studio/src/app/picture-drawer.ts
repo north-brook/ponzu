@@ -11,6 +11,20 @@ import { drawCommentPicture, NoPicture, pictureDoc, type Theme } from "./comment
  * drawn here, at the window's idle pace (`Pace`).
  */
 
+/** Once the window has painted what is waiting (or a moment, where it paints nothing). */
+function afterPaint(): Promise<void> {
+  if (typeof requestAnimationFrame !== "function") return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, 100);
+    requestAnimationFrame(() =>
+      setTimeout(() => {
+        clearTimeout(timer);
+        resolve();
+      }, 0),
+    );
+  });
+}
+
 export type PictureBridge = { draw(request: PictureRequest): Promise<PictureAnswer> };
 
 export interface Comment {
@@ -27,6 +41,8 @@ export function pictureDrawer(
   const here = (comment: Comment) => drawHere({ ...comment, pace: "idle" });
   if (!bridge) return here;
   return async (comment) => {
+    // The comment is drawn first: what goes to the picture window is copied after the next paint.
+    await afterPaint();
     const doc = pictureDoc(comment.doc, comment.threadId, comment.messageId);
     if (!doc) throw new Error("The comment isn't in the document.");
     let answer: PictureAnswer;

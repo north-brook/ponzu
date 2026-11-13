@@ -299,6 +299,7 @@ const pictures = new Pictures({
       preload: join(here, "picture-preload.cjs"),
       studio: studioOrigins,
       devTools: config.remoteDebugging,
+      scheme: config.studioDevUrl ? null : { name: STUDIO_SCHEME, serve: serveStudio },
       events: {
         ready: events.ready,
         gone: () => {

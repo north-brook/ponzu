@@ -3,7 +3,9 @@
 The Mac, Windows and Linux app: a window onto the studio (`apps/studio`), the session, links
 and updates. There is no local server. The studio talks to Ponzu Cloud itself
 ([docs/cloud.md](../../docs/cloud.md), "Clients"), with an access token it borrows from the
-main process.
+main process. The pictures of the comments a person leaves are drawn in a second, hidden window
+of the studio in a session of its own (`src/pictures.ts`, `src/picture-window.ts`), so drawing
+one never holds up the person's window.
 
 ```sh
 bun run start                                   # build, then run against the built studio
