@@ -19,12 +19,14 @@
  *       Its notes are the `iPhone:` ones and those without a label from
  *       commits that changed `apps/mobile` and nothing in the desktop's
  *       release; nothing if it has none.
- *   bun scripts/release-notes.ts --changelog <out.json>
+ *   bun scripts/release-notes.ts --changelog <out.json> [--unpublished <tags>]
  *       both apps' releases with the date of each tag's commit, for the site's
  *       /changelog: `{ "mac": [{ version, date, notes }], "iphone": [...] }`,
  *       each newest first. The publish job puts it beside each desktop
  *       release as `changelog.json`, so the iPhone's newest releases reach the
- *       site with the desktop's next one.
+ *       site with the desktop's next one. `--unpublished` names, comma
+ *       separated, tags whose releases were never published (drafts): their
+ *       notes are shown under the next release instead.
  *
  * A checkout without history or tags (CI's shallow clone) finds no releases
  * and warns instead of failing, so whatever reads the notes still works with
@@ -179,8 +181,18 @@ export function compareVersions(a: string, b: string): number {
  * Every release tag of `app` with its notes from the commits main gained up to
  * it since the tag before, newest first. Commits after the newest tag haven't
  * shipped and are left out; a release with nothing to say is omitted.
+ *
+ * A tag in `unpublished` was never released to anyone (its GitHub release is
+ * still a draft, as v2.1.1's is: its publish failed and 2.2.0 shipped its
+ * fixes). Its version is left out, and its notes go to the next tag that isn't,
+ * which is the release that first carried them to people. Notes of unpublished
+ * tags after the newest published one are left out, as unshipped commits are.
  */
-export async function releases(cwd = process.cwd(), app: App = "mac"): Promise<Release[]> {
+export async function releases(
+  cwd = process.cwd(),
+  app: App = "mac",
+  unpublished: ReadonlySet<string> = new Set(),
+): Promise<Release[]> {
   const { glob, pattern } = TAGS[app];
   const tags = (await $`git tag --list ${glob}`.cwd(cwd).quiet().text())
     .split("\n")
@@ -192,6 +204,8 @@ export async function releases(cwd = process.cwd(), app: App = "mac"): Promise<R
     .sort((a, b) => compareVersions(a.version, b.version));
   const out: Release[] = [];
   let previous: string | null = null;
+  /** Notes of unpublished tags since the last published one, oldest first. */
+  let held: string[] = [];
   for (const { tag, version } of tags) {
     const range = previous ? `${previous}..${tag}` : tag;
     previous = tag;
@@ -213,7 +227,13 @@ export async function releases(cwd = process.cwd(), app: App = "mac"): Promise<R
         if (app === "iphone") return extractNotes(message, app, phoneOnly(files));
         return inMacRelease(files) ? extractNotes(message) : [];
       });
-    if (notes.length) out.push({ version, notes });
+    if (unpublished.has(tag)) {
+      held = [...held, ...notes];
+      continue;
+    }
+    const shipped = [...held, ...notes];
+    held = [];
+    if (shipped.length) out.push({ version, notes: shipped });
   }
   return out.reverse();
 }
@@ -223,11 +243,18 @@ export async function tagDate(cwd: string, tag: string): Promise<string> {
   return (await $`git log -1 --format=%cI ${tag}`.cwd(cwd).quiet().text()).trim();
 }
 
-/** Both apps' releases with their tags' dates: the desktop's `vX.Y.Z`, the phone's `mobile-vX.Y.Z`. */
-export async function changelog(cwd = process.cwd()): Promise<Changelog> {
+/**
+ * Both apps' releases with their tags' dates: the desktop's `vX.Y.Z`, the
+ * phone's `mobile-vX.Y.Z`. Tags in `unpublished` are folded into the release
+ * after them (see `releases`).
+ */
+export async function changelog(
+  cwd = process.cwd(),
+  unpublished: ReadonlySet<string> = new Set(),
+): Promise<Changelog> {
   const dated = async (app: App, prefix: string) =>
     Promise.all(
-      (await releases(cwd, app)).map(async (r) => ({
+      (await releases(cwd, app, unpublished)).map(async (r) => ({
         version: r.version,
         date: await tagDate(cwd, `${prefix}${r.version}`),
         notes: r.notes,
@@ -275,14 +302,23 @@ if (import.meta.main) {
     }
   } else if (args[0] === "--changelog") {
     const path = args[1];
-    if (!path) {
-      console.error("usage: bun scripts/release-notes.ts --changelog <out.json>");
+    const flag = args[2];
+    if (!path || (flag !== undefined && flag !== "--unpublished") || args.length > 4) {
+      console.error(
+        "usage: bun scripts/release-notes.ts --changelog <out.json> [--unpublished <tag>,<tag>…]",
+      );
       process.exit(1);
     }
+    const unpublished = new Set(
+      (args[3] ?? "")
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    );
     let out: Changelog;
     try {
       await assertHistory();
-      out = await changelog();
+      out = await changelog(process.cwd(), unpublished);
     } catch (err) {
       out = { mac: [], iphone: [], incomplete: true };
       console.warn(`release-notes: changelog has none (${describe(err)})`);

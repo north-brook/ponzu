@@ -341,6 +341,72 @@ test("the changelog dates each app's releases by its tag's commit, newest first"
   }
 });
 
+test("an unpublished release's notes show under the release that shipped them", async () => {
+  // As on 2026-11-13: v2.1.1's publish failed and its release stayed a draft;
+  // v2.2.0 changed the Mac only with iPhone-labelled notes and shipped 2.1.1's fixes.
+  const dir = await mkdtemp(join(tmpdir(), "release-notes-"));
+  try {
+    await datedRepo(dir);
+    let date = "";
+    const git = (...args: string[]) =>
+      $`git -c user.name=t -c user.email=t@example.com -c tag.gpgsign=false -c commit.gpgsign=false ${args}`
+        .cwd(dir)
+        .env({ ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date })
+        .quiet();
+    date = "2026-11-21T09:00:00+00:00";
+    await git("tag", "v2.1.1");
+    await writeFile(join(dir, "apps/studio/c.ts"), "c");
+    await git("add", "apps/studio/c.ts");
+    await git(
+      "commit",
+      "-q",
+      "-m",
+      "feat: chat\n\n## Release note\n\n- iPhone: Chat on the phone.",
+    );
+    await git("tag", "v2.2.0");
+    date = "2026-11-22T09:00:00+00:00";
+    await writeFile(join(dir, "apps/studio/d.ts"), "d");
+    await git("add", "apps/studio/d.ts");
+    await git("commit", "-q", "-m", "fix: later\n\n## Release note\n\n- Tagged, not published.");
+    await git("tag", "v2.2.1");
+
+    // Without the drafts named, the tags say 2.1.1 shipped and 2.2.0 had nothing.
+    expect((await changelog(dir)).mac.map((r) => r.version)).toEqual([
+      "2.2.1",
+      "2.1.1",
+      "2.1.0",
+      "2.0.0",
+    ]);
+    const { mac } = await changelog(dir, new Set(["v2.1.1", "v2.2.1"]));
+    expect(mac).toEqual([
+      { version: "2.2.0", date: "2026-11-21T09:00:00Z", notes: ["Unreleased."] },
+      { version: "2.1.0", date: "2026-11-20T18:15:00-05:00", notes: ["Pins stay put."] },
+      { version: "2.0.0", date: "2026-11-02T09:00:00-08:00", notes: ["Open a canvas."] },
+    ]);
+    // The update popover's notes (no drafts named) are unchanged.
+    expect((await releases(dir)).map((r) => r.version)).toEqual([
+      "2.2.1",
+      "2.1.1",
+      "2.1.0",
+      "2.0.0",
+    ]);
+
+    const out = join(dir, "changelog.json");
+    await $`bun ${SCRIPT} --changelog ${out} --unpublished ${"v2.1.1, v2.2.1"}`.cwd(dir).quiet();
+    expect(JSON.parse(await Bun.file(out).text()).mac).toEqual(mac);
+    // An empty list, as the workflow passes when there are no drafts, names none.
+    await $`bun ${SCRIPT} --changelog ${out} --unpublished ${""}`.cwd(dir).quiet();
+    expect(JSON.parse(await Bun.file(out).text())).toEqual(await changelog(dir));
+    const wrong = await $`bun ${SCRIPT} --changelog ${out} --drafts v2.1.1`
+      .cwd(dir)
+      .nothrow()
+      .quiet();
+    expect(wrong.exitCode).toBe(1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("--changelog writes the file a release publishes, and marks a shallow clone's incomplete", async () => {
   const dir = await mkdtemp(join(tmpdir(), "release-notes-"));
   try {
