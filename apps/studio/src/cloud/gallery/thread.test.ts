@@ -175,7 +175,12 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
           [...document.querySelectorAll<HTMLImageElement>(`${sel} img`)].every((i) => i.complete),
         log,
       );
-      await page.waitForTimeout(100);
+      // A frame laid out with every picture in it, and its resize heard (the rail's observer runs
+      // after layout in that frame): the second frame from now starts after it, however slowly
+      // the machine draws.
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
       expect(Math.abs((await whereIs(before.text))! - before.y)).toBeLessThan(2);
     } finally {
       release();
@@ -384,18 +389,42 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     lineRoom: number;
   };
 
-  /** Plays the live turn on `board`, sampling every frame until a moment after it ends. */
-  const playTurn = async (board: string, reducedMotion: "reduce" | "no-preference") => {
+  /** The thread around a turn's end, measured as React leaves it rather than as frames paint. */
+  type End = {
+    /** Just before the commit that ended the turn. */
+    before: Frame;
+    /**
+     * The leave walked on its own clock: held as the commit made it, before a frame was drawn,
+     * then set to `steps + 1` evenly spaced times over its run (`t`, in ms), the last a hair
+     * before its end. The first is the commit itself.
+     */
+    steps: Frame[];
+    /** Just before the commit that took the closed lines away, and that commit. */
+    lastHeld: Frame;
+    gone: Frame;
+  };
+
+  /**
+   * Plays the live turn on `board`. Samples every painted frame, for what holds in each one (how
+   * many there are depends on the machine), and every commit, to catch the turn's end the moment
+   * React makes it: the lines leaving are held there and stepped on their own clock, as
+   * `stepToggle` does for a pane, then finished. Done once the turn has played, nothing is
+   * leaving, and a frame has painted after.
+   */
+  const playTurn = async (
+    board: string,
+    reducedMotion: "reduce" | "no-preference",
+    steps = 20,
+  ): Promise<{ frames: Frame[]; commits: Frame[]; end: End | null }> => {
     await page.setViewportSize({ width: 600, height: 700 });
     await page.emulateMedia({ colorScheme: "light", reducedMotion });
     await page.goto(`${server.url}/gallery.html?board=${board}&theme=light`);
     await page.waitForFunction(
       () => typeof (window as { playTurn?: unknown }).playTurn === "function",
     );
-    return page.evaluate(async () => {
+    return page.evaluate(async (steps) => {
       const out: Frame[] = [];
-      let on = true;
-      const sample = (t: number) => {
+      const measure = (t: number): Frame => {
         const log = document.querySelector('[role="log"]');
         const lines = log?.querySelectorAll(":scope > * [data-working-line]") ?? [];
         const answer = [...(log?.querySelectorAll(":scope > .text-13") ?? [])].find((el) =>
@@ -404,7 +433,7 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
         const ask = [...(log?.querySelectorAll("p[dir=auto]") ?? [])].find((el) =>
           el.textContent?.includes("Two small boards"),
         );
-        out.push({
+        return {
           t,
           lines: lines.length,
           working: lines[0]?.textContent ?? null,
@@ -433,15 +462,70 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
           answerBottom: answer ? answer.getBoundingClientRect().bottom : null,
           askTop: ask ? ask.getBoundingClientRect().top : null,
           lineRoom: lines[0] ? lines[0].getBoundingClientRect().height + 14 : 0,
-        });
-        if (on) requestAnimationFrame(sample);
+        };
       };
-      requestAnimationFrame(sample);
-      await (window as unknown as { playTurn: () => Promise<void> }).playTurn();
-      await new Promise((r) => setTimeout(r, 500));
-      on = false;
-      return out;
-    });
+      const leavingNow = () => [...document.querySelectorAll('[role="log"] > [data-leaving]')];
+
+      // Every commit: its mutations are delivered once React has finished it, before a frame.
+      let last: Frame | null = null;
+      let end: End | null = null;
+      let ended: Omit<End, "lastHeld" | "gone"> | null = null;
+      let held: Frame | null = null;
+      const made: Frame[] = [];
+      const commits = new MutationObserver(() => {
+        const now = measure(-1);
+        made.push(now);
+        const going = leavingNow();
+        if (!ended && going.length && last) {
+          // The turn's end: hold what it set leaving where it starts, then walk it.
+          const leaves = going.flatMap((el) => el.getAnimations());
+          for (const a of leaves) {
+            a.pause();
+            a.currentTime = 0;
+          }
+          const timings = leaves.map((a) => a.effect!.getComputedTiming());
+          const run = Math.max(0, ...timings.map((t) => Number(t.endTime)));
+          const walked: Frame[] = [];
+          for (let i = 0; i <= steps; i++) {
+            const t = (run * i) / steps;
+            leaves.forEach((a, j) => {
+              a.currentTime = Math.min(t, Number(timings[j]!.endTime) - 0.01);
+            });
+            walked.push(measure(t));
+          }
+          for (const a of leaves) a.finish();
+          ended = { before: last, steps: walked };
+          // Finished: closed all the way, and still there until React takes it away.
+          held = last = measure(run);
+          return;
+        }
+        if (ended && !end && !going.length && held) end = { ...ended, lastHeld: held, gone: now };
+        if (going.length) held = now;
+        last = now;
+      });
+      commits.observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+
+      // Every painted frame, until the turn has played and nothing is leaving.
+      let played = false;
+      await new Promise<void>((resolve) => {
+        const sample = (t: number) => {
+          out.push(measure(t));
+          if (played && !leavingNow().length && out.length > 1) resolve();
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+        void (window as unknown as { playTurn: () => Promise<void> }).playTurn().then(() => {
+          played = true;
+        });
+      });
+      commits.disconnect();
+      return { frames: out, commits: made, end };
+    }, steps);
   };
 
   /*
@@ -452,7 +536,7 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
    * the answer settles into place without a jump.
    */
   test("a streaming turn: one working line, asides as they come, and an end that settles", async () => {
-    const frames = await playTurn("turn-live", "no-preference");
+    const { frames, commits, end: turn } = await playTurn("turn-live", "no-preference");
     const sent = frames.findIndex((f) => f.messages > 0);
     const end = frames.findIndex((f, i) => i > sent && f.lines === 0 && f.messages > 0);
     expect(sent).toBeGreaterThanOrEqual(0);
@@ -466,8 +550,16 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
       expect(frame.work).toBe(false);
       expect(frame.leaving).toEqual([]);
     }
-    // The states it went through, each specific; thinking right after it spoke.
-    const states = during.map((f) => f.working!).filter((state, i, all) => state !== all[i - 1]);
+    // The states it went through, each specific; thinking right after it spoke. Read from every
+    // commit, not every frame: a state the page held for less than a frame is not painted, and
+    // a loaded machine paints fewer frames.
+    const from = commits.findIndex((f) => f.messages > 0);
+    const to = commits.findIndex((f, i) => i > from && f.lines === 0 && f.messages > 0);
+    expect(from).toBeGreaterThanOrEqual(0);
+    expect(to).toBeGreaterThan(from);
+    const live = commits.slice(from, to);
+    for (const commit of live) expect(commit.lines).toBe(1);
+    const states = live.map((f) => f.working!).filter((state, i, all) => state !== all[i - 1]);
     expect(states).toEqual([
       "Thinking",
       "Reading the canvas",
@@ -479,30 +571,38 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     ]);
     // Its first message reads plain while it is the newest thing said, and becomes an aside, in
     // italics, the moment the agent carries on after it; the answer is never one.
-    const firstAside = during.findIndex((f) => f.asides.length > 0);
+    const firstAside = live.findIndex((f) => f.asides.length > 0);
     expect(firstAside).toBeGreaterThan(0);
-    expect(during[firstAside]!.working).toBe('Drawing "Plan ready"');
-    for (const frame of during.slice(firstAside)) {
+    expect(live[firstAside]!.working).toBe('Drawing "Plan ready"');
+    const firstPainted = during.findIndex((f) => f.asides.length > 0);
+    for (const frame of [
+      ...live.slice(firstAside),
+      ...(firstPainted < 0 ? [] : during.slice(firstPainted)),
+    ]) {
       expect(frame.asides).toEqual([
         { text: "Drew Plan. Now Plan ready, then the tokens.", italic: true },
       ]);
     }
 
-    // The end's frame: the aside and the working line are no longer live, both leaving.
+    // Every frame from the end on: the aside and the working line are no longer live.
     const after = frames.slice(end);
     for (const frame of after) {
       expect(frame.lines).toBe(0);
       expect(frame.asides).toEqual([]);
       expect(frame.work).toBe(false);
     }
-    const before = frames[end - 1]!;
-    expect(frames[end]!.leaving).toHaveLength(2);
-    // No jump: the answer is where it was in that frame, and the leaving lines hold no more
-    // room than they did (no flash of an aside at its full height after it had gone).
-    expect(Math.abs(frames[end]!.answerBottom! - before.answerBottom!)).toBeLessThan(1);
-    expect(Math.abs(frames[end]!.askTop! - before.askTop!)).toBeLessThan(1);
-    // Then they close and fade, on the pane's clock (each one's own animation, exactly), a little
-    // more in each frame painted, and are gone.
+    // The end as React made it: both leaving, from where they were. No jump: the answer is where
+    // it was just before, and the leaving lines hold no more room than they did (no flash of an
+    // aside at its full height after it had gone).
+    expect(turn).not.toBeNull();
+    const { before, steps, lastHeld, gone } = turn!;
+    const [start] = steps;
+    expect(before.lines).toBe(1);
+    expect(start!.lines).toBe(0);
+    expect(start!.leaving).toHaveLength(2);
+    expect(Math.abs(start!.answerBottom! - before.answerBottom!)).toBeLessThan(1);
+    expect(Math.abs(start!.askTop! - before.askTop!)).toBeLessThan(1);
+    // Then they close and fade on the pane's clock (each one's own animation, exactly).
     const pane = await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue("--dur-pane").trim(),
     );
@@ -517,45 +617,54 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     });
     const ms = Number.parseFloat(pane) * (/\ds$/.test(pane) ? 1000 : 1);
     expect(ms).toBeGreaterThan(0);
-    const leaving = after.filter((f) => f.leaving.length);
-    expect(leaving[0]!.leaving.map((l) => l.clock)).toEqual([
+    expect(start!.leaving.map((l) => l.clock)).toEqual([
       [`leave ${ms}ms ${ease}`],
       [`leave ${ms}ms ${ease}`],
     ]);
-    for (const f of leaving) {
-      for (const l of f.leaving) {
-        // Its animation over (it goes in the frames after), it has closed all the way.
-        if (l.clock.length === 0) expect(l.height).toBeLessThan(1);
-        else expect(l.clock).toEqual([`leave ${ms}ms ${ease}`]);
-      }
-    }
+    expect(steps.at(-1)!.t).toBe(ms);
+    // At every step of that clock: the room only closes and the lines only fade, and the answer
+    // only moves down, by exactly the room the working line under it has given up (the aside
+    // closes above it); what was asked, above both, by all the room given up.
     const total = (f: Frame) => f.leaving.reduce((n, l) => n + l.height, 0);
-    for (let i = 1; i < leaving.length; i++) {
-      expect(total(leaving[i]!)).toBeLessThanOrEqual(total(leaving[i - 1]!) + 0.5);
-      for (const [j, l] of leaving[i]!.leaving.entries()) {
-        expect(l.opacity).toBeLessThanOrEqual((leaving[i - 1]!.leaving[j]?.opacity ?? 1) + 0.01);
+    const line = (f: Frame) => f.leaving.at(-1)!.height;
+    for (let i = 1; i < steps.length; i++) {
+      const [was, now] = [steps[i - 1]!, steps[i]!];
+      expect(now.leaving).toHaveLength(2);
+      expect(total(now)).toBeLessThanOrEqual(total(was) + 0.5);
+      for (const [j, l] of now.leaving.entries()) {
+        expect(l.opacity).toBeLessThanOrEqual(was.leaving[j]!.opacity + 0.01);
       }
+      expect(now.answerBottom! - was.answerBottom!).toBeGreaterThan(-0.5);
+      expect(now.askTop! - was.askTop!).toBeGreaterThan(-0.5);
+      expect(
+        Math.abs(now.answerBottom! - start!.answerBottom! - (line(start!) - line(now))),
+      ).toBeLessThan(1);
+      expect(Math.abs(now.askTop! - start!.askTop! - (total(start!) - total(now)))).toBeLessThan(1);
     }
-    expect(leaving.at(-1)!.t - leaving[0]!.t).toBeLessThan(400);
-    expect(frames.at(-1)!.leaving).toEqual([]);
     // Each closes all the way, the space above it included, before it goes: its going moves
     // nothing (no last step of the answer by the gap it held).
-    expect(total(leaving.at(-1)!)).toBeLessThan(1);
-    const gone = frames.findIndex((f, i) => i > end && f.leaving.length === 0);
-    expect(Math.abs(frames[gone]!.answerBottom! - frames[gone - 1]!.answerBottom!)).toBeLessThan(1);
-    // The answer settles into the working line's room, a little each frame, never jumping, and
-    // stays there.
+    expect(total(steps.at(-1)!)).toBeLessThan(1);
+    expect(lastHeld.leaving.length).toBeGreaterThan(0);
+    expect(total(lastHeld)).toBeLessThan(1);
+    expect(gone.leaving).toEqual([]);
+    expect(Math.abs(gone.answerBottom! - lastHeld.answerBottom!)).toBeLessThan(1);
+    // Nor the question below it: a gap removed with the lines would move it and not the answer.
+    expect(Math.abs(gone.askTop! - lastHeld.askTop!)).toBeLessThan(1);
+    expect(frames.at(-1)!.leaving).toEqual([]);
+    // The answer has settled into the working line's room, and stays there: in every frame
+    // painted after the end it only moved down, and it rests there.
     const settled = frames.at(-1)!.answerBottom!;
     expect(Math.abs(settled - before.answerBottom! - before.lineRoom)).toBeLessThan(2);
+    expect(Math.abs(gone.answerBottom! - settled)).toBeLessThan(0.5);
     const bottoms = after.map((f) => f.answerBottom!);
     for (let i = 1; i < bottoms.length; i++) {
       expect(bottoms[i]! - bottoms[i - 1]!).toBeGreaterThan(-0.5);
-      expect(bottoms[i]! - bottoms[i - 1]!).toBeLessThan(before.lineRoom * 0.6);
     }
   });
 
   test("with reduced motion, the end of a turn is one frame: nothing leaves, nothing moves after", async () => {
-    const frames = await playTurn("turn-live", "reduce");
+    const { frames, end: turn } = await playTurn("turn-live", "reduce");
+    expect(turn).toBeNull();
     const sent = frames.findIndex((f) => f.messages > 0);
     const end = frames.findIndex((f, i) => i > sent && f.lines === 0 && f.messages > 0);
     expect(end).toBeGreaterThan(sent);
