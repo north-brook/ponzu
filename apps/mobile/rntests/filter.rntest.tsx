@@ -6,7 +6,7 @@ import { CanvasList } from "../components/canvas-list";
 import { FilterSheet } from "../components/filter-sheet";
 import { backend, FILTER_SCENE, stockFilter } from "../lib/cloud/backend.fake";
 import { useCanvasList } from "../lib/cloud/canvases";
-import { forgetFilters } from "../lib/cloud/filter";
+import { forgetFilters, setFilter } from "../lib/cloud/filter";
 import { filterKey } from "../lib/cloud/filter-rules";
 import { CloudProvider } from "../lib/cloud/query";
 import { forgetWorkspaces } from "../lib/cloud/workspace";
@@ -56,7 +56,7 @@ beforeEach(async () => {
 });
 
 describe("the filter", () => {
-  test("the sheet offers you, your teammate, and each repo with Scratch last, with counts", async () => {
+  test("the sheet offers you, your teammate, and each repo with Scratch last, with active counts", async () => {
     await open();
     const people = screen.getAllByRole("radio").map((row) => row.props.accessibilityLabel);
     expect(people).toEqual(["Everyone", "You", FILTER_SCENE.teammate.name]);
@@ -65,8 +65,8 @@ describe("the filter", () => {
     });
     await waitFor(() =>
       expect(screen.getAllByRole("checkbox").map((row) => row.props.accessibilityLabel)).toEqual([
-        "app, 2",
         "site, 2",
+        "app, 1",
         "Scratch, 1",
       ]),
     );
@@ -95,10 +95,10 @@ describe("the filter", () => {
     });
     expect(screen.getByRole("button", { name: "Settled, 1" })).toBeTruthy();
 
-    // Without app as well: the poster alone, and no tray.
-    await fireEvent.press(screen.getByRole("checkbox", { name: "app, 2" }));
+    // Without app as well: the poster alone; the tray, as the Mac's, isn't filtered.
+    await fireEvent.press(screen.getByRole("checkbox", { name: "app, 1" }));
     await waitFor(() => expect(rowNames()).toEqual(["Launch poster"]));
-    expect(screen.queryByRole("button", { name: /^Settled/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Settled, 1" })).toBeTruthy();
 
     await fireEvent.press(screen.getByTestId("filter-clear"));
     await waitFor(() => expect(rowNames()).toEqual(EVERY));
@@ -111,7 +111,7 @@ describe("the filter", () => {
     // Jun has nothing in Scratch that Maya can see.
     await fireEvent.press(screen.getByRole("radio", { name: FILTER_SCENE.teammate.name }));
     await fireEvent.press(screen.getByRole("checkbox", { name: "site, 2" }));
-    await fireEvent.press(screen.getByRole("checkbox", { name: "app, 2" }));
+    await fireEvent.press(screen.getByRole("checkbox", { name: "app, 1" }));
     expect(await screen.findByText("No canvases match this filter.")).toBeTruthy();
     expect(rowNames()).toEqual([]);
     expect(screen.queryByTestId("canvases-empty")).toBeNull();
@@ -158,5 +158,22 @@ describe("the filter", () => {
     await waitFor(() => expect(rowNames()).toEqual(EVERY));
     expect(screen.queryByText("No canvases match this filter.")).toBeNull();
     expect(screen.queryByTestId("filter-clear")).toBeNull();
+  });
+});
+
+describe("the kept filters", () => {
+  test("a filter set before the saved ones are read keeps every other workspace's", async () => {
+    forgetFilters();
+    const other = { person: null, projects: ["scratch"] };
+    await AsyncStorage.setItem(filterKey("usr_early"), JSON.stringify({ ws_other: other }));
+    const mine = { person: "usr_sam", projects: null };
+    // Nothing read yet for this person: set at once, as a tap before the read finishes would.
+    await setFilter("usr_early", "ws_mine", mine);
+    await waitFor(async () =>
+      expect(JSON.parse((await AsyncStorage.getItem(filterKey("usr_early"))) ?? "{}")).toEqual({
+        ws_other: other,
+        ws_mine: mine,
+      }),
+    );
   });
 });

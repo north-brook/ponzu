@@ -3,8 +3,9 @@ name: filter
 ---
 # The canvases list's filter on the fake (seed `filter`, lib/cloud/backend.fake.ts
 # stockFilter): Maya's three canvases in acme, and her teammate Jun's Checkout
-# (site) and Sign-up form (app, settled). Filter opens the sheet: Jun alone
-# leaves Checkout and his settled canvas; Everyone without site leaves
+# (site) and Sign-up form (app, settled). The counts are active canvases and
+# the settled tray isn't filtered, as on the Mac. Filter opens the sheet: Jun alone
+# leaves Checkout; Everyone without site leaves
 # Onboarding and the poster; Jun in Scratch alone keeps nothing, which the list
 # says plainly, and its Clear filter brings every canvas back. The filter is
 # kept on the phone, so the flow ends with it cleared for the flows after it.
@@ -29,11 +30,14 @@ name: filter
 - assertVisible: "Everyone"
 - assertVisible: "You"
 - assertVisible: "site, 2"
-- assertVisible: "app, 2"
+- assertVisible: "app, 1"
 - assertVisible: "Scratch, 1"
 - tapOn: "Jun Ito"
+# Down from the sheet's top edge (its 0.6 detent), not the list inside it.
 - swipe:
-    direction: DOWN
+    start: 50%, 44%
+    end: 50%, 95%
+    duration: 300
 - extendedWaitUntil:
     notVisible:
       id: filter-sheet
@@ -54,8 +58,11 @@ name: filter
     timeout: 15000
 - tapOn: "Everyone"
 - tapOn: "site, 2"
+# Down from the sheet's top edge (its 0.6 detent), not the list inside it.
 - swipe:
-    direction: DOWN
+    start: 50%, 44%
+    end: 50%, 95%
+    duration: 300
 - extendedWaitUntil:
     notVisible:
       id: filter-sheet
@@ -73,9 +80,12 @@ name: filter
       id: filter-sheet
     timeout: 15000
 - tapOn: "Jun Ito"
-- tapOn: "app, 2"
+- tapOn: "app, 1"
+# Down from the sheet's top edge (its 0.6 detent), not the list inside it.
 - swipe:
-    direction: DOWN
+    start: 50%, 44%
+    end: 50%, 95%
+    duration: 300
 - extendedWaitUntil:
     notVisible:
       id: filter-sheet

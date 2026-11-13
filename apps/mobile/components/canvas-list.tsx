@@ -81,11 +81,10 @@ export function CanvasList({
       ))}
       {list &&
         list.active.length === 0 &&
-        settled.length === 0 &&
         (filtering ? (
           <FilteredEmpty margin={margin} onClear={onClearFilter} />
         ) : (
-          <EmptyTrace margin={margin} />
+          settled.length === 0 && <EmptyTrace margin={margin} />
         ))}
       {settled.length > 0 && (
         <SettledHeader

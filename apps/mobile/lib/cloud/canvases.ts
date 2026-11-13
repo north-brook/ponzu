@@ -11,6 +11,7 @@ import {
   type CanvasFilter,
   keepUnchanged,
   membersById,
+  NO_FILTER,
   type Person,
   toSummary,
   type WorkspaceKind,
@@ -197,8 +198,13 @@ export interface FilterState {
   /** The viewer, whom the filter calls "You". */
   me: string | null;
   choices: FilterChoices;
-  /** The kept filter less what no longer applies (`filterInView`). */
+  /**
+   * The kept filter as it applies now (`filterInView`): none while the workspace has no active
+   * canvas to filter, and everyone while its members aren't known yet (whose a canvas is isn't).
+   */
   filter: CanvasFilter;
+  /** The kept filter has been read: until then the list waits rather than show everything. */
+  ready: boolean;
   /** Kept for this person and workspace, here and on the next launch. */
   setFilter: (filter: CanvasFilter) => void;
 }
@@ -211,24 +217,33 @@ function useFilterOn(
 ): FilterState {
   const workspaceId = workspace?.id ?? null;
   const kind = workspace?.kind ?? "personal";
-  const kept = useKeptFilter(userId, workspaceId);
+  const read = useKeptFilter(userId, workspaceId);
+  const kept = read ?? NO_FILTER;
+  // The active canvases, as the Mac's filter counts them: the settled tray isn't filtered.
   const choices = useMemo(
     () =>
       filterChoices(
-        (rows ?? []).map((row) => toSummary(row, { people: members ?? NO_PEOPLE })),
+        (rows ?? [])
+          .filter((row) => row.status === "active")
+          .map((row) => toSummary(row, { people: members ?? NO_PEOPLE })),
         { kind, members, me: userId },
       ),
     [rows, kind, members, userId],
   );
-  // Until the rows come there's nothing to tell a stale key by: the filter stays as kept.
-  const filter = useMemo(() => (rows ? filterInView(kept, choices) : kept), [rows, kept, choices]);
+  const filter = useMemo(() => {
+    // Until the rows come there's nothing to tell a stale key by: the filter stays as kept.
+    if (!rows) return kept;
+    if (choices.projects.length === 0) return NO_FILTER;
+    const now = filterInView(kept, choices);
+    return choices.people === null && now.person !== null ? { ...now, person: null } : now;
+  }, [rows, kept, choices]);
   const set = useCallback(
     (next: CanvasFilter) => {
       if (userId && workspaceId) void setFilter(userId, workspaceId, next);
     },
     [userId, workspaceId],
   );
-  return { me: userId, choices, filter, setFilter: set };
+  return { me: userId, choices, filter, ready: read !== undefined, setFilter: set };
 }
 
 /** The filter on the workspace in view, for the filter sheet (components/filter-sheet.tsx). */
@@ -250,7 +265,7 @@ export function useCanvasList(): {
   workspace: ShownWorkspace | null;
   /** Every canvas, whatever the filter. */
   list: CanvasList | undefined;
-  /** The canvases the filter keeps, active and settled alike. */
+  /** The active canvases the filter keeps, and the settled tray as it is. */
   shown: CanvasList | undefined;
   filter: FilterState;
   /** Still waiting for anything to show. */
@@ -279,8 +294,8 @@ export function useCanvasList(): {
     last.current = list;
   }, [list]);
   const shown = useMemo(
-    () => (list ? filterList(list, filter.filter) : undefined),
-    [list, filter.filter],
+    () => (list && filter.ready ? filterList(list, filter.filter) : undefined),
+    [list, filter.ready, filter.filter],
   );
   return {
     userId,
@@ -288,6 +303,6 @@ export function useCanvasList(): {
     list,
     shown,
     filter,
-    loading: list === undefined && !failed && !ended,
+    loading: (list === undefined || !filter.ready) && !failed && !ended,
   };
 }

@@ -308,10 +308,10 @@ describe("the filter", () => {
     });
   });
 
-  test("an unchecked repo goes from the list and the tray", () => {
+  test("an unchecked repo goes from the list; the tray, as the Mac's, isn't filtered", () => {
     expect(
       names(filterList(list, { person: null, projects: ["repo:repo_site", "scratch"] })),
-    ).toEqual({ active: ["Checkout", "Poster", "Pricing"], settled: [] });
+    ).toEqual({ active: ["Checkout", "Poster", "Pricing"], settled: ["Sign-up"] });
   });
 
   test("no filter is the same list", () => {

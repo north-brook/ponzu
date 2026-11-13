@@ -120,7 +120,7 @@ export interface FilterChoices {
    * known yet.
    */
   people: Person[] | null;
-  /** Each repo with canvases, then Scratch, with how many: active and settled alike. */
+  /** Each repo with active canvases, then Scratch, with how many, as the Mac counts them. */
   projects: ProjectCount[];
 }
 
@@ -158,7 +158,7 @@ export function filterInView(kept: CanvasFilter, choices: FilterChoices): Canvas
   );
 }
 
-/** Only the rows the filter keeps, active and settled alike (the shared `applyFilter`). */
+/** Only the active rows the filter keeps (the shared `applyFilter`); the tray, as the Mac's, isn't filtered. */
 export function filterList(list: CanvasList, filter: CanvasFilter): CanvasList {
   if (!isFiltering(filter)) return list;
   const keep = (rows: ListRow[]) => {
@@ -169,7 +169,7 @@ export function filterList(list: CanvasList, filter: CanvasFilter): CanvasList {
     const kept = new Set(canvases.map((canvas) => canvas.id));
     return rows.filter((row) => kept.has(row.id));
   };
-  return { active: keep(list.active), settled: keep(list.settled) };
+  return { active: keep(list.active), settled: list.settled };
 }
 
 /** The canvases whose questions are watched: the first few active ones waiting on the viewer. */

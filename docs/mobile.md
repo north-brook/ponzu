@@ -163,19 +163,21 @@ The Canvases tab is the Mac sidebar at phone size (`components/canvas-list.tsx`,
 **The filter** is the Mac sidebar's filter menu as a sheet
 (`components/filter-sheet.tsx`, `app/filter.tsx`), in its words, on the
 shared rules in `@ponzu/client/model` (`filter.ts`). Filter sits in the
-header beside New canvas once the workspace has canvases, and reads "Filter
+header beside New canvas once the workspace has active canvases, and reads "Filter
 (on)" to VoiceOver, drawn selected, while a filter is on. The sheet has
 Person (Everyone, You, then the workspace's other members, one at a time; a
-personal workspace has none) and Repo (each repo with canvases and then
-Scratch, with how many, settled ones counted). Each choice changes the list at
-once, active rows and the settled tray alike; unchecking the last project is
-no filter, as on the Mac. Clear filter, in the sheet while a filter is on,
+personal workspace has none) and Repo (each repo with active canvases and
+then Scratch, with how many). Each choice changes the active rows at once; the
+settled tray isn't filtered, and unchecking the last project is no filter, as
+on the Mac. Until the workspace's members are known, a person chosen before
+counts as everyone, since whose a canvas is isn't known yet. Clear filter, in the sheet while a filter is on,
 puts everything back. A filter that keeps nothing says "No canvases match this
 filter." with Clear filter under it, never the empty workspace's trace. The
 filter is kept per person and per workspace (`ponzu.filter.<userId>`,
 `lib/cloud/filter.ts`) and comes back on the next launch; a kept repo with no
 canvases now, or someone gone from the workspace, is dropped as it is read
-(`pruneFilter`), so an old filter never hides every canvas. Search and New
+(`pruneFilter`), so an old filter never hides every canvas. The list waits
+for the kept filter to be read rather than show everything first. Search and New
 canvas's first offer look at every canvas, whatever the filter.
 
 The workspace in view is kept per person (`ponzu.workspace.<userId>`) and is
