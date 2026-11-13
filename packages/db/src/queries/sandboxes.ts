@@ -443,8 +443,14 @@ export interface AwakeToMeter {
   periodAnchor: Date;
 }
 
-/** Every awake sandbox, with what the meter needs to cut it. */
-export async function listAwakeToMeter(db: Db): Promise<AwakeToMeter[]> {
+/**
+ * Every awake sandbox, with what the meter needs to cut it; given `workspaceId`, only that
+ * workspace's (the period close cuts its own).
+ */
+export async function listAwakeToMeter(
+  db: Db,
+  { workspaceId }: { workspaceId?: string } = {},
+): Promise<AwakeToMeter[]> {
   const result = await queryJson<{
     rows: { canvas_id: string; awake_since: string; anchor: string }[];
   }>(
@@ -458,6 +464,7 @@ export async function listAwakeToMeter(db: Db): Promise<AwakeToMeter[]> {
         join canvases d on d.id = s.canvas_id
         join workspaces w on w.id = d.workspace_id
        where s.state = 'awake'
+         ${workspaceId === undefined ? sql`` : sql`and w.id = ${workspaceId}`}
     `,
   );
   return (result?.rows ?? []).map((row) => ({

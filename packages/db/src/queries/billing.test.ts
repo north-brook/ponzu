@@ -5,19 +5,27 @@ import { workspaces } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { getWorkspace } from "./accounts.ts";
 import {
+  applyInvoiceState,
   beginCardSetup,
   beginPeriodClose,
   clearCard,
+  clearPastDueIfSettled,
   dueClosings,
+  type InvoiceStateUpdate,
+  listUnscheduledClosings,
   type PeriodNumbers,
+  periodHasActivity,
   readCardSetup,
+  scheduleClosings,
   setBillingGate,
   setCard,
   setCardSetupSession,
   setCustomer,
   setNextClose,
+  setPastDue,
   setPeriodInvoice,
   settleCardSetup,
+  settleUncharged,
   workspaceForStripe,
 } from "./billing.ts";
 import { run } from "./run.ts";
@@ -434,5 +442,215 @@ describe("the period close", () => {
     await expect(run(db.delete(workspaces).where(eq(workspaces.id, workspace.id)))).rejects.toThrow(
       "billing_periods_workspace_id_workspaces_id_fk",
     );
+  });
+
+  test("a close under way, or one failed for good within the day, leaves the workspace out", async () => {
+    const waiting = await seedWorkspace(db, "waiting");
+    const failed = await seedWorkspace(db, "failedclose");
+    const failedLongAgo = await seedWorkspace(db, "failedlong");
+    const free = await seedWorkspace(db, "freeclose");
+    const ids = [waiting.id, failed.id, failedLongAgo.id, free.id];
+    for (const id of ids) await setNextClose(db, { workspaceId: id, at: later(-30) });
+    const job = (workspaceId: string, extra: string) =>
+      run(
+        db.execute(
+          sql.raw(`
+          insert into jobs (id, kind, key, attempts, max_attempts ${extra ? ", failed_at" : ""})
+          values ('job_${workspaceId}', 'billing_close', '${workspaceId}:2026-10-13T00:00:00.000Z',
+                  1, 8 ${extra})`),
+        ),
+      );
+    await job(waiting.id, "");
+    await job(failed.id, `, '${later(-60).toISOString()}'`);
+    await job(failedLongAgo.id, `, '${later(-2 * 24 * 60).toISOString()}'`);
+    const due = await dueClosings(db, {
+      before: now,
+      limit: 50,
+      jobKind: "billing_close",
+      failedSince: later(-24 * 60),
+    });
+    expect(
+      due
+        .map((row) => row.workspaceId)
+        .filter((id) => ids.includes(id))
+        .sort(),
+    ).toEqual([failedLongAgo.id, free.id].sort());
+  });
+
+  test("works out next closes only where there are none, and moves one only from where it was", async () => {
+    const fresh = await seedWorkspace(db, "fresh");
+    const set = await seedWorkspace(db, "alreadyset");
+    await setNextClose(db, { workspaceId: set.id, at: later(10) });
+    const unscheduled = await listUnscheduledClosings(db, { limit: 1_000 });
+    expect(unscheduled.map((row) => row.workspaceId)).toContain(fresh.id);
+    expect(unscheduled.map((row) => row.workspaceId)).not.toContain(set.id);
+    expect(
+      await scheduleClosings(db, [
+        { workspaceId: fresh.id, at: later(20) },
+        { workspaceId: set.id, at: later(30) },
+      ]),
+    ).toBe(1);
+    expect((await getWorkspace(db, fresh.id))!.billingNextCloseAt).toEqual(later(20));
+    expect((await getWorkspace(db, set.id))!.billingNextCloseAt).toEqual(later(10));
+    expect(await setNextClose(db, { workspaceId: set.id, at: later(40), ifAt: later(11) })).toBe(
+      false,
+    );
+    expect(await setNextClose(db, { workspaceId: set.id, at: later(40), ifAt: later(10) })).toBe(
+      true,
+    );
+  });
+
+  test("a period has activity with a usage event in it, or a card; not with use outside it", async () => {
+    const quiet = await seedWorkspace(db, "quiet");
+    await run(
+      db.execute(sql`
+        insert into usage_events (id, workspace_id, kind, seconds, payer, rate_card_version, occurred_at)
+        values ('quiet-before', ${quiet.id}, 'sandbox', 3600, 'ponzu', 1, ${start.toISOString()}::timestamptz - interval '1 second')`),
+    );
+    expect(await periodHasActivity(db, { workspaceId: quiet.id, start, end })).toBe(false);
+    await run(
+      db.execute(sql`
+        insert into usage_events (id, workspace_id, kind, seconds, payer, rate_card_version, occurred_at)
+        values ('quiet-in', ${quiet.id}, 'sandbox', 3600, 'ponzu', 1, ${start.toISOString()}::timestamptz)`),
+    );
+    expect(await periodHasActivity(db, { workspaceId: quiet.id, start, end })).toBe(true);
+    const carded = await seedWorkspace(db, "carded");
+    await setCard(db, {
+      workspaceId: carded.id,
+      paymentMethodId: "pm_activity",
+      brand: "visa",
+      last4: "4242",
+      addedByUserId: null,
+      at: now,
+    });
+    expect(await periodHasActivity(db, { workspaceId: carded.id, start, end })).toBe(true);
+  });
+
+  test("charged nothing settles only a closing period with no invoice", async () => {
+    const workspace = await seedWorkspace(db, "uncharged");
+    await beginPeriodClose(db, { ...numbers(workspace.id, start, end), at: now });
+    const key = { workspaceId: workspace.id, periodStart: start, at: now };
+    expect(await settleUncharged(db, { ...key, status: "waived" })).toMatchObject({
+      status: "waived",
+    });
+    expect(await settleUncharged(db, { ...key, status: "unbilled" })).toMatchObject({
+      status: "waived",
+    });
+    const charging = await seedWorkspace(db, "charging");
+    await beginPeriodClose(db, { ...numbers(charging.id, start, end), at: now });
+    await setPeriodInvoice(db, {
+      workspaceId: charging.id,
+      periodStart: start,
+      stripeInvoiceId: "in_charging",
+      at: now,
+    });
+    expect(
+      await settleUncharged(db, { ...key, workspaceId: charging.id, status: "unbilled" }),
+    ).toMatchObject({ status: "closing", stripeInvoiceId: "in_charging" });
+  });
+
+  test("an invoice's state moves its period forward only, and a first failure is said once", async () => {
+    const workspace = await seedWorkspace(db, "invoicestate");
+    await beginPeriodClose(db, { ...numbers(workspace.id, start, end), at: now });
+    await setPeriodInvoice(db, {
+      workspaceId: workspace.id,
+      periodStart: start,
+      stripeInvoiceId: "in_state",
+      at: now,
+    });
+    const apply = (status: InvoiceStateUpdate["status"], attempts: number) =>
+      applyInvoiceState(db, {
+        workspaceId: workspace.id,
+        stripeInvoiceId: "in_state",
+        status,
+        attempts,
+        nextAttemptAt: later(60),
+        invoiceNumber: "PONZU-1",
+        hostedInvoiceUrl: "https://invoice.example/in_state",
+        taxCents: 0,
+        totalCents: 4_000,
+        at: now,
+      });
+    expect(await apply("invoiced", 0)).toMatchObject({ before: "closing", after: "invoiced" });
+    expect(await apply("payment_failed", 1)).toMatchObject({
+      after: "payment_failed",
+      firstFailure: true,
+    });
+    expect(await apply("payment_failed", 2)).toMatchObject({ firstFailure: false, attempts: 2 });
+    expect(await apply("invoiced", 0)).toMatchObject({ after: "payment_failed", attempts: 2 });
+    expect(await apply("uncollectible", 3)).toMatchObject({ after: "uncollectible" });
+    expect(await apply("payment_failed", 3)).toMatchObject({ after: "uncollectible" });
+    expect(await apply("paid", 4)).toMatchObject({ after: "paid" });
+    expect(await apply("void", 4)).toMatchObject({ after: "paid" });
+  });
+
+  test("past due is kept from the first time, and cleared once nothing is unpaid", async () => {
+    const workspace = await seedWorkspace(db, "pastdue");
+    const second = new Date("2026-11-13T00:00:00Z");
+    const third = new Date("2026-12-13T00:00:00Z");
+    for (const [from, to, invoice] of [
+      [start, end, "in_pd1"],
+      [second, third, "in_pd2"],
+    ] as const) {
+      await beginPeriodClose(db, { ...numbers(workspace.id, from, to), at: now });
+      await setPeriodInvoice(db, {
+        workspaceId: workspace.id,
+        periodStart: from,
+        stripeInvoiceId: invoice,
+        at: now,
+      });
+    }
+    const fail = (invoice: string) =>
+      applyInvoiceState(db, {
+        workspaceId: workspace.id,
+        stripeInvoiceId: invoice,
+        status: "payment_failed",
+        attempts: 1,
+        nextAttemptAt: null,
+        invoiceNumber: null,
+        hostedInvoiceUrl: `https://invoice.example/${invoice}`,
+        taxCents: 0,
+        totalCents: 4_000,
+        at: now,
+      });
+    await fail("in_pd1");
+    await fail("in_pd2");
+    await setPastDue(db, {
+      workspaceId: workspace.id,
+      reason: "failed",
+      invoiceUrl: "https://invoice.example/in_pd1",
+      at: now,
+    });
+    await setPastDue(db, {
+      workspaceId: workspace.id,
+      reason: "needs_confirmation",
+      invoiceUrl: "https://invoice.example/in_pd2",
+      at: later(60),
+    });
+    expect(await getWorkspace(db, workspace.id)).toMatchObject({
+      pastDueAt: now,
+      pastDueReason: "needs_confirmation",
+    });
+    await run(
+      db.execute(
+        sql`update billing_periods set status = 'paid' where stripe_invoice_id = 'in_pd1'`,
+      ),
+    );
+    expect(await clearPastDueIfSettled(db, { workspaceId: workspace.id })).toBe(false);
+    expect(await getWorkspace(db, workspace.id)).toMatchObject({
+      pastDueAt: now,
+      pastDueInvoiceUrl: "https://invoice.example/in_pd2",
+    });
+    await run(
+      db.execute(
+        sql`update billing_periods set status = 'void' where stripe_invoice_id = 'in_pd2'`,
+      ),
+    );
+    expect(await clearPastDueIfSettled(db, { workspaceId: workspace.id })).toBe(true);
+    expect(await getWorkspace(db, workspace.id)).toMatchObject({
+      pastDueAt: null,
+      pastDueReason: null,
+      pastDueInvoiceUrl: null,
+    });
   });
 });

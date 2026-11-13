@@ -6,6 +6,7 @@ import {
   billingPeriods,
   type CardSetupOutcome,
   canvases,
+  type PastDueReason,
   workspaces,
 } from "../schema/index.ts";
 import { queryJson, timeParam } from "./json.ts";
@@ -201,12 +202,17 @@ export async function setBillingGate(
  * longest ago (or never) first: every workspace with a sandbox waking or awake, or one that moved
  * since `since` (a sleep just metered its stretch), and every workspace whose gate is not `ok`,
  * so that one held back with nothing awake is let go once its period turns over or its free
- * credits grow, within a minute.
+ * credits grow, within a minute. Given `pastDueBefore`, also every workspace still `ok` that has
+ * been past due since before then: its grace ran out, so it closes within a minute even with
+ * nothing awake.
  */
 export async function listWorkspacesToGate(
   db: Db,
-  { since, limit }: { since: Date; limit: number },
+  { since, limit, pastDueBefore }: { since: Date; limit: number; pastDueBefore?: Date },
 ): Promise<string[]> {
+  const graceOver = pastDueBefore
+    ? sql`or (w.billing_gate = 'ok' and w.past_due_at <= ${timeParam(pastDueBefore)}::timestamptz)`
+    : sql``;
   const result = await queryJson<{ ids: string[] }>(
     db,
     sql`
@@ -214,6 +220,7 @@ export async function listWorkspacesToGate(
         from (
           select w.id from workspaces w
            where w.billing_gate <> 'ok'
+              ${graceOver}
               or exists (
                 select 1 from sandboxes s join canvases d on d.id = s.canvas_id
                  where d.workspace_id = w.id
@@ -487,26 +494,128 @@ export async function settleCardSetup(
 
 // --- the period close -----------------------------------------------------------------------------
 
-/** When the workspace's running period is next to be closed. False when there is no workspace. */
+/**
+ * When the workspace's running period is next to be closed. Given `ifAt`, only while the next
+ * close is still that (null: not yet worked out), so a close that runs twice moves it on once.
+ * False when there is no workspace, or it had moved.
+ */
 export async function setNextClose(
   db: Db,
-  { workspaceId, at }: { workspaceId: string; at: Date },
+  { workspaceId, at, ifAt }: { workspaceId: string; at: Date; ifAt?: Date | null },
 ): Promise<boolean> {
   const rows = await run(
     db
       .update(workspaces)
       .set({ billingNextCloseAt: at })
-      .where(eq(workspaces.id, workspaceId))
+      .where(
+        and(
+          eq(workspaces.id, workspaceId),
+          ifAt === undefined
+            ? undefined
+            : ifAt === null
+              ? isNull(workspaces.billingNextCloseAt)
+              : eq(workspaces.billingNextCloseAt, ifAt),
+        ),
+      )
       .returning({ id: workspaces.id }),
   );
   return rows.length > 0;
 }
 
-/** Workspaces whose period is due to be closed by `before`, the longest due first. */
+/**
+ * Workspaces whose next close is not worked out yet (billing was just turned on, or the
+ * workspace is new), at most `limit`, with their anchors so the caller can work it out.
+ */
+export async function listUnscheduledClosings(
+  db: Db,
+  { limit }: { limit: number },
+): Promise<{ workspaceId: string; billingPeriodAnchor: Date }[]> {
+  return run(
+    db
+      .select({ workspaceId: workspaces.id, billingPeriodAnchor: workspaces.billingPeriodAnchor })
+      .from(workspaces)
+      .where(isNull(workspaces.billingNextCloseAt))
+      .orderBy(asc(workspaces.id))
+      .limit(limit),
+  );
+}
+
+/**
+ * Set the next close of each workspace given that has none yet, in one statement. Answers how
+ * many were set.
+ */
+export async function scheduleClosings(
+  db: Db,
+  closings: readonly { workspaceId: string; at: Date }[],
+): Promise<number> {
+  if (closings.length === 0) return 0;
+  const rows = closings.map((closing) => ({ id: closing.workspaceId, at: timeParam(closing.at) }));
+  const result = await queryJson<{ set: number }>(
+    db,
+    sql`
+      with set as (
+        update workspaces w set billing_next_close_at = c.at::timestamptz
+          from json_to_recordset(${JSON.stringify(rows)}::json) as c(id text, at text)
+         where w.id = c.id and w.billing_next_close_at is null
+        returning w.id
+      )
+      select json_build_object('set', (select count(*) from set)) as result
+    `,
+  );
+  return result?.set ?? 0;
+}
+
+/**
+ * Whether the period [start, end) of the workspace has anything a close could charge or record:
+ * a usage event dated in it, a sandbox awake since before its end, or a card on file. A period
+ * with none is moved past with no row written.
+ */
+export async function periodHasActivity(
+  db: Db,
+  { workspaceId, start, end }: { workspaceId: string; start: Date; end: Date },
+): Promise<boolean> {
+  const from = sql`${timeParam(start)}::timestamptz`;
+  const until = sql`${timeParam(end)}::timestamptz`;
+  const result = await queryJson<{ active: boolean }>(
+    db,
+    sql`
+      select json_build_object('active',
+        exists (select 1 from usage_events e
+                 where e.workspace_id = ${workspaceId}
+                   and e.occurred_at >= ${from} and e.occurred_at < ${until})
+        or exists (select 1 from sandboxes s join canvases d on d.id = s.canvas_id
+                    where d.workspace_id = ${workspaceId} and s.state = 'awake'
+                      and s.awake_since < ${until})
+        or exists (select 1 from workspaces w
+                    where w.id = ${workspaceId} and w.stripe_payment_method_id is not null)
+      ) as result
+    `,
+  );
+  return result?.active ?? false;
+}
+
+/**
+ * Workspaces whose period is due to be closed by `before`, the longest due first. Given
+ * `jobKind`, a workspace is left out while a job of that kind keyed `<workspace>:…` waits or is
+ * running, or ran out of attempts since `failedSince`: a close already under way, or one that
+ * failed for good and waits a while before it is tried again, never holds the others back.
+ */
 export async function dueClosings(
   db: Db,
-  { before, limit }: { before: Date; limit: number },
+  {
+    before,
+    limit,
+    jobKind,
+    failedSince,
+  }: { before: Date; limit: number; jobKind?: string; failedSince?: Date },
 ): Promise<{ workspaceId: string; nextCloseAt: Date; billingPeriodAnchor: Date }[]> {
+  const busy = jobKind
+    ? sql`not exists (
+        select 1 from jobs j
+         where j.kind = ${jobKind} and starts_with(j.key, ${workspaces.id} || ':')
+           and ((j.completed_at is null and j.failed_at is null)
+                ${failedSince ? sql`or j.failed_at >= ${timeParam(failedSince)}::timestamptz` : sql``}))`
+    : undefined;
   const rows = await run(
     db
       .select({
@@ -515,7 +624,7 @@ export async function dueClosings(
         billingPeriodAnchor: workspaces.billingPeriodAnchor,
       })
       .from(workspaces)
-      .where(lte(workspaces.billingNextCloseAt, before))
+      .where(and(lte(workspaces.billingNextCloseAt, before), busy))
       .orderBy(asc(workspaces.billingNextCloseAt), asc(workspaces.id))
       .limit(limit),
   );
@@ -602,4 +711,199 @@ export async function setPeriodInvoice(
       .returning({ workspaceId: billingPeriods.workspaceId }),
   );
   return rows.length > 0;
+}
+
+/**
+ * Settle a period that is charged nothing: `unbilled` (billing was not on, or the close came
+ * days late) or `waived` (under the minimum, or no card). Only from `closing` with no invoice,
+ * so a period that has an invoice at Stripe is never marked as charged nothing. Answers the
+ * period as it is now, settled or not; null when there is no such period.
+ */
+export async function settleUncharged(
+  db: Db,
+  {
+    workspaceId,
+    periodStart,
+    status,
+    at,
+  }: { workspaceId: string; periodStart: Date; status: "unbilled" | "waived"; at: Date },
+): Promise<BillingPeriod | null> {
+  const key = and(
+    eq(billingPeriods.workspaceId, workspaceId),
+    eq(billingPeriods.periodStart, periodStart),
+  );
+  const [settled] = await run(
+    db
+      .update(billingPeriods)
+      .set({ status, updatedAt: at })
+      .where(and(key, eq(billingPeriods.status, "closing"), isNull(billingPeriods.stripeInvoiceId)))
+      .returning(),
+  );
+  if (settled) return settled;
+  const [existing] = await run(db.select().from(billingPeriods).where(key));
+  return existing ?? null;
+}
+
+/** What a period's invoice says now, as `applyInvoiceState` stores it. */
+export interface InvoiceStateUpdate {
+  workspaceId: string;
+  stripeInvoiceId: string;
+  /** The status Stripe's invoice gives the period (a draft gives none, and is not stored). */
+  status: "invoiced" | "paid" | "payment_failed" | "uncollectible" | "void";
+  attempts: number;
+  nextAttemptAt: Date | null;
+  invoiceNumber: string | null;
+  hostedInvoiceUrl: string | null;
+  taxCents: number;
+  totalCents: number;
+  at: Date;
+}
+
+/** What `applyInvoiceState` did. */
+export interface AppliedInvoiceState {
+  periodStart: Date;
+  periodEnd: Date;
+  before: BillingPeriod["status"];
+  after: BillingPeriod["status"];
+  attemptsBefore: number;
+  attempts: number;
+  chargedCents: number;
+  totalCents: number | null;
+  /** This is the first time a payment of the period's invoice was seen to fail. */
+  firstFailure: boolean;
+}
+
+/**
+ * Store what the period's invoice says now, read fresh from Stripe. A status never goes back:
+ * `paid` and `void` are final, `uncollectible` moves only to `paid` or `void`, and a failed
+ * payment is never taken back to `invoiced`, so two reads applied in the wrong order (a webhook
+ * job that read the invoice before another did) end where the later read left it. The attempt
+ * count only grows. Null when no period of the workspace names the invoice.
+ */
+export async function applyInvoiceState(
+  db: Db,
+  update: InvoiceStateUpdate,
+): Promise<AppliedInvoiceState | null> {
+  const at = sql`${timeParam(update.at)}::timestamptz`;
+  const next = update.nextAttemptAt
+    ? sql`${timeParam(update.nextAttemptAt)}::timestamptz`
+    : sql`null::timestamptz`;
+  const status = sql`${update.status}::text`;
+  // Locked first: of two applies at once, the second reads the row as the first left it.
+  const row = await queryJson<
+    Omit<AppliedInvoiceState, "periodStart" | "periodEnd"> & {
+      periodStart: string;
+      periodEnd: string;
+    }
+  >(
+    db,
+    sql`
+      with locked as (
+        select * from billing_periods
+         where stripe_invoice_id = ${update.stripeInvoiceId}
+           and workspace_id = ${update.workspaceId}
+           for update
+      ),
+      next as (
+        select l.workspace_id, l.period_start, l.status as before, l.attempts as attempts_before,
+               l.failed_at is null as never_failed,
+               case
+                 when l.status in ('paid', 'void') then l.status
+                 when l.status = 'uncollectible' and ${status} not in ('paid', 'void') then l.status
+                 when l.status = 'payment_failed' and ${status} = 'invoiced' then l.status
+                 else ${status}
+               end as after
+          from locked l
+      ),
+      updated as (
+        update billing_periods p
+           set status = n.after,
+               attempts = greatest(p.attempts, ${update.attempts}),
+               next_attempt_at = case when n.after in ('paid', 'void') then null else ${next} end,
+               invoice_number = coalesce(${update.invoiceNumber}::text, p.invoice_number),
+               hosted_invoice_url = coalesce(${update.hostedInvoiceUrl}::text, p.hosted_invoice_url),
+               tax_cents = ${update.taxCents},
+               total_cents = ${update.totalCents},
+               invoiced_at = coalesce(p.invoiced_at, ${at}),
+               paid_at = case when n.after = 'paid' then coalesce(p.paid_at, ${at})
+                              else p.paid_at end,
+               failed_at = case when n.after = 'payment_failed' then coalesce(p.failed_at, ${at})
+                                else p.failed_at end,
+               updated_at = ${at}
+          from next n
+         where p.workspace_id = n.workspace_id and p.period_start = n.period_start
+        returning p.*, n.before, n.attempts_before, n.never_failed
+      )
+      select json_build_object(
+        'periodStart', period_start, 'periodEnd', period_end,
+        'before', before, 'after', status,
+        'attemptsBefore', attempts_before, 'attempts', attempts,
+        'chargedCents', charged_cents, 'totalCents', total_cents,
+        'firstFailure', never_failed and status = 'payment_failed'
+      ) as result from updated
+    `,
+  );
+  return row
+    ? { ...row, periodStart: new Date(row.periodStart), periodEnd: new Date(row.periodEnd) }
+    : null;
+}
+
+/**
+ * Mark the workspace past due: since the first time (kept), why now, and the page where the
+ * invoice can be paid. False when there is no workspace.
+ */
+export async function setPastDue(
+  db: Db,
+  {
+    workspaceId,
+    reason,
+    invoiceUrl,
+    at,
+  }: { workspaceId: string; reason: PastDueReason; invoiceUrl: string | null; at: Date },
+): Promise<boolean> {
+  const rows = await run(
+    db
+      .update(workspaces)
+      .set({
+        pastDueAt: sql`coalesce(${workspaces.pastDueAt}, ${timeParam(at)}::timestamptz)`,
+        pastDueReason: reason,
+        pastDueInvoiceUrl: sql`coalesce(${invoiceUrl}::text, ${workspaces.pastDueInvoiceUrl})`,
+      })
+      .where(eq(workspaces.id, workspaceId))
+      .returning({ id: workspaces.id }),
+  );
+  return rows.length > 0;
+}
+
+/**
+ * The workspace is no longer past due once none of its periods has a failed or uncollectible
+ * invoice: clear what says it is. While one still has, the page to pay points at the oldest of
+ * them. Answers whether it is past due no more (true also when it never was).
+ */
+export async function clearPastDueIfSettled(
+  db: Db,
+  { workspaceId }: { workspaceId: string },
+): Promise<boolean> {
+  const result = await queryJson<{ cleared: boolean }>(
+    db,
+    sql`
+      with unpaid as (
+        select hosted_invoice_url from billing_periods
+         where workspace_id = ${workspaceId} and status in ('payment_failed', 'uncollectible')
+         order by period_start
+         limit 1
+      ),
+      updated as (
+        update workspaces w
+           set past_due_at = case when exists (select 1 from unpaid) then w.past_due_at end,
+               past_due_reason = case when exists (select 1 from unpaid) then w.past_due_reason end,
+               past_due_invoice_url = case when exists (select 1 from unpaid)
+                 then coalesce((select hosted_invoice_url from unpaid), w.past_due_invoice_url) end
+         where w.id = ${workspaceId} and w.past_due_at is not null
+        returning w.id
+      )
+      select json_build_object('cleared', not exists (select 1 from unpaid)) as result
+    `,
+  );
+  return result?.cleared ?? true;
 }

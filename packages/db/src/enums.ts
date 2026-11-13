@@ -115,7 +115,8 @@ export const PAST_DUE_REASONS = ["failed", "needs_confirmation"] as const;
  * A closed billing period (`billing_periods.status`):
  *
  *   closing         its numbers are frozen, and what to do with them is not settled yet
- *   unbilled        closed while billing was not on: never billed, then or later
+ *   unbilled        closed while billing was not on, or first closed days after it ended (billing
+ *                   was off meanwhile): never billed, then or later
  *   waived          nothing to charge: under the $1 minimum, or no card was added
  *   invoiced        one invoice was made for it at Stripe, and is not paid yet
  *   paid            that invoice is paid

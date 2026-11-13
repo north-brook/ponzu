@@ -2726,14 +2726,17 @@ free credits are used up. A workspace has a monthly cap.
   member's free grant, support's adjustments and, later, top-ups. Nothing writes a `use` row.
   With billing on, the workspace's gate is checked before every wake and every message. A
   running turn is never cut off.
-- Stripe receives the billed part as metered usage.
+- Ponzu rates its own usage. At each period's close it sends Stripe one invoice with one line,
+  the period's charged credits at the credit price, charged to the card; Stripe's metered
+  billing is not used.
 - The iPhone shows usage and sells nothing.
 
 What is built so far: Plan and usage, worked out from `usage_events` and the rate card, the
 meter's cuts, the gate (worked out, cached, observed and enforced, below), payments through
-Stripe, and adding a card through Stripe's Checkout with Stripe's webhook (below). Nothing
-charges a card yet: periods are not closed or invoiced. While `PONZU_BILLING` is unset, as in
-production, nothing is held back and no card can be added.
+Stripe, adding a card through Stripe's Checkout with Stripe's webhook, and the period close
+with its invoice and the payment's state (below). While `PONZU_BILLING` is unset, as in
+production, nothing is held back, no card can be added, no period is closed and nothing is
+charged.
 
 **The gate.** Whether a workspace may start new work, from its numbers (`billing/gate.ts`):
 `payment_failed` once an invoice has been past due for 7 days, else `free_used` with no card and
@@ -2848,9 +2851,59 @@ late or out of order cannot move a workspace backwards. `checkout.session.comple
 `payment_method.detached` read the customer's default card and store it, or forget the stored one
 when there is none (a card removed in the portal), then work the gate out again; the workspace is
 found by the customer, or by the stored card, and an event about neither is dropped.
-`charge.dispute.created` and `charge.refunded` are logged (`billing_dispute`, `billing_refund`)
-and change nothing: the founder works them in Stripe's dashboard. Invoice events are not acted on
-yet.
+`invoice.finalized`, `.paid`, `.payment_failed`, `.payment_action_required`,
+`.marked_uncollectible` and `.voided` read the invoice and store what it says (below); an invoice
+that names no workspace of ours (one made by hand at Stripe) is logged `stripe_invoice_foreign`
+and left alone. `charge.dispute.created` and `charge.refunded` are logged (`billing_dispute`,
+`billing_refund`) and change nothing: the founder works them in Stripe's dashboard.
+
+**The period close.** While `PONZU_BILLING` is `observe` or `on`, the minute's cron step
+`close_periods` (`billing/close.ts`) first works out when each workspace that has none yet next
+closes (`billing_next_close_at`): the end of the period running now, so the first period billed
+is the one billing was turned on in. Ten minutes or more after a workspace's period ends, it
+records a `billing_close` job for the period (keyed by workspace and period start, 20 a run),
+unless the period had nothing in it (no usage event, nothing awake, no card), which is moved past
+with no row written. A close already under way, or one that failed for good in the last day,
+does not hold up the others. The job cuts the workspace's awake stretches at the period's end,
+reads the period's usage counting the members who joined before its end, and freezes the numbers
+in `billing_periods` once: used, free, billed, and charged, which is the billed credits but never
+more than the cap in effect at the close pays for (what a running turn used past the cap is
+Ponzu's). Then it settles the period: `unbilled` while billing is not `on`, or when the period
+is first closed more than two days after it ended (billing was off meanwhile; a period closed
+while billing was off is never billed later); `waived` when the charge is under $1, or the
+workspace has no card on file; otherwise one invoice at Stripe with one line, `<charged>`
+credits at the credit price, described as "<Workspace> · <used> credits used, <free> free" and
+"Ponzu usage, <Mon D> – <Mon D, YYYY> · <charged> credits", finalized so Stripe charges the
+card. Before charging, the close reads the credit price at Stripe and refuses
+(`billing_price_mismatch`, logged, the job tried again) when it is not the rate card's. The job
+then moves the next close to the next period's end and works the gate out again, which wakes
+what the old period's limits held back. Every step is safe to run again after a crash anywhere:
+the numbers are frozen once, the invoice's id is stored as soon as Stripe makes it, and its line
+is added only when it has none, so a close crashed after any Stripe call and run again (even
+after Stripe has forgotten its idempotency keys) leaves one invoice with one line. The one case
+it cannot cover is a crash after Stripe made the invoice and before its id was stored, run again
+after Stripe forgot the key: a second invoice is made, and the first stays an empty draft that is
+never finalized or charged. A failing close is tried 8 times over about two hours, then again a
+day later. With billing off, the step is not run and the minute answers as before billing; a
+close job left over does nothing.
+
+**Failed payments.** Stripe collects the invoice and retries a failed payment (Smart Retries, a
+dashboard setting). Each invoice event's job, and the close itself, read the invoice and store
+its state on the period (`applyInvoiceState`): `invoiced` (not yet tried), `payment_failed` (a
+payment failed, or waits on the payer's bank to confirm it), `paid`, `uncollectible` or `void`,
+with the number of attempts, the next one, the invoice's number, its page and its totals. A
+status never goes back (`paid` and `void` are final, `uncollectible` moves only to `paid` or
+`void`), so events out of order end where Stripe is now. A failed payment marks the workspace past
+due (`past_due_at`, kept from the first failure; `past_due_reason` `failed` or
+`needs_confirmation`; `past_due_invoice_url`, the invoice's page) and pings its admins once for
+the period ("<Workspace>'s payment of $<total> didn't go through."). After seven days past due the
+gate is `payment_failed` (the minute's sweep looks at every workspace past due for that long). An
+uncollectible invoice stays past due, since its page can still take a payment. A paid or voided
+invoice clears past due once no other period's invoice has failed or is uncollectible (until
+then the page shown is the oldest unpaid one's), and the gate is worked out again, which wakes
+what it held back. Receipts and the emails about failed payments are Stripe's, with the
+invoice's page; Ponzu sends no billing email of its own. Stripe Tax is added to the invoice when
+`PONZU_STRIPE_TAX=1`.
 
 **What billing stores.** On `workspaces`: the cached gate (`billing_gate`, `ok` until worked out,
 and `billing_gate_at`), when the running period is next to close (`billing_next_close_at`), the

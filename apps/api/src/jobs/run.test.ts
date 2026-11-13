@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { jobs, SEARCH_REINDEX_JOB } from "@ponzu/db";
 import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
+import { CLOSE_JOB } from "../billing/close.ts";
 import { STRIPE_WEBHOOK_JOB } from "../billing/webhook.ts";
 import { ASSET_KEY_RETIRE_JOB } from "../canvases/asset-key.ts";
 import { CANVAS_FILES_DELETE_JOB } from "../canvases/files.ts";
@@ -42,6 +43,7 @@ test("the registry runs every kind the API records, each from one module", () =>
       ASSET_KEY_RETIRE_JOB,
       ACCOUNT_FORGET_JOB,
       STRIPE_WEBHOOK_JOB,
+      CLOSE_JOB,
     ].sort(),
   );
   const named = JOB_MODULES.flatMap((kinds) => Object.keys(kinds()));

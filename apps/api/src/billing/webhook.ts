@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { StripeEventRef } from "../deps/payments.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { settleFromStripe, syncCard } from "./cards.ts";
+import { applyInvoice } from "./invoices.ts";
 
 /*
  * Stripe's webhooks (docs/cloud.md, "Billing", "Webhooks"). The route checks the signature over
@@ -12,8 +13,8 @@ import { settleFromStripe, syncCard } from "./cards.ts";
  *
  * A delivery is a signal, not a record. Stripe sends events late, twice and out of order, so
  * nothing here writes what an event's body says: the job reads the Checkout session or the
- * customer's card from Stripe as it is now and applies that, so a late event can never move a
- * workspace backwards. Invoices are the period close's, and not acted on yet.
+ * customer's card or the invoice from Stripe as it is now and applies that, so a late event can
+ * never move a workspace backwards.
  */
 
 /** The events acted on, and what each asks for. */
@@ -23,9 +24,15 @@ export const STRIPE_EVENTS = {
   "customer.updated": "card",
   "payment_method.attached": "card",
   "payment_method.detached": "card",
+  "invoice.finalized": "invoice",
+  "invoice.paid": "invoice",
+  "invoice.payment_failed": "invoice",
+  "invoice.payment_action_required": "invoice",
+  "invoice.marked_uncollectible": "invoice",
+  "invoice.voided": "invoice",
   "charge.dispute.created": "note",
   "charge.refunded": "note",
-} as const satisfies Record<string, "card_setup" | "card" | "note">;
+} as const satisfies Record<string, "card_setup" | "card" | "invoice" | "note">;
 
 export type StripeEventType = keyof typeof STRIPE_EVENTS;
 
@@ -80,6 +87,8 @@ export async function runStripeWebhookJob(deps: JobDeps, stored: unknown): Promi
       return checkoutEnded(deps, job);
     case "card":
       return cardChanged(deps, job);
+    case "invoice":
+      return invoiceChanged(deps, job);
     case "note":
       // The founder works disputes and refunds in Stripe's dashboard: no effect on the product.
       deps.log.info(job.type === "charge.refunded" ? "billing_refund" : "billing_dispute", {
@@ -117,4 +126,23 @@ async function cardChanged(deps: JobDeps, job: StripeJobPayload) {
     return;
   }
   await syncCard(deps, workspaceId);
+}
+
+/**
+ * One of a period's invoices changed at Stripe: read it as it is now and store that
+ * (`applyInvoice`), which marks the workspace past due or clears it. An invoice that carries no
+ * workspace of ours was made by hand at Stripe, and is left alone.
+ */
+async function invoiceChanged(deps: JobDeps, job: StripeJobPayload) {
+  if (job.workspaceId === null || job.objectId === null) {
+    deps.log.info("stripe_invoice_foreign", { eventId: job.eventId, invoiceId: job.objectId });
+    return;
+  }
+  // Stripe down: it throws, and the job is tried again later.
+  const state = await deps.payments.readInvoice(job.objectId);
+  if (state.metadata.ponzu_workspace_id !== job.workspaceId) {
+    deps.log.info("stripe_invoice_foreign", { eventId: job.eventId, invoiceId: job.objectId });
+    return;
+  }
+  await applyInvoice(deps, job.workspaceId, state);
 }

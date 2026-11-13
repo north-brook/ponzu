@@ -1,6 +1,7 @@
 import { recordOnce } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { archivesStep } from "./steps/archives.ts";
+import { closePeriodsStep } from "./steps/close-periods.ts";
 import { digestsStep } from "./steps/digests.ts";
 import { installationsStep } from "./steps/installations.ts";
 import { jobsStep } from "./steps/jobs.ts";
@@ -37,6 +38,12 @@ export interface CronStep {
   /** Runs once an hour, at this minute past it (0 to 59). Wins over `everyMinutes`. */
   atMinute?: number;
   /**
+   * Whether the step runs here at all, asked each run: a step behind a feature switch that is
+   * off is not run, records nothing and is not in the answer, so the run answers as it did
+   * before the feature existed. Left out: always.
+   */
+  enabled?(run: CronDeps): boolean;
+  /**
    * Does the step's work, and answers counts of what it did. Runs may overlap, and a run may
    * be repeated, so the work must take only what nobody else holds.
    */
@@ -58,6 +65,7 @@ export const CRON_STEPS: readonly CronStep[] = [
   archivesStep,
   selfcheckStep,
   retentionStep,
+  closePeriodsStep,
 ];
 
 /**
@@ -85,6 +93,7 @@ export async function runCronSteps(
   const answer: CronAnswer = { steps: {} };
   const runStep = async (step: CronStep) => {
     try {
+      if (step.enabled && !step.enabled(deps)) return;
       const slot = slotOf(step, now);
       if (slot === "skip") return;
       if (

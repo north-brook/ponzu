@@ -122,7 +122,10 @@ Every event about a workspace also carries `workspace_id`.
 | `monthly cap set` | `cap_usd` | |
 | `billing wall hit` | `reason` (`free_used`, `cap_reached`, `payment_failed`), `surface` (`create`, `message`), `can_manage`, `enforced` | A person's message, or create with one, met a workspace at a billing limit. Only while `PONZU_BILLING` is not off; `enforced` is false in observe, where it went through. |
 | `canvas waiting on billing` | `canvas_id`, `reason` | A canvas's wake began waiting on its workspace's billing limit (billing on), once each time it starts waiting. About no one. |
-| `billing notice` | `kind` (`free_used`, `cap_warning`, `cap_reached`) | A workspace's admins were pinged about billing, once a period for each kind (billing on). About no one. |
+| `billing notice` | `kind` (`free_used`, `cap_warning`, `cap_reached`, `payment_failed`) | A workspace's admins were pinged about billing, once a period for each kind (billing on). `payment_failed` is said on the first failed attempt of a period's invoice. About no one. |
+| `period closed` | `status` (`unbilled`, `waived`, `invoiced`, `paid`, `payment_failed`), `used_credits`, `free_credits`, `billed_credits`, `charged_cents`, `people` | A workspace's billing period was closed and settled, once (billing observed or on): charged nothing, or invoiced at Stripe. About no one. |
+| `invoice paid` | `charged_cents`, `attempts` | A period's invoice was paid, once (billing on). About no one. |
+| `invoice payment failed` | `attempt`, `reason` (`failed`, `needs_confirmation`) | A payment of a period's invoice failed, or waits on the payer's bank to confirm it, once an attempt (billing on). About no one. |
 | `card setup started` | `source` (`wall`, `settings`) | An admin opened Stripe's Checkout page to add the workspace's card (billing on). |
 | `card added` | `brand`, `source`, `seconds_to_add` | A card setup ended with the card stored, once, about whoever started it. The brand only, never the card's digits or Stripe's ids. |
 | `card setup ended` | `outcome` (`cancelled`, `expired`, `failed`) | A card setup ended without a card, once, about whoever started it. |

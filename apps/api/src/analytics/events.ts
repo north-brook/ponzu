@@ -241,6 +241,22 @@ export interface ServerEvents {
   };
   /** A card setup ended without a card. */
   "card setup ended": { outcome: "cancelled" | "expired" | "failed" };
+  /**
+   * A workspace's billing period was closed and settled, once (billing observed or on): charged
+   * nothing (`unbilled`, `waived`) or invoiced. About no one.
+   */
+  "period closed": {
+    status: "unbilled" | "waived" | "invoiced" | "paid" | "payment_failed" | (string & {});
+    used_credits: number;
+    free_credits: number;
+    billed_credits: number;
+    charged_cents: number;
+    people: number;
+  };
+  /** A period's invoice was paid, once. About no one. */
+  "invoice paid": { charged_cents: number; attempts: number };
+  /** A payment of a period's invoice failed, or waits on the payer's bank, once an attempt. */
+  "invoice payment failed": { attempt: number; reason: "failed" | "needs_confirmation" };
   "repo secret changed": { repo_id: string; action: "added" | "replaced" | "removed" };
 }
 

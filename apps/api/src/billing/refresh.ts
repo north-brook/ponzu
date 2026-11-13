@@ -12,7 +12,7 @@ import type { BillingNotice } from "../notifications/kinds.ts";
 import { notify } from "../notifications/notify.ts";
 import { WAKE_JOB } from "../sandboxes/orchestrate.ts";
 import { queueWake, RESUME_AT_ONCE, resumeBlocked } from "../sandboxes/wake.ts";
-import { BILLING_BLOCKERS, type BillingGate } from "./gate.ts";
+import { BILLING_BLOCKERS, type BillingGate, GRACE_MS } from "./gate.ts";
 import { type GateReading, readBillingGate } from "./reading.ts";
 import { ungranted } from "./usage.ts";
 
@@ -140,6 +140,7 @@ export async function refreshBillingGates(deps: RefreshDeps, now: Date): Promise
   const ids = await listWorkspacesToGate(deps.db, {
     since: new Date(now.getTime() - MOVED_WITHIN_MS),
     limit: GATES_PER_RUN,
+    pastDueBefore: new Date(now.getTime() - GRACE_MS),
   });
   let refreshed = 0;
   for (const workspaceId of ids) {
