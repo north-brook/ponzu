@@ -406,6 +406,16 @@ jobs:
         if: env.RUN == 'true'
         run: bun run package:dir
         working-directory: apps/desktop
+      - name: The packaged studio carries no fake backend
+        if: env.RUN == 'true'
+        # Ponzu Cloud in memory (fake-host.ts) is in development and e2e builds
+        # only, so a release can't run on it whatever PONZU_FAKE_BACKEND says.
+        run: |
+          if grep -rl "ponzuFake" out/linux-unpacked/resources/studio; then
+            echo "The packaged studio has the fake backend in it." >&2
+            exit 1
+          fi
+        working-directory: apps/desktop
       - name: The packaged app draws its sign-in screen
         if: env.RUN == 'true'
         # Signed out, with no keychain and no network. A main process that

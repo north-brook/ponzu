@@ -244,6 +244,27 @@ describe("PONZU_ENVIRONMENT_OVERRIDE", () => {
   });
 });
 
+describe("PONZU_FAKE_BACKEND", () => {
+  const env = { PONZU_FAKE_BACKEND: "1" };
+
+  test("a release and Ponzu Dev never take it, whatever their environment says", () => {
+    for (const variant of ["release", "dev"] as const) {
+      expect(configFor(true, env, built({ variant })).fakeBackend).toBe(false);
+    }
+  });
+
+  test("a test build and a run from a checkout take it, and only when it says 1", () => {
+    expect(configFor(true, env, built({ test: true })).fakeBackend).toBe(true);
+    expect(configFor(false, env, built()).fakeBackend).toBe(true);
+    for (const value of ["", "0", "true", "yes"]) {
+      expect(
+        configFor(true, { PONZU_FAKE_BACKEND: value }, built({ test: true })).fakeBackend,
+      ).toBe(false);
+    }
+    expect(configFor(true, {}, built({ test: true })).fakeBackend).toBe(false);
+  });
+});
+
 function directives(config: Parameters<typeof contentSecurityPolicy>[0]): Record<string, string[]> {
   return Object.fromEntries(
     contentSecurityPolicy(config)
