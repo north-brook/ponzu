@@ -118,7 +118,23 @@ export type ToCanvas =
    * Measure this share of gestures, 0 (none, as it starts) to 1 (every one): each measured one
    * comes back as `perf`.
    */
-  | { t: "probe"; rate: number };
+  | { t: "probe"; rate: number }
+  /**
+   * Draw the picture of where the person's comment `messageId` was left, as the Mac does, in
+   * both themes, from the doc as it is once the comment is in it (canvas/picture.ts). Answered
+   * by `picture` with the same `id`.
+   */
+  | { t: "picture"; id: string; threadId: string; messageId: string };
+
+/**
+ * A comment's picture, as the page drew it: each theme's PNG as base64 (WebKit's canvas can't
+ * write WebP), `none` when there is nothing round the pin to show, or `failed` with why.
+ */
+export type PictureAnswer = { t: "picture"; id: string } & (
+  | { light: string; dark: string }
+  | { none: true }
+  | { failed: string }
+);
 
 /** Web view → app. */
 export type FromCanvas =
@@ -172,6 +188,8 @@ export type FromCanvas =
   | { t: "page"; pageId: string }
   /** A gesture measured, when the app asked for it (`probe`). */
   | { t: "perf"; gesture: GesturePerf }
+  /** A comment's picture the app asked for (`picture`). */
+  | PictureAnswer
   | { t: "error"; message: string };
 
 /**

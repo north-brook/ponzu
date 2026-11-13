@@ -55,6 +55,7 @@ export function Sheet({
   onDismiss,
   onHeight,
   height,
+  top,
   testID,
   gap = 14,
   right = 0,
@@ -78,6 +79,11 @@ export function Sheet({
   onHeight?: (px: number) => void;
   /** A fixed height (the thread sheet's 450). */
   height?: number;
+  /**
+   * Its top edge, from the top of the screen (the chat sheet's, near full height): it reaches
+   * down to its bottom edge, so it shortens as the keyboard rises rather than going off the top.
+   */
+  top?: number;
   testID?: string;
   gap?: number;
   /** Kept clear on the right: iPhone Duo's rail, where the system puts its bars. */
@@ -255,6 +261,8 @@ export function Sheet({
       <Animated.View
         testID={testID}
         onLayout={onLayout}
+        // VoiceOver's escape (a two-finger scrub) closes it, as a swipe down does.
+        onAccessibilityEscape={away ? undefined : close}
         style={[
           {
             position: "absolute",
@@ -266,6 +274,7 @@ export function Sheet({
                   boxShadow: `0 -1px 0 ${color.hairline}, 0 -12px 40px rgba(0,0,0,0.12)`,
                 }),
             ...(height ? { height } : {}),
+            ...(top !== undefined && !bare ? { top } : {}),
           },
           style,
         ]}

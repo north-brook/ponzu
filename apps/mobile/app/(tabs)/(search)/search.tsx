@@ -1,40 +1,27 @@
 import { useNavigation } from "expo-router";
-import { useLayoutEffect, useMemo, useState } from "react";
-import { ScrollView, Text } from "react-native";
-import { CanvasNameRow } from "../../../components/canvas-name-row";
-import { useCanvases } from "../../../lib/cloud/canvases";
+import { useLayoutEffect, useState } from "react";
+import { ScrollView } from "react-native";
+import { SearchResults } from "../../../components/search-results";
+import { SEARCH } from "../../../lib/copy";
 import { useMargin } from "../../../lib/margin";
 import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
 
-/** The canvases whose name or repo holds every word typed, in the list's order. */
-export function matchNames<T extends { name: string; repoFullName: string | null }>(
-  canvases: readonly T[],
-  query: string,
-): T[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return [...canvases];
-  return canvases.filter((canvas) => {
-    const text = `${canvas.name} ${canvas.repoFullName ?? "scratch"}`.toLowerCase();
-    return words.every((word) => text.includes(word));
-  });
-}
-
 /**
- * Search, the second tab: the system's search field over the workspace's canvases, matched by
- * name on the phone. The search design's sections (Canvases, Boards, Threads, through the
- * workspace search route) arrive with the search slice.
+ * Search, the second tab (search design §10): the system's search field in the header, and under
+ * it the canvases changed most recently, then, as words are typed, the workspace's Canvases,
+ * Boards and Threads from the API's search (components/search-results.tsx, lib/search.ts). The
+ * list keeps clear of the keyboard, so the last result can be scrolled to with it up.
  */
 export default function Search() {
   const { color } = useTheme();
   const m = useMargin();
-  const { canvases } = useCanvases();
   const [query, setQuery] = useState("");
   const navigation = useNavigation();
   useLayoutEffect(() => {
     navigation.setOptions({
       headerSearchBarOptions: {
-        placeholder: "Search canvases",
+        placeholder: SEARCH.placeholder,
         autoCapitalize: "none",
         hideWhenScrolling: false,
         hideNavigationBar: false,
@@ -46,33 +33,17 @@ export default function Search() {
       },
     });
   }, [navigation, color.ink]);
-  const found = useMemo(() => matchNames(canvases ?? [], query), [canvases, query]);
   return (
     <ScrollView
       testID="search"
       style={{ flex: 1, backgroundColor: color.bg }}
       contentInsetAdjustmentBehavior="automatic"
+      automaticallyAdjustKeyboardInsets
       keyboardDismissMode="on-drag"
-      contentContainerStyle={{ paddingBottom: 24 }}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
     >
-      {found.map((canvas) => (
-        <CanvasNameRow key={canvas.id} canvas={canvas} margin={m} />
-      ))}
-      {canvases && query.trim() && found.length === 0 && (
-        <Text
-          style={{
-            marginTop: 40,
-            marginHorizontal: 40,
-            textAlign: "center",
-            fontFamily: "Inter",
-            fontSize: 15,
-            lineHeight: 22,
-            color: color.muted,
-          }}
-        >
-          Nothing called “{query.trim()}”.
-        </Text>
-      )}
+      <SearchResults query={query} margin={m} />
     </ScrollView>
   );
 }

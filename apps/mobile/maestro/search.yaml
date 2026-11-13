@@ -1,0 +1,54 @@
+appId: design.ponzu.app.dev
+name: search
+---
+# Search on the fake (seed `search`: the `chat` thread on the Pricing page,
+# and Maya's comment on its Plans board). Before typing, the canvases changed
+# most recently, the Pricing page saying Claude is at work on it. Typing
+# "pricing" finds the canvas by name. Typing "plans" instead asks the API's
+# search (the fake's) again: Boards finds the Plans board and Threads her
+# comment and her ask, each pressable with the keyboard still up. Her ask
+# opens the Pricing page with the chat up at it.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=search
+- extendedWaitUntil:
+    visible: "Pricing page, .*site.*"
+    timeout: 30000
+- tapOn:
+    id: tab-search
+- extendedWaitUntil:
+    visible:
+      id: search-recent
+    timeout: 15000
+- assertVisible: "Pricing page, Claude is working · now · .*"
+- assertVisible: "Onboarding, .*"
+# A canvas by its name, the keyboard up.
+- tapOn: "Search canvases"
+- inputText: "pricing"
+- extendedWaitUntil:
+    visible:
+      id: search-section-canvases
+    timeout: 15000
+- assertVisible: "Pricing page, site · .*"
+- assertNotVisible:
+    id: search-recent
+# Other words: boards and what was said.
+- eraseText: 10
+- inputText: "plans"
+- extendedWaitUntil:
+    visible:
+      id: search-section-boards
+    timeout: 15000
+- assertVisible: "Plans, in Pricing page"
+- assertVisible:
+    id: search-section-threads
+- assertVisible: "Maya · Pricing page, .*The plans need more contrast on dark"
+- assertNotVisible:
+    id: search-section-canvases
+# Her ask, under Threads: the canvas opens with the chat up at it.
+- tapOn: "Maya · Pricing page, .*Make the plans easier to compare"
+- extendedWaitUntil:
+    visible:
+      id: chat-sheet
+    timeout: 30000
+- assertVisible: "You said: Make the plans easier to compare"
+- assertNotVisible: ".*Cannot update a component.*"

@@ -43,6 +43,31 @@ export const SCENARIOS = [
    * preview, a settled canvas, and a second workspace to switch to.
    */
   "canvases",
+  /**
+   * Maya's Pricing page with a thread (`stockChat`): her ask, Ponzu's reply with a link to the
+   * Plans board, and a second turn still running, an aside on its way.
+   */
+  "chat",
+  /**
+   * Maya's Pricing page waiting on her (`stockAsks`): two questions in one ask (the second
+   * multi-select), a plan to approve, and a permission, four pages in all.
+   */
+  "needs-you",
+  /**
+   * Maya's Pricing page with its pull request ready to merge (`stockPullRequest`): checks
+   * passed, Theo approved, two comments, three files.
+   */
+  "pull-request",
+  /**
+   * Maya's Pricing page waiting on her (`stockAsks`), on an API that sends pings
+   * (`features.push`): the ask after a comment, Settings › Notifications, and taps on pings.
+   */
+  "pings",
+  /**
+   * Maya's Pricing page with something to find (`stockSearch`): the `chat` thread, and her
+   * comment on the Plans board.
+   */
+  "search",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -237,11 +262,197 @@ export async function stockCanvases(world: FakeWorld): Promise<void> {
   });
 }
 
+/** What `stockChat` puts in the Pricing page's thread, for tests to look for. */
+export const CHAT_SCENE = {
+  ask: "Make the plans easier to compare",
+  reply: (canvasId: string) =>
+    `I put the **three plans** side by side, cheapest first. See [the Plans board](https://ponzu.design/canvases/${canvasId}?artboard=ab_plans).`,
+  replyText: "I put the three plans side by side, cheapest first. See the Plans board.",
+  again: "Now a dark version",
+  aside: "Starting on the dark one.",
+  working: "Drawing the dark plans",
+} as const;
+
+/**
+ * The Pricing page's thread once the world is ready: Maya asked, Ponzu answered with a link to
+ * the Plans board, Maya asked again, and that turn is running: an aside said, its work going on.
+ */
+export async function stockChat(world: FakeWorld): Promise<void> {
+  await world.ready;
+  const { fake, maya } = world;
+  const pricing = [...fake.canvases.values()].find(
+    (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === "Pricing page",
+  );
+  if (!pricing) return;
+  const { api } = fake.connect(maya);
+  const agent = fake.agent(pricing.id);
+  await api.canvases.sendMessage(pricing.id, { text: CHAT_SCENE.ask });
+  agent.say(CHAT_SCENE.reply(pricing.id));
+  await api.canvases.sendMessage(pricing.id, { text: CHAT_SCENE.again });
+  agent.work(["ab_plans"], CHAT_SCENE.working);
+  agent.say(CHAT_SCENE.aside);
+  agent.tool("Edited Plans", { streaming: true, artboards: ["ab_plans"] });
+}
+
+/** What `stockAsks` asks on the Pricing page, for tests to look for. */
+export const ASKS_SCENE = {
+  blue: {
+    header: "Button colour",
+    question: "Which blue for the buttons?",
+    options: ["Royal", "Sky"],
+  },
+  sections: {
+    header: "Sections",
+    question: "Which sections go under the plans?",
+    options: ["FAQ", "Testimonials", "Comparison table"],
+  },
+  planFirst: "Put the three plans side by side, cheapest first.",
+  planRest: "Then add a short FAQ under them, and a dark version of both.",
+  permission: { tool: "Bash", title: "Run the visual tests", description: "bun test visual" },
+} as const;
+
+/** The Pricing page waiting on Maya: a two-question ask, a plan and a permission. */
+export async function stockAsks(world: FakeWorld): Promise<string[]> {
+  await world.ready;
+  const pricing = [...world.fake.canvases.values()].find(
+    (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === "Pricing page",
+  );
+  if (!pricing) return [];
+  const agent = world.fake.agent(pricing.id);
+  const { blue, sections, planFirst, planRest, permission } = ASKS_SCENE;
+  const asked = (q: typeof blue | typeof sections, multiSelect: boolean) => ({
+    header: q.header,
+    question: q.question,
+    options: q.options.map((label) => ({ label, description: "" })),
+    multiSelect,
+  });
+  return [
+    agent.ask(
+      { kind: "question", payload: { questions: [asked(blue, false), asked(sections, true)] } },
+      blue.header,
+    ),
+    agent.ask({ kind: "plan", payload: { plan: `${planFirst}\n\n${planRest}` } }, "Plan"),
+    agent.ask({ kind: "permission", payload: { ...permission } }, permission.title),
+  ];
+}
+
+/** What `stockPullRequest` puts on the Pricing page's pull request, for tests to look for. */
+export const PR_SCENE = {
+  description: "Puts the three plans side by side, cheapest first, with a short FAQ under them.",
+  checks: ["ci / test", "ci / lint", "ci / visual"],
+  reviewer: "theo",
+  comments: [
+    { login: "theo", body: "The FAQ could be shorter." },
+    { login: "maya", body: "Cut it to four questions." },
+  ],
+  files: [
+    {
+      path: "src/components/plans.tsx",
+      additions: 3,
+      deletions: 1,
+      patch: [
+        "@@ -1,4 +1,6 @@",
+        " export function Plans() {",
+        '-  return <Plan name="Pro" />;',
+        "+  return (",
+        '+    <PlanRow plans={["Free", "Pro", "Team"]} />',
+        "+  );",
+        " }",
+      ].join("\n"),
+    },
+    {
+      path: "src/app/pricing/page.tsx",
+      additions: 2,
+      deletions: 0,
+      patch: "@@ -8,3 +8,5 @@\n <main>\n+  <Plans />\n+  <Faq />\n </main>",
+    },
+    { path: "public/plans.png", additions: 0, deletions: 0, patch: null },
+  ],
+} as const;
+
+/**
+ * The Pricing page's pull request once the world is ready: the agent pushed three files and kept
+ * its words on them, Maya opened it and marked it ready, its checks passed, Theo approved and
+ * two comments were left. Nothing stands in the way of Merge. The number is the fake's next.
+ */
+export async function stockPullRequest(world: FakeWorld): Promise<void> {
+  await world.ready;
+  const { fake, maya } = world;
+  const pricing = [...fake.canvases.values()].find(
+    (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === "Pricing page",
+  );
+  if (!pricing?.github) return;
+  const { api } = fake.connect(maya);
+  const github = pricing.github;
+  fake.agent(pricing.id).push(PR_SCENE.files.map((file) => ({ ...file, change: "modified" })));
+  github.describe(PR_SCENE.description);
+  await api.canvases.pullRequest.open(pricing.id);
+  await api.canvases.pullRequest.ready(pricing.id);
+  github.setChecks(PR_SCENE.checks.map((name) => ({ name, state: "passed" })));
+  github.review(PR_SCENE.reviewer, "approved");
+  for (const { login, body } of PR_SCENE.comments) github.comment(login, body);
+}
+
+/** What `stockSearch` leaves to be found, for tests to look for. */
+export const SEARCH_SCENE = {
+  /** Finds the Plans board, Maya's ask and her comment on Plans. */
+  query: "plans",
+  comment: "The plans need more contrast on dark",
+  /** Finds the Pricing page by its name. */
+  canvasQuery: "pricing",
+} as const;
+
+/**
+ * Something to find on the Pricing page: its thread as `stockChat` leaves it, and Maya's comment
+ * on the Plans board.
+ */
+export async function stockSearch(world: FakeWorld): Promise<void> {
+  await stockChat(world);
+  const { fake, maya } = world;
+  const pricing = [...fake.canvases.values()].find(
+    (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === "Pricing page",
+  );
+  if (!pricing) return;
+  const at = Date.now();
+  // Through Maya's own commit, so the API stamps it as hers (an agent's commit would make it Claude's).
+  const { api } = fake.connect(maya);
+  await api.canvases.commit(pricing.id, [
+    {
+      id: "op_search_comment",
+      op: {
+        op: "thread.create",
+        thread: {
+          id: "th_search",
+          artboardId: "ab_plans",
+          x: 120,
+          y: 80,
+          status: "open",
+          createdAt: at,
+          updatedAt: at,
+          messages: [
+            {
+              id: "m_search",
+              author: { kind: "user", id: maya.id, name: maya.name ?? maya.githubLogin },
+              text: SEARCH_SCENE.comment,
+              createdAt: at,
+            },
+          ],
+        },
+      },
+    },
+  ]);
+}
+
 export interface FakeCloud extends Backend {
   kind: "fake";
   /** The world now (`reset` makes a new one). */
   readonly world: FakeWorld;
   seed(scenario: string): boolean;
+  /**
+   * Seed `scenario` again at the app's next launch, once: a flow that ends the app and opens it
+   * from a ping (a cold start) finds the same state. Kept in AsyncStorage until that launch.
+   */
+  seedNextLaunch(scenario: string): Promise<void>;
   /** A new world, with nobody signed in: each test file's tests start from the same one. */
   reset(): void;
   /**
@@ -264,8 +475,32 @@ export function installPageFor(authorizeUrl: string | null): string {
   return new URL("/install", authorizeUrl).toString();
 }
 
+/** Where `seedNextLaunch` keeps the scenario for the next launch. */
+export const NEXT_LAUNCH_SEED_KEY = "ponzu.fake.nextLaunchSeed";
+
+interface SeedStorage {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+}
+
+/** AsyncStorage in the app; none under Bun, where React Native's modules can't load. */
+function appStorage(): SeedStorage | null {
+  try {
+    return (
+      require("@react-native-async-storage/async-storage") as {
+        default: SeedStorage;
+      }
+    ).default;
+  } catch {
+    return null;
+  }
+}
+
 /** A whole fake Ponzu Cloud behind the app's `Backend`. */
-export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeCloud {
+export function fakeCloud(
+  opts: { authorizeUrl?: string | null; storage?: SeedStorage | null } = {},
+): FakeCloud {
   const authorizeUrl = opts.authorizeUrl ?? null;
   let world = fakeWorld();
   const session = new FakeSignInSession(world.maya);
@@ -274,6 +509,28 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
   let limitedUntil: string | null = null;
   const installPages: string[] = [];
   const stocked = new WeakSet<FakeWorld>();
+  const chatted = new WeakSet<FakeWorld>();
+  const asked = new WeakSet<FakeWorld>();
+  const pulled = new WeakSet<FakeWorld>();
+  const pinged = new WeakSet<FakeWorld>();
+  const searched = new WeakSet<FakeWorld>();
+  const storage = opts.storage === undefined ? null : opts.storage;
+  /** The scenario a flow asked for at this launch, read once, before the session is. */
+  let nextLaunch: Promise<void> | null = null;
+  const launched = () => {
+    nextLaunch ??= (async () => {
+      if (!storage) return;
+      try {
+        const scenario = await storage.getItem(NEXT_LAUNCH_SEED_KEY);
+        if (!scenario) return;
+        await storage.removeItem(NEXT_LAUNCH_SEED_KEY);
+        cloud.seed(scenario);
+      } catch {
+        // Nothing kept: the launch starts signed out, as ever.
+      }
+    })();
+    return nextLaunch;
+  };
   const client = () => {
     const person = session.person;
     let known = clients.get(person.id);
@@ -324,7 +581,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
       return real[key as keyof Api];
     },
   });
-  return {
+  const cloud: FakeCloud = {
     kind: "fake",
     get world() {
       return world;
@@ -333,7 +590,11 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
     api,
     makeLive: (): Live => world.fake.connect(session.person).live,
     authorizeUrl,
-    prepare: () => world.ready,
+    prepare: () => launched().then(() => world.ready),
+    async seedNextLaunch(scenario) {
+      if (!storage || !isScenario(scenario)) return;
+      await storage.setItem(NEXT_LAUNCH_SEED_KEY, scenario).catch(() => {});
+    },
     installId: async () => "0123456789abcdef0123456789abcdef",
     installPages,
     settleInstalls(result) {
@@ -370,7 +631,14 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         "setup-where": signedIn,
         "setup-claude": signedIn,
         canvases: signedIn,
+        chat: signedIn,
+        "needs-you": signedIn,
+        "pull-request": signedIn,
+        pings: signedIn,
+        search: signedIn,
       };
+      // An API that sends pings, for the scenario that says so; none otherwise.
+      world.fake.features = { ...world.fake.features, push: scenario === "pings" };
       // The rows change under the list as the live query would deliver them.
       // Maya is signed in once Northbrook exists, as someone already in two workspaces is: `me`
       // read before it would list one, and nothing tells the app to read it again.
@@ -383,13 +651,60 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         });
         return true;
       }
+      if (scenario === "chat" && !chatted.has(world)) {
+        chatted.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockChat(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "needs-you" && !asked.has(world)) {
+        asked.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockAsks(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "pull-request" && !pulled.has(world)) {
+        pulled.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockPullRequest(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "pings" && !pinged.has(world)) {
+        pinged.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockAsks(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "search" && !searched.has(world)) {
+        searched.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockSearch(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
       session.set(states[scenario]);
       return true;
     },
   };
+  return cloud;
 }
 
 export const backend: FakeCloud = fakeCloud({
   // Spelled out: Metro inlines only `process.env.EXPO_PUBLIC_*` read by name.
   authorizeUrl: process.env.EXPO_PUBLIC_PONZU_FAKE_AUTHORIZE_URL || null,
+  storage: appStorage(),
 });

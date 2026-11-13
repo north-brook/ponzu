@@ -21,11 +21,6 @@ export const KEEP_APPS: Keep[] = [
   { path: "apps/studio/src/app/create.test.ts", has: '"Design ', why: "what people type" },
   { path: "packages/client/src/model/create.test.ts", has: '"Design ', why: "what people type" },
   {
-    path: "apps/studio/src/app/comment-picture.tsx",
-    has: "without a picture, by design",
-    why: "the idiom",
-  },
-  {
     path: "apps/studio/src/app/sidebar-data.ts",
     has: "the viewer left out, by design",
     why: "the idiom",

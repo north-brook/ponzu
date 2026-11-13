@@ -1,6 +1,7 @@
 import type { UploadPurpose } from "@ponzu/db";
 import {
   ARCHIVE_TYPE,
+  COMMENT_PICTURE_FILES,
   MAX_SESSION_BYTES,
   MAX_WORKSPACE_BYTES,
   SESSION_ARCHIVE,
@@ -17,7 +18,7 @@ import { ApiError } from "../http/errors.ts";
  *   assets/<name>               a canvas's file, as markup references it (`assets/<name>`)
  *   previews/<seq>-<theme>.png  the sidebar's picture of the canvas at `seq`
  *   exports/<upload id>-<name>  a file a link reaches
- *   comments/<message id>-<theme>-<random>.webp
+ *   comments/<message id>-<theme>-<random>.webp (or .png, from the iPhone)
  *                               the picture of where a comment was left, as the thread shows it
  *
  * An SVG is the one kind that can run script when a browser opens it by itself, so it is stored
@@ -68,8 +69,16 @@ const EXPORT_TYPES: Record<string, string> = {
  */
 export type UploadKind = UploadPurpose | "image";
 
-/** A comment's picture is two files, one for each theme. */
-export const COMMENT_PICTURE_NAMES = ["light.webp", "dark.webp"];
+/**
+ * A comment's picture is two files, one for each theme: WebP from the Mac, PNG from the iPhone
+ * (whose WebKit can't write WebP).
+ */
+export const COMMENT_PICTURE_NAMES = Object.values(COMMENT_PICTURE_FILES).flatMap(
+  ({ light, dark }) => [light, dark],
+);
+const COMMENT_PICTURE_TYPES: Record<string, string> = Object.fromEntries(
+  Object.entries(COMMENT_PICTURE_FILES).map(([format, { contentType }]) => [format, contentType]),
+);
 
 interface Rule {
   types: Record<string, string>;
@@ -84,7 +93,7 @@ const RULES: Record<UploadKind, Rule> = {
   export: { types: EXPORT_TYPES, maxBytes: 50 * MB },
   preview: { types: { png: "image/png" }, maxBytes: 5 * MB, names: ["light.png", "dark.png"] },
   // A person's picture of where they left a comment, in each theme: a few hundred px a side.
-  comment: { types: { webp: "image/webp" }, maxBytes: 2 * MB, names: COMMENT_PICTURE_NAMES },
+  comment: { types: COMMENT_PICTURE_TYPES, maxBytes: 2 * MB, names: COMMENT_PICTURE_NAMES },
   // A checkpoint's archives (docs/cloud.md, "Saving the sandbox"): never served to anyone.
   session: {
     types: { gz: ARCHIVE_TYPE },
