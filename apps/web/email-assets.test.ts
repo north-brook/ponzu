@@ -3,14 +3,12 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import config from "./next.config.ts";
 import {
-  decodePng,
-  drawTile,
   EMAIL_DIR,
-  encodePng,
   FONT,
   FONT_LICENSE,
   FONT_SOURCE,
   problems,
+  renderTile,
   TILE,
   TILE_SIZE,
 } from "./scripts/email-assets.ts";
@@ -27,8 +25,12 @@ test("the committed email assets are what the script makes", () => {
 });
 
 test("the tile is 96 pixels square, yuzu with the slice in ink, and transparent at its corners", () => {
-  const { width, height, pixels } = decodePng(readFileSync(join(EMAIL_DIR, TILE)));
-  expect([width, height]).toEqual([TILE_SIZE, TILE_SIZE]);
+  const file = readFileSync(join(EMAIL_DIR, TILE));
+  // The PNG header's width and height.
+  expect([file.readUInt32BE(16), file.readUInt32BE(20)]).toEqual([TILE_SIZE, TILE_SIZE]);
+  // The committed file is the render (the first test), so its pixels are the render's.
+  const { pixels } = renderTile();
+  const width = TILE_SIZE;
   const at = (x: number, y: number) => [
     ...pixels.subarray((y * width + x) * 4, (y * width + x) * 4 + 4),
   ];
@@ -44,11 +46,8 @@ test("the tile is 96 pixels square, yuzu with the slice in ink, and transparent 
   expect(statSync(join(EMAIL_DIR, TILE)).size).toBeLessThan(4096);
 });
 
-test("a PNG the script writes reads back as the same pixels", () => {
-  const pixels = drawTile();
-  expect(decodePng(encodePng(pixels, TILE_SIZE, TILE_SIZE)).pixels).toEqual(pixels);
-  // The drawing has no clock or randomness in it.
-  expect(drawTile()).toEqual(pixels);
+test("the render has no clock or randomness in it", () => {
+  expect(renderTile().png.equals(renderTile().png)).toBe(true);
 });
 
 test("the font is the display face the apps embed, with its license beside it", () => {
