@@ -421,7 +421,7 @@ function useTier(opts: {
   loopsUrl?: (id: string) => string;
   /** Cheap enough to show live while its picture is missing. */
   cheap?: boolean;
-  /** Its distance from the middle of the view: nearer boards go live first. Asked when it queues. */
+  /** Its distance from the middle of the view: nearer boards go live first. Asked each frame it waits to. */
   rank?: () => number;
   /** What going live costs, in elements. */
   cost?: number;

@@ -1311,8 +1311,9 @@ export function Canvas({
   // board coming on or off screen, a tall board's band, a gesture starting or stopping):
   // the canvas renders only then, and each board only when its own inputs change.
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-  // Boards go live nearest the middle of the view first. Asked only when one
-  // queues to, so it reads the camera then; stable, so boards don't re-render.
+  // Boards go live nearest the middle of the view first. Asked by the thaw queue
+  // each frame a board waits in it, so it reads the camera then; stable, so
+  // boards don't re-render.
   const rankRef = useRef<(id: string) => number>(() => 0);
   rankRef.current = (id: string) => {
     const ab = boards.find((b) => b.id === id);
@@ -2398,6 +2399,11 @@ const Board = memo(function Board({
     () => source.loopsUrl && ((id: string) => source.loopsUrl!(id, version, colorScheme)),
     [source, version, colorScheme],
   );
+  const pictures = !!source.snapshotUrl;
+  const fill = useMemo(
+    () => placeholderFill(ab, colorScheme, pictures ? "#fff" : "transparent", tokens),
+    [ab, colorScheme, pictures, tokens],
+  );
   const visible = y0 === undefined || y1 === undefined ? undefined : { y0, y1 };
   // The board's own corners where it rounds its root, the view's few px where it doesn't: the
   // sheet and its shadow take the radii ArtboardView gives the live root (corners.ts).
@@ -2444,7 +2450,7 @@ const Board = memo(function Board({
         skeleton={skeleton}
         // Without pictures a placeholder shows only until the board's turn to go live, a frame
         // or a few: a colour that isn't known for sure is left clear rather than guessed white.
-        fill={placeholderFill(ab, colorScheme, source.snapshotUrl ? "#fff" : "transparent")}
+        fill={fill}
         // A fit-content board's height comes from its DOM: the page's bounds, the camera's fit
         // and which boards are on screen all need it, so it's built at once (hidden, not drawn).
         build={fixed === null}
