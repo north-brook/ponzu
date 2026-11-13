@@ -8,7 +8,7 @@ import {
   threadPage,
 } from "@ponzu/core";
 import { COMMENT_PICTURE } from "@ponzu/runner/protocol";
-import { domToBlob } from "modern-screenshot";
+import { domToForeignObjectSvg } from "modern-screenshot";
 import { type CSSProperties, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { distanceTo, OPEN_LIMIT, pictureArea, type Rect } from "./comment-area.ts";
@@ -284,8 +284,9 @@ const DRAW_MS = 15_000;
 /**
  * The picture of where a comment was left, in both themes, as WebP at `COMMENT_PICTURE.scale`:
  * the scene drawn off screen, its fonts and images in, its animations at their ends, and then
- * turned into an image by modern-screenshot (the DOM, with its computed styles and the fonts and
- * images it uses, into an SVG and onto a <canvas>). Rejects when it can't be had.
+ * turned into an image (`rasterise`: what of the DOM shows in the picture, with its computed
+ * styles and the fonts and images it uses, into an SVG and onto a <canvas>). Rejects when it
+ * can't be had.
  */
 export async function drawCommentPicture(given: {
   doc: Doc;
@@ -332,17 +333,7 @@ export async function drawCommentPicture(given: {
         );
       });
       await settle(scene, deadline);
-      const blob = await domToBlob(scene, {
-        scale: SCALE,
-        type: "image/webp",
-        quality: 0.9,
-        width: WIDTH,
-        height: HEIGHT,
-        timeout: Math.max(1_000, deadline - Date.now()),
-        fetchFn: (url) => crossOriginImage(url, given.assetBase),
-      });
-      if (blob.type !== "image/webp") throw new Error("This browser can't write WebP.");
-      out[theme] = blob;
+      out[theme] = await rasterise(scene, deadline, given.assetBase);
     }
     return out as Record<Theme, Blob>;
   } finally {
@@ -381,6 +372,191 @@ async function settle(scene: HTMLElement, deadline: number): Promise<void> {
   }
   // A frame for what that changed to be laid out.
   await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+}
+
+/**
+ * How far past the picture's edge, in its own px, a part of a board still counts as in it: room
+ * for what paints outside its box (a shadow, an outline, a filter) to reach in. Half the
+ * picture's width: 120 page px of a shadow's reach at the closest a picture frames, more as it
+ * frames wider.
+ */
+const MARGIN = WIDTH / 2;
+
+/**
+ * A drawn scene as a WebP file, by modern-screenshot: the scene copied with its computed styles
+ * into an SVG, which is drawn onto a <canvas>.
+ *
+ * Only what can show is copied. A board is far bigger than the picture's area round its pin, and
+ * copying every element of it with its whole computed style is what used to take seconds and
+ * build an SVG of tens of millions of characters. So an element that lies wholly outside the
+ * picture, with everything under it, is copied as an empty box of its own size (`outsideOf`),
+ * which keeps the layout of what is in the picture as it was. Of each element's computed style
+ * only the properties that can change how it looks are copied (`drawnProperties`): every element
+ * inherits the canvas's and its tokens' custom properties, hundreds of them, which the values
+ * of the others already have in them. And of the fonts, only the faces whose characters the
+ * picture has (`keepUsedFaces`).
+ *
+ * The SVG has to reach the image as a data: URL (one from a blob: URL, with a foreignObject in
+ * it, taints the canvas), and Chromium keeps the address of each image it has loaded for the
+ * life of the window. So the smaller the SVG, the less each picture leaves behind. And the image
+ * is read with `decode()`, never a load handler: Chromium also keeps a long-running handler's
+ * element, named by its src, in its long-animation-frame entries.
+ */
+async function rasterise(scene: HTMLElement, deadline: number, assetBase?: string): Promise<Blob> {
+  const outside = outsideOf(scene);
+  const svg = await domToForeignObjectSvg(scene, {
+    width: WIDTH,
+    height: HEIGHT,
+    timeout: Math.max(1_000, deadline - Date.now()),
+    fetchFn: (url) => crossOriginImage(url, assetBase),
+    includeStyleProperties: drawnProperties(),
+    filter: (node) => {
+      const parent = node.parentNode instanceof ShadowRoot ? node.parentNode.host : node.parentNode;
+      return !(parent instanceof Element && outside.has(parent));
+    },
+    onCreateForeignObjectSvg: keepUsedFaces,
+  });
+  const xml = new XMLSerializer()
+    .serializeToString(svg)
+    // Characters XML doesn't allow, which would leave the SVG unreadable (as modern-screenshot).
+    .replace(/[\u0000-\u0008\v\f\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/gu, "");
+  const image = new Image();
+  try {
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = WIDTH * SCALE;
+    canvas.height = HEIGHT * SCALE;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("There is no canvas to draw the picture on.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/webp", 0.9),
+    );
+    if (!blob) throw new Error("The picture couldn't be written.");
+    if (blob.type !== "image/webp") throw new Error("This browser can't write WebP.");
+    return blob;
+  } finally {
+    image.removeAttribute("src");
+  }
+}
+
+/**
+ * Properties that never change a still picture: how an element answers a pointer, a caret, a
+ * selection or a scroll, and how it would move from one style to the next.
+ */
+const UNDRAWN =
+  /^(cursor|caret-color|pointer-events|touch-action|user-select|-webkit-user-select|-webkit-user-drag|-webkit-user-modify|-webkit-tap-highlight-color|interpolate-size|will-change|transition(-.*)?|scroll-.*|overscroll-.*)$/;
+
+let drawn: string[] | undefined;
+/**
+ * The CSS properties an element's computed style has that a still copy of it needs: not custom
+ * properties (`--*`), since a computed value has its var()s already put in, nor `UNDRAWN`.
+ */
+function drawnProperties(): string[] {
+  if (!drawn) {
+    const all = getComputedStyle(document.documentElement);
+    drawn = Array.from({ length: all.length }, (_, i) => all.item(i)).filter(
+      (name) => !name.startsWith("--") && !UNDRAWN.test(name),
+    );
+  }
+  return drawn;
+}
+
+/**
+ * Takes out of a picture's SVG the font faces none of its characters are in, by their
+ * `unicode-range`: a typeface comes as a face per script (Latin, Cyrillic, Greek, ...), each
+ * embedded whole, and a picture mostly needs one. A face without a range is kept.
+ */
+function keepUsedFaces(svg: SVGElement): void {
+  const style = svg.querySelector("style");
+  if (!style?.textContent) return;
+  const used = new Set<number>();
+  for (const node of svg.querySelectorAll("foreignObject *")) {
+    for (const child of node.childNodes) {
+      if (child.nodeType !== Node.TEXT_NODE) continue;
+      for (const char of child.textContent ?? "") used.add(char.codePointAt(0)!);
+    }
+    // A field's words are in its attributes.
+    for (const name of ["value", "placeholder"]) {
+      for (const char of node.getAttribute(name) ?? "") used.add(char.codePointAt(0)!);
+    }
+  }
+  // The pseudo-elements' text is in the style's own rules, as their `content`.
+  for (const match of style.textContent.matchAll(/content: '([^']*)'/g)) {
+    for (const char of match[1]!) used.add(char.codePointAt(0)!);
+  }
+  style.textContent = style.textContent.replace(/@font-face\s*{[^}]*}/g, (face) => {
+    const range = /unicode-range:\s*([^;}]+)/.exec(face)?.[1];
+    if (!range) return face;
+    const spans = range.split(",").map((part) => {
+      const [from, to = from] = part.trim().replace(/^U\+/i, "").split("-");
+      const wild = from!.includes("?");
+      return wild
+        ? [
+            Number.parseInt(from!.replace(/\?/g, "0"), 16),
+            Number.parseInt(from!.replace(/\?/g, "F"), 16),
+          ]
+        : [Number.parseInt(from!, 16), Number.parseInt(to!, 16)];
+    });
+    for (const point of used) {
+      if (spans.some(([lo, hi]) => point >= lo! && point <= hi!)) return face;
+    }
+    return "";
+  });
+}
+
+/**
+ * Whether an element of this display, copied with its computed size but not its children, takes
+ * the same room: not an inline one or `display: contents`, whose size is their content's, nor a
+ * table's rows and cells, whose content sizes the columns of the rows beside them.
+ */
+function keepsItsSize(display: string): boolean {
+  return display !== "inline" && display !== "contents" && !/^table-/.test(display);
+}
+
+/**
+ * The elements of a drawn scene that lie wholly outside the picture, with all under them (the
+ * boxes of everything below, as laid out, `MARGIN` round the picture), and whose own size holds
+ * without them (`keepsItsSize`): copied without their children, they take the same room. The
+ * parts of any other element outside are looked at in turn.
+ */
+function outsideOf(scene: Element): Set<Element> {
+  const frame = scene.getBoundingClientRect();
+  const left = frame.left - MARGIN;
+  const top = frame.top - MARGIN;
+  const right = frame.right + MARGIN;
+  const bottom = frame.bottom + MARGIN;
+  const outside = new Set<Element>();
+  type Box = { l: number; t: number; r: number; b: number };
+  // Every element's box joined with all under it: what it and its descendants cover.
+  const covered = (el: Element): Box | null => {
+    const own = el.getBoundingClientRect();
+    let box: Box | null =
+      own.width > 0 || own.height > 0
+        ? { l: own.left, t: own.top, r: own.right, b: own.bottom }
+        : null;
+    // The children modern-screenshot copies: a shadow root's in place of the element's own.
+    for (const child of (el.shadowRoot ?? el).children) {
+      const under = covered(child);
+      if (!under) continue;
+      box = box
+        ? {
+            l: Math.min(box.l, under.l),
+            t: Math.min(box.t, under.t),
+            r: Math.max(box.r, under.r),
+            b: Math.max(box.b, under.b),
+          }
+        : under;
+    }
+    const shows = box !== null && box.l < right && box.r > left && box.t < bottom && box.b > top;
+    if (!shows && el !== scene && (el.shadowRoot ?? el).firstChild !== null) {
+      if (keepsItsSize(getComputedStyle(el).display)) outside.add(el);
+    }
+    return box;
+  };
+  covered(scene);
+  return outside;
 }
 
 /**

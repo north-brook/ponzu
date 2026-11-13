@@ -142,6 +142,53 @@ function plans(x: number): Artboard {
   return { id: root.id, name: "Plans", x, y: 0, root };
 }
 
+/**
+ * A long landing page, a hundred and twenty rows of cards with shadows and gradients: far more
+ * board than a picture's area round a pin. With how many elements it has.
+ */
+function longPage(x: number): { board: Artboard; elements: number } {
+  const sections = Array.from({ length: 120 }, (_, i) =>
+    el(
+      "section",
+      {
+        display: "grid",
+        "grid-template-columns": "repeat(4, 1fr)",
+        gap: "16px",
+        padding: "24px 64px",
+        background: i % 2 ? "linear-gradient(180deg, #f3efe6, #e8e2d4)" : "#ffffff",
+      },
+      Array.from({ length: 8 }, (_, k) =>
+        el(
+          "div",
+          {
+            padding: "16px",
+            "border-radius": "12px",
+            background: "#ffffff",
+            "box-shadow": "0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08)",
+          },
+          [
+            el("span", { font: `600 16px/1.2 ${sans}` }, [text(`Section ${i + 1}, card ${k + 1}`)]),
+            el("p", { margin: "8px 0 0", font: `400 14px/1.5 ${sans}`, color: "#4b5a46" }, [
+              text("Hardy, slow-growing greens, potted to travel."),
+            ]),
+          ],
+        ),
+      ),
+    ),
+  );
+  const root = el(
+    "main",
+    { width: "1200px", background: "#f3efe6", display: "flex", "flex-direction": "column" },
+    sections,
+  );
+  const count = (node: PElement): number =>
+    1 + node.children.reduce((n, c) => n + (c.kind === "el" ? count(c) : 0), 0);
+  return { board: { id: root.id, name: "Long page", x, y: 0, root }, elements: count(root) };
+}
+
+/** The most characters one picture's SVG may come to (see the last test). */
+const CHARS_BUDGET = 1_500_000;
+
 describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
   let dir: string;
   let server: ReturnType<typeof serve>;
@@ -441,6 +488,101 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     await rail().getByRole("button", { name: "Open the comment on the canvas" }).click();
     await page.getByText("That comment was deleted.").waitFor();
     await shoot("5-deleted-goes-where-it-was");
+    expect(errors).toEqual([]);
+  });
+
+  /*
+   * What one comment's picture may cost the window, counted rather than timed. Its picture copies
+   * only what can show in it, not the whole board it is on, and only the fonts its characters
+   * need; the rail never draws a second live copy of the boards meanwhile; and no
+   * long-animation-frame entry, which Chromium keeps for the life of the window, names the
+   * picture's SVG (an image's load handler running long once kept every picture's data: URL,
+   * tens of megabytes each, that way). Chromium keeps each image's data: URL besides, so the
+   * SVG's own size is held to a budget too.
+   */
+  test("a comment on a long board copies only what its picture shows, and keeps none of it", async () => {
+    await page.keyboard.press("Escape");
+    const { board, elements } = longPage(3000);
+    await fake(
+      ({ id, board }: { id: string; board: Artboard }) => {
+        const backend = window.ponzuFake!.backend;
+        const page = backend.canvas(id).sequencer.doc.pages[0]!;
+        backend
+          .agent(id)
+          .commit([{ op: "artboard.create" as const, page: page.id, index: 2, artboard: board }]);
+      },
+      { id: canvasId, board },
+    );
+    const sheet = page.locator(`[data-pz-board="${board.id}"]`);
+    await sheet.waitFor();
+    await fake(() => {
+      const seen = { svgs: [] as { elements: number; chars: number }[], railBoards: 0 };
+      (window as unknown as { budget: typeof seen }).budget = seen;
+      const serialize = XMLSerializer.prototype.serializeToString;
+      XMLSerializer.prototype.serializeToString = function (node: Node) {
+        const out = serialize.call(this, node);
+        if (node.nodeName === "svg") {
+          const elements = (node as Element).getElementsByTagName("*").length;
+          seen.svgs.push({ elements, chars: out.length });
+        }
+        return out;
+      };
+      const look = () => {
+        const n = document.querySelectorAll("#thread [data-artboard-host]").length;
+        seen.railBoards = Math.max(seen.railBoards, n);
+      };
+      new MutationObserver(look).observe(document.body, { subtree: true, childList: true });
+    });
+    await fake(
+      ({ id, artboardId }: { id: string; artboardId: string }) =>
+        window.ponzuFake!.link({ kind: "canvas", canvasId: id, artboardId }),
+      { id: canvasId, artboardId: board.id },
+    );
+    await page.waitForTimeout(400);
+    await page.keyboard.press("c");
+    // Halfway down the part of the board in view.
+    const box = (await sheet.boundingBox())!;
+    const pane = (await page.locator(".pz-root").first().boundingBox())!;
+    const top = Math.max(box.y, pane.y);
+    const bottom = Math.min(box.y + box.height, pane.y + pane.height);
+    await page.mouse.click(box.x + box.width * 0.3, (top + bottom) / 2);
+    await page.getByPlaceholder("Leave a comment…").fill("Halfway down, the cards blur together");
+    await page.keyboard.press("Enter");
+    await rail().getByRole("button", { name: "Open the comment on Long page" }).waitFor();
+    await waitUntil(async () =>
+      (await kept()).some((c) => c.text.startsWith("Halfway down") && c.picture !== null),
+    );
+    await page.keyboard.press("Escape");
+
+    const seen = await fake(() => (window as unknown as { budget: unknown }).budget);
+    const { svgs, railBoards } = seen as {
+      svgs: { elements: number; chars: number }[];
+      railBoards: number;
+    };
+    // Light and dark, each a fraction of the board: the area round the pin, and empty boxes in
+    // place of the rest, and the SVG within its budget.
+    expect(svgs).toHaveLength(2);
+    for (const { elements: copied, chars } of svgs) {
+      expect(copied).toBeLessThan(elements / 4);
+      expect(chars).toBeLessThan(CHARS_BUDGET);
+    }
+    expect(railBoards).toBe(0);
+    // No long-animation-frame entry Chromium holds names anything the size of a picture.
+    const longest = await fake(
+      () =>
+        new Promise<number>((resolve) => {
+          const observer = new PerformanceObserver((list) => {
+            observer.disconnect();
+            const scripts = list
+              .getEntries()
+              .flatMap((e) => (e as unknown as { scripts: { invoker: string }[] }).scripts);
+            resolve(Math.max(0, ...scripts.map((s) => s.invoker.length)));
+          });
+          observer.observe({ type: "long-animation-frame", buffered: true });
+          setTimeout(() => resolve(0), 2_000);
+        }),
+    );
+    expect(longest).toBeLessThan(10_000);
     expect(errors).toEqual([]);
   });
 });

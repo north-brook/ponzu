@@ -7,10 +7,8 @@ import { ThreadRail } from "../cloud/thread/rail.tsx";
 import { ThreadSkeleton } from "../cloud/thread/thread-view.tsx";
 import { useNow } from "../cloud/time.ts";
 import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
-import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { type CanvasPlaces, CanvasPlacesProvider } from "../cloud/ui/place-link.tsx";
 import { type OpenCanvas, useAccess, useSourceState } from "./canvas.tsx";
-import { CommentScene } from "./comment-picture.tsx";
 import type { Host } from "./host.ts";
 import { usePonzu } from "./ponzu-query.tsx";
 import { takeOverRefusal } from "./take-over.ts";
@@ -108,7 +106,6 @@ export function CanvasRail({
   const pictures = useSnapshot(open.pictures);
   const head = useLiveQuery("canvas.head", { canvasId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
-  const theme = useColorScheme();
   const now = useNow();
   const doc = state.doc;
   const assetBase = open.source.assetBase;
@@ -235,18 +232,10 @@ export function CanvasRail({
           takeOver.mutate(canvasId, { onError: (error) => say(takeOverRefusal(error)) })
         }
         takingOver={takeOver.isPending}
-        renderDrawing={(messageId) => {
-          const local = pictures.get(messageId);
-          return local?.state === "drawing" ? (
-            <CommentScene
-              doc={local.doc}
-              threadId={local.threadId}
-              messageId={messageId}
-              theme={theme}
-              assetBase={assetBase}
-            />
-          ) : null;
-        }}
+        // While the picture is drawn, the ground it will sit on: the scene itself is drawn off
+        // screen (comment-picture.tsx), and a second live copy of its boards here would cost as
+        // much again, in the window the viewer is working in.
+        renderDrawing={() => <span aria-hidden className="block size-full bg-canvas" />}
         onOpenComment={openComment}
         onOpenArtboards={onOpenArtboards}
         onOpenPullRequest={onOpenPullRequest}
