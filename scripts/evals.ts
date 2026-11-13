@@ -12,11 +12,12 @@
  *   agent                  the agent's thread messages (apps/runner/evals/agent)
  *   all                    judges, then every suite
  *
- * The Anthropic key is PONZU_ANTHROPIC_API_KEY, or ANTHROPIC_API_KEY. Spend stops before the call
- * that could pass PONZU_EVALS_SPEND_USD (default $3) or --cap. Agent turns run on the Claude
- * sign-in in PONZU_EVALS_CLAUDE_TOKEN_FILE (or CLAUDE_CODE_OAUTH_TOKEN), at most --turns of them
- * (default 6). Each suite writes results/latest.json and latest.md beside its cases; the judges
- * write results/calibration.json and calibration.md.
+ * Everything runs on one Anthropic API key, PONZU_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY (the
+ * development key), never on a Claude sign-in. Spend stops before the call that could pass
+ * PONZU_EVALS_SPEND_USD (default $3) or --cap. Agent turns run on the same key through Claude
+ * Code, at most --turns of them (default 6); what each cost is added to the spend after it ends.
+ * Each suite writes results/latest.json and latest.md beside its cases; the judges write
+ * results/calibration.json and calibration.md.
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -26,13 +27,16 @@ import {
   calibrationMarkdown,
   createJudge,
   type EvalContext,
+  evalsApiKey,
   gitCommit,
   JUDGE_MODEL,
   Meter,
+  NO_EVALS_KEY,
   percent,
   readCalibrations,
   type Suite,
   TurnBudget,
+  withoutSecret,
 } from "@ponzu/evals";
 import { ideasSuite } from "../apps/api/evals/ideas/ideas.eval.ts";
 import { agentSuite } from "../apps/runner/evals/agent/agent.eval.ts";
@@ -47,9 +51,9 @@ const flag = (name: string) => {
 const words = args.filter((arg, i) => !arg.startsWith("--") && !args[i - 1]?.startsWith("--"));
 const [command = "all", ...named] = words;
 
-const apiKey = process.env.PONZU_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
+const apiKey = evalsApiKey();
 if (!apiKey) {
-  console.error("Set PONZU_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY): see docs/evals.md.");
+  console.error(NO_EVALS_KEY);
   process.exit(2);
 }
 const cap = Number(flag("cap") ?? process.env.PONZU_EVALS_SPEND_USD ?? 3);
@@ -66,7 +70,8 @@ const ctx: EvalContext = {
   parallel: Math.max(1, Number(flag("parallel") ?? 4)),
   onlyJudge: flag("judge") ?? null,
   commit: gitCommit(),
-  log: (line) => console.log(`  ${line}`),
+  // Nothing printed carries the key, whatever an error quoted.
+  log: (line) => console.log(`  ${withoutSecret(line, apiKey)}`),
 };
 
 const pick = (names: string[]) => {

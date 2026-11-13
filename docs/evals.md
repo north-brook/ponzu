@@ -6,13 +6,22 @@ them, and writes a report that is committed, so a change to a prompt, a guide or
 with its numbers before and after.
 
 ```sh
-set -a; . .context/cloud.env; set +a     # PONZU_ANTHROPIC_API_KEY, never printed or committed
+set -a; . .context/cloud.env; set +a     # ANTHROPIC_API_KEY, the development key; never printed or committed
 bun run evals                            # judges, then every suite
 bun run evals judges                     # check every judge against its labelled examples
 bun run evals ideas --samples 3          # the repo ideas suite
-PONZU_EVALS_CLAUDE_TOKEN_FILE=.context/cloud/claude-oauth-token \
-  bun run evals agent --turns 6          # the agent's thread suite
+bun run evals agent --turns 6 --cap 6    # the agent's thread suite
+bun run evals agent --only A3            # one agent case: one turn and its judging
 ```
+
+**One credential: an Anthropic API key.** Everything here, the judges, the ideas suite and the
+agent's turns, runs on the development API key: `PONZU_ANTHROPIC_API_KEY` if it is set, else
+`ANTHROPIC_API_KEY` (the name `.context/cloud.env` and the repository secret use). Never on a
+Claude subscription: the evals read no sign-in from the environment or from disk, and a
+`CLAUDE_CODE_OAUTH_TOKEN` set in your shell does not reach the agent's turns. With no key, a run
+says so in one line and exits 2 before anything runs. The key is never printed: the lines a run
+prints and the results it writes have it taken out, and the runner scrubs it from the thread as
+it scrubs a sandbox's Claude credential.
 
 Flags: `--samples N` (runs of each ideas case, default 3), `--turns N` (real agent turns, default
 6), `--cap USD` or `PONZU_EVALS_SPEND_USD` (default $3), `--only id,id` (some cases or
@@ -29,7 +38,8 @@ records nothing. With little budget, use `--parallel 1`.
 
 They cost money and are not deterministic, so `bun test` never runs them: their files are
 `*.eval.ts`. The code around them is tested the usual way, with fake models (the harness in
-`packages/evals/src/evals.test.ts`, the exact checks in `apps/runner/evals/agent/checks.test.ts`,
+`packages/evals/src/evals.test.ts` and `key.test.ts`, the turn's environment in
+`apps/runner/evals/agent/harness.test.ts`, the exact checks in `apps/runner/evals/agent/checks.test.ts`,
 the ideas pipeline and its gate in `apps/api/src/ideas/*.test.ts` and
 `apps/api/src/routes/repo-ideas.test.ts`).
 
@@ -73,7 +83,8 @@ that tried to enforce those turned away a product called ponzu-test for a week.
 
 ## Layout
 
-- `packages/evals`: the harness. A spend meter every model call goes through (priced from the
+- `packages/evals`: the harness. The evals' API key and how it is kept out of what they write
+  (`key.ts`), a spend meter every model call goes through (priced from the
   token usage by a table, refusing a call whose worst case, added to what is spent and to the
   worst cases of the calls still in flight, would pass the cap), a turn budget,
   the judge helper (`generateText` with `Output.object`, through the AI SDK like the product),
@@ -99,10 +110,13 @@ that tried to enforce those turned away a product called ponzu-test for a week.
 
 Each case is one real turn: the runner (`Runner`) in process against the API in memory
 (`FakeRunnerApi`), real Claude Code (the version on the PATH, or `PONZU_CLAUDE`) through the
-Agent SDK on a Claude sign-in (`PONZU_EVALS_CLAUDE_TOKEN_FILE`, or `CLAUDE_CODE_OAUTH_TOKEN`;
-never an API key), `claude-opus-5-5` at `high` (a canvas's defaults), screenshots from the
-newest Playwright Chromium Headless Shell (or `PONZU_CHROMIUM`). Each turn has its own folders,
-`HOME` and `CLAUDE_CONFIG_DIR`, so nothing of this machine's Claude or git reaches it. A bare
+Agent SDK on the evals' API key, `claude-opus-5-5` at `high` (a canvas's defaults), screenshots
+from the newest Playwright Chromium Headless Shell (or `PONZU_CHROMIUM`). The key reaches Claude
+Code the way it does in the sandbox of a canvas whose owner connected an API key: as
+`ANTHROPIC_API_KEY` in Claude Code's environment, with no plan limits reported (`turnEnv` in
+`harness.ts`, tested in `harness.test.ts`). That environment is built from nothing but `PATH`,
+`USER` and the turn's own folders, `HOME` and `CLAUDE_CONFIG_DIR`, so nothing of this machine's
+Claude or git reaches it, its sign-in included. A bare
 repository on disk stands in for `github.com/ada/fitness-app` (`url.insteadOf`), so commits and
 pushes are real; a case that refuses pushes gets a pre-receive hook that answers "Repository not
 found", as GitHub did in the founder's session. A question the agent asks is answered "Your
@@ -123,9 +137,18 @@ relabelled and two added (`draft-called-ready`, `sent-to-create-pr`), so its ver
 must be calibrated again (`bun run evals judges --judge thread`, about $1) before the next run, which
 refuses it until then. That calibration has not been run either.
 
-Agent turns run on a person's Claude plan, so they are counted in turns, not dollars; the report
-records each turn's cost as Claude Code estimates it. Judging the turns is on the API key and
-metered like everything else.
+Agent turns run on the API key too, and are paid in dollars. Their cost is known only once a
+turn ends, so they are counted in turns before they start (`--turns`), and what Claude Code
+says each cost is added to the spend after it (`agent:turn` in the report): a judge call after a
+turn still stops at the cap, and no turn starts once the cap is spent. One turn can take the
+spend past the cap by its own cost, so give a run room: `--cap 6` for six cases.
+
+What a case costs on the API, from the last recorded run (Claude Code's own figure for each
+turn, on Opus 5.5 at high): from $0.17 (A3, a direct answer) to $1.23 (A1, a board built and
+committed), about $0.45 a case on average and $2.70 for A1 to A6, plus about $0.02 a case for the
+thread judge. The pull request cases (A7 to A10) have never run, so their cost is not known; expect
+the upper end. To run one case, `bun run evals agent --only A3`: one turn and its judging,
+merged into `results/latest.*` with the other rows kept and dated.
 
 ## Changing a prompt, a guide or a judge
 

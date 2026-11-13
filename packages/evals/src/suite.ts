@@ -15,7 +15,7 @@ import type { Meter, TurnBudget } from "./meter.ts";
 export interface EvalContext {
   /** Every model call on the API key is metered against the cap. */
   meter: Meter;
-  /** Real agent turns, on a Claude sign-in. */
+  /** Real agent turns, on the evals' API key through Claude Code. */
   turns: TurnBudget;
   /** Claude models on the evals' API key. */
   models: (id: string) => Model;

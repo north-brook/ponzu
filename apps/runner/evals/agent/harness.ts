@@ -32,9 +32,12 @@ import { FITNESS_REPO } from "./seeds.ts";
 /*
  * One real turn of the agent, the way a sandbox runs it, on this machine: the runner
  * (`Runner`) in process against the API in memory (`FakeRunnerApi`), real Claude Code through the
- * Agent SDK on a Claude sign-in, real screenshots from a headless Chromium, and a real git
- * repository standing in for GitHub. Each turn gets its own folders, Claude config and home, so
- * nothing from this machine's own Claude or git reaches it, and nothing of one case another.
+ * Agent SDK on an Anthropic API key, real screenshots from a headless Chromium, and a real git
+ * repository standing in for GitHub. The key reaches Claude Code as a canvas connected to an API
+ * key gives it in a sandbox: `ANTHROPIC_API_KEY` in Claude Code's environment, and nothing else
+ * that could sign it in. Each turn gets its own folders, Claude config and home, so nothing from
+ * this machine's own Claude or git reaches it (not its sign-in either), and nothing of one case
+ * another.
  *
  * The repository is a bare one on disk; the checkout's git reads it as
  * `https://github.com/ada/fitness-app.git` (`url.insteadOf`), so commits and pushes are real and
@@ -99,8 +102,8 @@ export interface TurnOutcome {
 }
 
 export interface HarnessOptions {
-  /** The Claude sign-in's token (`CLAUDE_CODE_OAUTH_TOKEN`). Never logged. */
-  token: string;
+  /** The evals' Anthropic API key (`ANTHROPIC_API_KEY`), never a sign-in. Never logged. */
+  apiKey: string;
   /** Claude Code. */
   claude: string;
   /** A Chromium for screenshots. */
@@ -133,23 +136,33 @@ export function findHeadlessShell(): string | undefined {
 const run = (cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) =>
   execFileSync(cmd, args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
-export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<TurnOutcome> {
-  const root = mkdtempSync(join(tmpdir(), "ponzu-eval-"));
-  const home = join(root, "home");
-  const configDir = join(root, "claude");
-  for (const dir of [home, configDir]) mkdirSync(dir, { recursive: true });
-  // Only what Claude Code and git need: never this process's keys.
+/**
+ * The environment a turn's Claude Code, tools and git run in, built from nothing: only what they
+ * need, and the API key as the one Claude credential. Nothing of this process's environment
+ * passes but `PATH` and `USER`, so a `CLAUDE_CODE_OAUTH_TOKEN` (or any other key) set in the
+ * developer's shell never reaches the turn, and Claude Code, finding no sign-in in its empty
+ * `HOME` and `CLAUDE_CONFIG_DIR`, has only the key.
+ */
+export function turnEnv(root: string, apiKey: string, from: NodeJS.ProcessEnv = process.env) {
+  if (!apiKey) throw new Error("A turn needs the evals' Anthropic API key.");
   const env: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH,
-    HOME: home,
-    USER: process.env.USER,
+    PATH: from.PATH,
+    HOME: join(root, "home"),
+    USER: from.USER,
     LANG: "en_US.UTF-8",
     TMPDIR: join(root, "tmp"),
-    CLAUDE_CONFIG_DIR: configDir,
-    CLAUDE_CODE_OAUTH_TOKEN: opts.token,
+    CLAUDE_CONFIG_DIR: join(root, "claude"),
+    ANTHROPIC_API_KEY: apiKey,
     GIT_CONFIG_NOSYSTEM: "1",
   };
-  mkdirSync(env.TMPDIR!, { recursive: true });
+  return env;
+}
+
+export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<TurnOutcome> {
+  const root = mkdtempSync(join(tmpdir(), "ponzu-eval-"));
+  const env = turnEnv(root, opts.apiKey);
+  for (const dir of [env.HOME!, env.CLAUDE_CONFIG_DIR!, env.TMPDIR!])
+    mkdirSync(dir, { recursive: true });
 
   const bare = join(root, "remote", "fitness-app.git");
   if (setup.repo) seedRepository(bare, root, env, Boolean(setup.refusePush));
@@ -217,7 +230,11 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
     prepare: (session) => checkout(session, { root: join(root, "work"), helper: "!true", env }),
     stateDir: join(root, "state"),
     checkoutGit: (cwd) => gitIn(shell, "git", cwd),
-    secrets: [opts.token],
+    // What the thread, the steps and the working state never say: the key, as the product's
+    // runner scrubs its Claude credential (`secretValues`).
+    secrets: [opts.apiKey],
+    // An API key has no plan limits to report, as the product's runner decides from its credential.
+    planLimits: false,
     log: () => {},
   });
 
