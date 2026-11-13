@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
+import * as core from "micromark-core-commonmark";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
+import { linearEmphasis, work as pairing } from "./emphasis.ts";
 import {
   blocks,
   PROSE_LIMIT,
@@ -181,14 +183,22 @@ test("strikethrough and bare addresses, as GitHub writes them", () => {
 
 /*
  * micromark slows with the square of some shapes (a 16 KB address of dots took 1.5 s, 16 KB of
- * `![` 5 s at 64 KB) and runs out of stack on a line of nested lists. `parseable` sends those to
- * plain text; what it lets through, shaped to sit at each of its limits, must cost in step with
- * its length. So each shape is drawn once at the most it may be and eight times at an eighth of
- * that, the same work if its cost grows with its length and an eighth of it if with the square.
- * The long draw may cost at most four times the eight short ones: the honest shapes measure under
- * 2.5, the address of dots 8, and nested quotes and lists run out of stack. Cost is the CPU time
- * this process spent, not the time on the clock, so a busy machine or a slow one moves both sides
- * alike, and the least of two turns is what counts. A side under a millisecond counts as one.
+ * `![` 5 s at 64 KB, 32 KB of `abc* ` 0.32 to 0.75 s before emphasis.ts) and runs out of stack on
+ * a line of nested lists. `parseable` sends the first and last kinds to plain text, and
+ * emphasis.ts pairs emphasis and strikethrough in linear time; what is drawn, shaped to sit at
+ * each limit, must cost in step with its length. So each shape is drawn once at the most
+ * `parseable` lets through (the whole limit, or 4,096 characters for text dense with marks) and
+ * eight times at an eighth of that: the same work if its cost grows with its length, eight times
+ * as much if with the square. The long draw may do at most one and a half times the work of the
+ * eight short ones; every shape here measures about 1 or less, and `abc* ` measured 7.9 before.
+ *
+ * Work is counted, never timed, so a slow or busy machine can't move it: every character
+ * micromark's own constructs consume (so one that backs up and reads text again counts it again),
+ * every read and write of the events each of its resolvers is handed, which is where the square
+ * was, and every step of emphasis.ts's own pairing, which reads no events while it searches its
+ * stack of openers (without its floors, `_a b* ` measured 7.6 here). Not counted: GitHub's table, task list and bare address constructs, which are made
+ * anew for each parse, and the stages after micromark (the tree's plugins, the markup, React),
+ * which visit each node a fixed number of times; `parseable` keeps out what made those slow.
  */
 const fill = (unit: string, n: number) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
 const hostile: [(n: number) => string, number?][] = [
@@ -209,17 +219,34 @@ const hostile: [(n: number) => string, number?][] = [
   [(n) => `${fill("- ", n - 1)}x`],
   [(n) => `${fill("*_", (n - 1) / 2)}x${fill("_*", (n - 1) / 2)}`],
   // Brackets with no partner, which GFM's footnotes scanned back over with the square of their
-  // number; lines underlined as headings, which micromark resolves against the text before
-  // them; and short lines, in one paragraph or each its own, as many as `parseable` allows.
+  // number, and short lines, in one paragraph or each its own, as many as `parseable` allows.
   [(n) => fill("a]", n)],
   [(n) => fill("x]\n", n), 3000],
   [(n) => fill("a ]", n)],
   [(n) => fill("b]a", n)],
-  [(n) => fill("a\n=\n", n), 800],
-  [(n) => fill("a\n-\n", n), 800],
   [(n) => fill("a\n", n), 2000],
   [(n) => fill("a\n\n", n), 3000],
   [(n) => fill("[^a] ", n)],
+  // Closing marks with nothing to close, each of which micromark walked back over the whole
+  // paragraph to look for its partner, and marks the rule of three keeps apart.
+  [(n) => fill("abc* ", n)],
+  [(n) => fill("abc_ ", n)],
+  [(n) => fill("abcdefgh~~ ", n)],
+  [(n) => fill("abcdefgh~ ", n)],
+  // Openers of one kind and closers of another, which every closer would search past without
+  // emphasis.ts's floors.
+  [(n) => fill("_a b* ", n)],
+  [(n) => fill("a*_b ", n)],
+  [(n) => fill("_a*_b* ", n)],
+  [(n) => fill("~a b~~ ", n)],
+  [(n) => fill("a**** b* ", n)],
+  [(n) => fill("*a **b c* ", n)],
+  [(n) => fill("**a *b ~~c* d** ", n)],
+  [(n) => fill("*_*_*_*_a_*_*_*_* b ", n)],
+  [(n) => fill("*_*_*_*_*_*_*_*_a a ", n)],
+  [(n) => `${fill("*a ", n / 2)}${fill("b* ", n / 2)}`],
+  [(n) => `${fill("~~a ", n / 2)}${fill("b~~ ", n / 2)}`],
+  [(n) => fill("[*a* ~~b~~](x) ", n)],
   // Just under the limits.
   [(n) => fill(`${"[".repeat(16)}${"a ".repeat(100)}`, n)],
   [(n) => fill(`${"*_".repeat(8)}${"a ".repeat(100)}`, n)],
@@ -227,34 +254,145 @@ const hostile: [(n: number) => string, number?][] = [
   [(n) => fill(`http://a${".".repeat(15)}b `, n)],
   [(n) => fill("*a* bcde ", n)],
   [(n) => fill(`${"x]\n".repeat(1000)}\n`, n)],
-  [(n) => `${"a\n=\n".repeat(200)}${fill("word ", n - 800)}`],
   [(n) => `${"a\n\n".repeat(1000)}${fill("word ", n - 3000)}`],
   [(n) => `\`\`\`\n${fill("a\n", n - 4)}`],
   [(n) => fill("- - - - x\n", n), 10_000],
   [(n) => fill(Array.from({ length: 30 }, (_, i) => `${"  ".repeat(i)}- x`).join("\n"), n)],
 ];
-for (const [make, most = PROSE_LIMIT - 1] of hostile) {
-  const long = make(most);
-  test(`hostile text costs in step with its length: ${JSON.stringify(long.slice(0, 20))}… at ${most}`, () => {
-    const short = make(Math.floor(most / 8));
-    const cpu = (text: string, times: number) => {
-      const started = process.cpuUsage();
-      for (let i = 0; i < times; i++) html(text);
-      const spent = process.cpuUsage(started);
-      return Math.max((spent.user + spent.system) / 1000, 1);
-    };
-    // Warm the parser once, as the app has by the time anything arrives.
-    html("*warm* `up`");
-    let once = Infinity;
-    let eight = Infinity;
-    for (let turn = 0; turn < 2; turn++) {
-      eight = Math.min(eight, cpu(short, 8));
-      once = Math.min(once, cpu(long, 1));
-    }
-    expect(long.length).toBeLessThan(PROSE_LIMIT);
-    expect(once / eight).toBeLessThan(4);
+
+/** More shapes, made from the marks that pair, so ones nobody thought of are tried too. */
+function generated(count: number): string[] {
+  const marks = ["*", "**", "_", "__", "~", "~~", "a", "bc", " ", " ", ".", "(", "[", "](x)", "`"];
+  let state = 42;
+  const next = () => {
+    state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+    return state / 4294967296;
+  };
+  return Array.from({ length: count }, () => {
+    let unit = "";
+    const length = 2 + Math.floor(next() * 8);
+    for (let i = 0; i < length; i++) unit += marks[Math.floor(next() * marks.length)];
+    return unit;
   });
 }
+for (const unit of generated(40)) hostile.push([(n) => fill(unit, n)]);
+
+/** Work counted while `draw` runs: characters consumed and events read or written. */
+function counted(draw: () => void, most = Infinity): number {
+  let work = 0;
+  const tick = () => {
+    if (++work > most) throw new Error(`more than ${most} steps of work`);
+  };
+  const events = (list: unknown[]) =>
+    new Proxy(list, {
+      get(target, key, receiver) {
+        tick();
+        return Reflect.get(target, key, receiver);
+      },
+      set(target, key, value, receiver) {
+        tick();
+        return Reflect.set(target, key, value, receiver);
+      },
+    });
+  type Hooked = Record<string, unknown>;
+  type Step = (this: unknown, ...args: unknown[]) => unknown;
+  const constructs = [
+    ...Object.values(core),
+    ...Object.values(linearEmphasis.text ?? {}),
+  ] as unknown as Hooked[];
+  const undo: (() => void)[] = [];
+  const hook = (
+    construct: Hooked,
+    key: string,
+    wrap: (original: Step) => (this: unknown, ...args: never[]) => unknown,
+  ) => {
+    const original = construct[key];
+    if (typeof original !== "function") return;
+    construct[key] = wrap(original as Step);
+    undo.push(() => {
+      construct[key] = original;
+    });
+  };
+  for (const construct of new Set(constructs)) {
+    if (!construct || typeof construct !== "object") continue;
+    for (const key of ["resolve", "resolveAll", "resolveTo"]) {
+      hook(
+        construct,
+        key,
+        (original) =>
+          function (this: unknown, list: unknown[], context: unknown) {
+            const seen = events(list);
+            const out = original.call(this, seen, context);
+            return out === seen ? list : out;
+          },
+      );
+    }
+    hook(
+      construct,
+      "tokenize",
+      (original) =>
+        function (
+          this: unknown,
+          effects: { consume(code: unknown): void },
+          ok: unknown,
+          no: unknown,
+        ) {
+          const consume = (code: unknown) => {
+            tick();
+            effects.consume(code);
+          };
+          return original.call(this, { ...effects, consume }, ok, no);
+        },
+    );
+  }
+  const paired = pairing.steps;
+  try {
+    draw();
+  } finally {
+    for (const put of undo) put();
+  }
+  return work + pairing.steps - paired;
+}
+
+/** The most of a shape `parseable` lets through: all it may be, or as much as dense marks may. */
+const drawn = (make: (n: number) => string, most: number) =>
+  [most, 4096].find((n) => parseable(make(n))) ?? most;
+
+for (const [make, limit = PROSE_LIMIT - 1] of hostile) {
+  const most = drawn(make, limit);
+  const long = make(most);
+  test(`hostile text costs in step with its length: ${JSON.stringify(long.slice(0, 20))}… at ${most}`, () => {
+    expect(long.length).toBeLessThan(PROSE_LIMIT);
+    const short = make(Math.floor(most / 8));
+    const eight = counted(() => {
+      for (let i = 0; i < 8; i++) html(short);
+    });
+    // A quadratic draw stops as soon as it is plainly one, rather than running on.
+    const once = counted(() => html(long), Math.max(2 * eight, 1000));
+    expect(once).toBeLessThanOrEqual(Math.max(1.5 * eight, 1000));
+    // And a fixed amount for each character, whatever the shape (links cost the most, 65).
+    expect(once).toBeLessThanOrEqual(128 * long.length);
+  });
+}
+
+/*
+ * Lines underlined as headings are the one shape left that costs more than its length: micromark
+ * rewrites every event of a block for each heading underlined in it, so the work grows with the
+ * square of their number. `parseable` allows 200, which keeps it to a fixed amount, here at its
+ * worst: the most lines a block may have before them, then the most headings.
+ */
+test("headings underlined cost no more than parseable's limit on them allows", () => {
+  for (const text of [
+    "a\n=\n".repeat(200),
+    "a\n-\n".repeat(200),
+    `${"a\n".repeat(599)}${"a\n=\n".repeat(200)}`,
+    `${fill("lorem ipsum dolor sit amet ", 15_000).replaceAll("amet ", "amet\n")}${"a\n=\n".repeat(200)}`,
+    `${"a\n=\n".repeat(200)}${fill("word ", PROSE_LIMIT - 801)}`,
+  ]) {
+    expect(parseable(text)).toBe(true);
+    expect(counted(() => html(text))).toBeLessThan(4_000_000);
+  }
+});
 
 test("what can't be parsed quickly is plain text, as written", () => {
   const long = `**bold** ${"a".repeat(PROSE_LIMIT)}`;
