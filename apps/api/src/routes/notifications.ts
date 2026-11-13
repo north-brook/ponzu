@@ -6,12 +6,14 @@ import {
   EXPO_PUSH_TOKEN,
   listDevices,
   markNotificationsRead,
+  type PingPrefs as PingPrefsRow,
   PUSH_ENVIRONMENTS,
   pingPrefsOf,
   QueryError,
   registerDevice,
   setPingPrefs,
   setTimeZone,
+  teamEmailAvailable,
   touchDeviceActive,
   type User,
   updateDevice,
@@ -42,9 +44,20 @@ const PingPrefs = z.object({
   prReady: z.boolean(),
   /** "A teammate comments", on canvases they own. */
   teammateComments: z.boolean(),
-  /** One email a day, and nothing else by email. */
+  /** The daily email. */
   emailDigest: z.boolean(),
+  /**
+   * The "people joined" email, for workspaces they are an admin of. Answered only while email is
+   * available (RESEND_API_KEY is set); until then the answer is what it was before email had more
+   * than one kind.
+   */
+  emailTeam: z.boolean().optional(),
+  /** The Friday recap. Answered only while email is available, like `emailTeam`. */
+  emailRecap: z.boolean().optional(),
 });
+
+/** The switches only an API that can send email answers, and only it takes. */
+const EMAIL_ONLY_PREFS = ["emailTeam", "emailRecap"] as const;
 
 /** A device as Settings lists it. Never its push token. */
 const DeviceView = z.object({
@@ -75,8 +88,17 @@ const Notifications = z.object({
    * every workspace, whether or not pings are on.
    */
   badge: z.number().int().min(0),
-  /** Where the daily email goes, and whether this deployment can send it at all. */
-  email: z.object({ address: z.string().nullable(), available: z.boolean() }),
+  /**
+   * Where email goes, and whether this deployment can send it at all. While it can,
+   * `teamAvailable` says whether the "people joined" email could reach the person (an admin of an
+   * organisation's workspace who reaches it on GitHub as owner or member), so Settings shows its
+   * switch.
+   */
+  email: z.object({
+    address: z.string().nullable(),
+    available: z.boolean(),
+    teamAvailable: z.boolean().optional(),
+  }),
   /** The IANA time zone the person's app last reported; null until one has. */
   timeZone: z.string().nullable(),
 });
@@ -176,9 +198,26 @@ async function rest(deps: AppEnv["Variables"]["deps"], user: User, timeZone = us
   return {
     devices: devices.map(toView),
     badge,
-    email: { address: user.email, available: deps.features.email },
+    email: deps.features.email
+      ? {
+          address: user.email,
+          available: true,
+          teamAvailable: await teamEmailAvailable(deps.db, user.id),
+        }
+      : { address: user.email, available: false },
     timeZone,
   };
+}
+
+/**
+ * The toggles as answered: without the switches of emails this deployment cannot send, so an
+ * API without RESEND_API_KEY answers exactly what it did before they existed.
+ */
+function prefsAnswer(deps: AppEnv["Variables"]["deps"], prefs: PingPrefsRow): PingPrefsRow {
+  if (deps.features.email) return prefs;
+  const answer: Partial<PingPrefsRow> = { ...prefs };
+  for (const name of EMAIL_ONLY_PREFS) delete answer[name];
+  return answer as PingPrefsRow;
 }
 
 export const notifications = new Hono<AppEnv>()
@@ -186,7 +225,10 @@ export const notifications = new Hono<AppEnv>()
   .get("/notifications", access.user, async (c) => {
     const { deps, actor } = c.var;
     return c.json(
-      Notifications.parse({ prefs: pingPrefsOf(actor.user), ...(await rest(deps, actor.user)) }),
+      Notifications.parse({
+        prefs: prefsAnswer(deps, pingPrefsOf(actor.user)),
+        ...(await rest(deps, actor.user)),
+      }),
     );
   })
 
@@ -196,14 +238,23 @@ export const notifications = new Hono<AppEnv>()
    */
   .patch("/notifications", access.user, validate("json", NotificationChanges), async (c) => {
     const { deps, actor } = c.var;
-    const { timeZone, ...prefs } = c.req.valid("json");
+    const { timeZone, ...asked } = c.req.valid("json");
+    // Switches for emails this deployment cannot send are not taken: without RESEND_API_KEY a
+    // change asks exactly what it did before they existed, and writes nothing new.
+    const prefs = { ...asked };
+    if (!deps.features.email) for (const name of EMAIL_ONLY_PREFS) delete prefs[name];
     const userId = actor.user.id;
     const kept =
       timeZone === undefined
         ? actor.user.timeZone
         : await setTimeZone(deps.db, { userId, timeZone });
     const changed = await setPingPrefs(deps.db, { userId, prefs });
-    return c.json(Notifications.parse({ prefs: changed, ...(await rest(deps, actor.user, kept)) }));
+    return c.json(
+      Notifications.parse({
+        prefs: prefsAnswer(deps, changed),
+        ...(await rest(deps, actor.user, kept)),
+      }),
+    );
   })
 
   /**

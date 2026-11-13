@@ -34,6 +34,8 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       prReady: true,
       teammateComments: true,
       emailDigest: false,
+      emailTeam: true,
+      emailRecap: true,
     });
     const token = `ExponentPushToken[live-${Date.now().toString(36)}]`;
     const phone = {

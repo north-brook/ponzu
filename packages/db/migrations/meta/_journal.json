@@ -229,8 +229,15 @@
     {
       "idx": 32,
       "version": "7",
-      "when": 1794590899964,
-      "tag": "0032_public_repo_read",
+      "when": 1794584483679,
+      "tag": "0032_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794591483997,
+      "tag": "0033_public_repo_read",
       "breakpoints": true
     }
   ]

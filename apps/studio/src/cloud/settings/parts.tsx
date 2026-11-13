@@ -11,14 +11,20 @@ import { Icon } from "../ui/icon.tsx";
 import { TEXT } from "../ui/ladder.ts";
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu.tsx";
 
-/** A section: its label in small capitals, its rows under a hairline, and a note under them. */
+/**
+ * A section: its label in small capitals, a caption under it, its rows under a hairline, and a
+ * note under them.
+ */
 export function Section({
   label,
+  caption,
   note,
   action,
   children,
 }: {
   label: string;
+  /** Under the label, above the rows: what the whole section is about. */
+  caption?: ReactNode;
   note?: ReactNode;
   /** Beside the label, at the right. */
   action?: ReactNode;
@@ -30,6 +36,7 @@ export function Section({
         <SectionLabel>{label}</SectionLabel>
         {action}
       </div>
+      {caption ? <p className="m-0 text-12 text-faint leading-[1.5]">{caption}</p> : null}
       <div className="flex flex-col border-rule border-t">{children}</div>
       {note ? <p className="m-0 text-12 text-faint leading-[1.5]">{note}</p> : null}
     </section>

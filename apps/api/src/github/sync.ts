@@ -16,6 +16,7 @@ import { recordReposReachedBy } from "../auth/repo-access.ts";
 import { keepAllowances } from "../billing/allowances.ts";
 import type { Github, GithubUserInstallation } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
+import { noteJoined } from "../email/members.ts";
 import { ApiError } from "../http/errors.ts";
 import { reconcileInstallation } from "./installations.ts";
 import { githubUserToken } from "./user-token.ts";
@@ -39,7 +40,10 @@ import { githubUserToken } from "./user-token.ts";
  */
 
 /** `background`, where there is a request to run work beside (`reconcileInstallation`). */
-type SyncDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics"> &
+type SyncDeps = Pick<
+  Deps,
+  "db" | "clock" | "vault" | "github" | "log" | "analytics" | "mail" | "config"
+> &
   Partial<Pick<Deps, "background">>;
 
 /** How old Ponzu's copy of an installation may be before a person's sync reads it again. */
@@ -118,12 +122,26 @@ async function joinInstallation(
   if (!workspace) return null;
 
   const githubAccess = await accessOf(github, { user, token, installation });
-  await upsertMembership(db, {
+  const membership = await upsertMembership(db, {
     workspaceId: workspace.id,
     userId: user.id,
     githubAccess,
     role: githubAccess === "owner" || workspace.installedByUserId === user.id ? "admin" : "member",
   });
+  // They joined just now: an organisation's admins hear who joined, in one email a day
+  // (email/members.ts). Never for an outside collaborator, and never for the installer, whose
+  // install is not news to the organisation. Nothing at all while email is off.
+  if (
+    membership.created &&
+    workspace.kind === "org" &&
+    (githubAccess === "owner" || githubAccess === "member") &&
+    workspace.installedByUserId !== user.id
+  ) {
+    await noteJoined(deps, workspace.id).catch((error: unknown) => {
+      // The email is not worth failing a sign-in's sync for.
+      deps.log.warn("members_note_failed", { workspaceId: workspace.id, error });
+    });
+  }
 
   // GitHub lists none of a suspended installation's repos; theirs stay as last seen.
   if (!workspace.suspendedAt) {

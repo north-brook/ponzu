@@ -1,8 +1,9 @@
 /*
- * Email, through Resend with its own SDK (`resend`, pinned exactly). Ponzu sends one kind of
- * email: the daily digest (notifications/digest.ts). This is the only file that imports the SDK
- * (mail.surface.test.ts holds it to that). It is off, as `noMail`, until RESEND_API_KEY is set,
- * and then Settings hides the Email row.
+ * Email, through Resend with its own SDK (`resend`, pinned exactly). Every email Ponzu sends goes
+ * through one door, `sendEmail` (email/send.ts), which renders it with @ponzu/email before it
+ * reaches this seam. This is the only file that imports the SDK (mail.surface.test.ts holds it
+ * to that). It is off, as `noMail`, until RESEND_API_KEY is set, and then Settings hides the
+ * Email group.
  *
  * What may be logged: Resend's error name and status, never an address, a subject, a body or
  * the SDK's own error message. A `MailError` is built from those safe parts only and carries no
@@ -27,7 +28,17 @@ export interface MailMessage {
    * after a request that went out but was never answered does not send it twice.
    */
   idempotencyKey: string;
+  /** Where a reply goes (PONZU_EMAIL_REPLY_TO), sent as `reply_to`. None: replies go to From. */
+  replyTo?: string;
+  /**
+   * Resend's tags, for filtering its dashboard: `kind` and `env`. Names and values are ASCII
+   * letters, digits, `_` and `-`, which `send` checks.
+   */
+  tags?: { name: string; value: string }[];
 }
+
+/** What a tag's name and value may hold, as Resend says. */
+const TAG = /^[A-Za-z0-9_-]{1,256}$/;
 
 export interface Mail {
   /** False when email is off: nothing can be sent. */
@@ -82,11 +93,11 @@ export const noMail: Mail = {
 };
 
 /** What Ponzu's emails come from when PONZU_EMAIL_FROM is unset. */
-export const DEFAULT_EMAIL_FROM = "Ponzu <ping@ponzu.design>";
+export const DEFAULT_EMAIL_FROM = "Ponzu <ping@mail.ponzu.design>";
 
 export interface ResendMailConfig {
   apiKey: string;
-  /** The From line, like `Ponzu <ping@ponzu.design>`, on a domain verified at Resend. */
+  /** The From line, like `Ponzu <ping@mail.ponzu.design>`, on a domain verified at Resend. */
   from: string;
   clock: Clock;
   log: Logger;
@@ -98,6 +109,11 @@ export function createResendMail({ apiKey, from, clock, log }: ResendMailConfig)
   return {
     enabled: true,
     async send(message) {
+      for (const tag of message.tags ?? []) {
+        if (!TAG.test(tag.name) || !TAG.test(tag.value)) {
+          throw new Error("A Resend tag's name and value are ASCII letters, digits, _ and -.");
+        }
+      }
       let answer: Awaited<ReturnType<typeof resend.emails.send>> | null = null;
       try {
         // The SDK never throws for Resend's answer: it hands back `{ data, error }`. A network
@@ -110,6 +126,8 @@ export function createResendMail({ apiKey, from, clock, log }: ResendMailConfig)
             html: message.html,
             text: message.text,
             headers: message.headers,
+            ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+            ...(message.tags?.length ? { tags: message.tags } : {}),
           },
           { idempotencyKey: message.idempotencyKey, signal: clock.timeout(MAIL_DEADLINE_MS) },
         );
