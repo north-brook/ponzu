@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { SuiteReport } from "@ponzu/evals";
 import { agentMarkdown, type CaseResult, inOrder, keptRows, rowName } from "./agent.eval.ts";
-import { DESIGN_DEFAULTS, RUN_ON } from "./harness.ts";
+import { CANVAS_DEFAULTS, RUN_ON } from "./harness.ts";
 
 // How rows from `--on dev-key` live beside the rows at a canvas's defaults in results/latest.*.
 
@@ -25,11 +25,11 @@ test("a dev-key run never replaces a row at the defaults", () => {
 });
 
 test("a run at the defaults never drops a dev-key row, even a full one", () => {
-  expect(keptRows(recorded, DESIGN_DEFAULTS, null).map(rowName)).toEqual([
+  expect(keptRows(recorded, CANVAS_DEFAULTS, null).map(rowName)).toEqual([
     "A7 (dev-key/haiku/low)",
     "A8 (dev-key/haiku/low)",
   ]);
-  expect(keptRows(recorded, DESIGN_DEFAULTS, ["A1"]).map(rowName)).toEqual([
+  expect(keptRows(recorded, CANVAS_DEFAULTS, ["A1"]).map(rowName)).toEqual([
     "A7",
     "A7 (dev-key/haiku/low)",
     "A8 (dev-key/haiku/low)",

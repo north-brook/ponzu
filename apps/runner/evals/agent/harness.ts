@@ -112,7 +112,7 @@ export interface AgentRun {
 }
 
 /** A canvas's defaults, which the quality run measures: Opus 5.5 at high. */
-export const DESIGN_DEFAULTS: AgentRun = {
+export const CANVAS_DEFAULTS: AgentRun = {
   model: "claude-opus-5-5",
   effort: "high",
   ranOn: null,
@@ -123,7 +123,7 @@ export const DESIGN_DEFAULTS: AgentRun = {
  * Where else a run may go (`--on`). `dev-key` is the builders' rules: the development key, Haiku
  * at low effort. The exact checks (a pull request opened, a merge only when asked) do not depend
  * on the model's eloquence, so this run proves the guardrails cheaply; it is not a quality measure,
- * and its rows never stand in for a design-defaults row.
+ * and its rows never stand in for a row at a canvas's defaults.
  */
 export const RUN_ON: Record<string, AgentRun> = {
   "dev-key": {
@@ -136,8 +136,9 @@ export const RUN_ON: Record<string, AgentRun> = {
 
 /** The run `--on <name>` asks for, or a canvas's defaults without it. An unknown name throws. */
 export function agentRun(on: string | null | undefined): AgentRun {
-  if (!on) return DESIGN_DEFAULTS;
-  const run = RUN_ON[on];
+  if (!on) return CANVAS_DEFAULTS;
+  // Only a name of RUN_ON's own: `--on constructor` names nothing.
+  const run = Object.hasOwn(RUN_ON, on) ? RUN_ON[on] : undefined;
   if (!run) {
     throw new Error(
       `No run called "${on}": --on takes ${Object.keys(RUN_ON).join(", ")}, or nothing for a canvas's defaults.`,
@@ -147,7 +148,7 @@ export function agentRun(on: string | null | undefined): AgentRun {
 }
 
 /** The session the fake API hands the runner: the canvas, its repository, and the run's model. */
-export function turnSession(setup: TurnSetup, run: AgentRun = DESIGN_DEFAULTS) {
+export function turnSession(setup: TurnSetup, run: AgentRun = CANVAS_DEFAULTS) {
   return {
     canvas: { id: setup.canvasId, name: setup.doc.name },
     repo: setup.repo ? { owner: "ada", name: "fitness-app", defaultBranch: "main" } : null,

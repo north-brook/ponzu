@@ -78,7 +78,7 @@ const only = flag("only")?.split(",").filter(Boolean) ?? null;
 const on = flag("on") ?? null;
 if (on !== null) {
   // Before anything spends: only the agent's turns can run elsewhere, and only where it knows.
-  if (command !== "agent") {
+  if (command !== "agent" || named.some((name) => name !== "agent")) {
     console.error("--on applies only to `bun run evals agent`.");
     process.exit(2);
   }

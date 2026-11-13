@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { agentRun, DESIGN_DEFAULTS, turnCostUsd, turnEnv, turnSession } from "./harness.ts";
+import { agentRun, CANVAS_DEFAULTS, turnCostUsd, turnEnv, turnSession } from "./harness.ts";
 
 // What a turn's Claude Code is given to sign in with: the evals' API key and nothing else.
 
@@ -65,11 +65,11 @@ const SETUP = {
 } as unknown as Parameters<typeof turnSession>[0];
 
 test("without --on a turn runs at a canvas's defaults, unlabelled", () => {
-  expect(agentRun(null)).toBe(DESIGN_DEFAULTS);
-  expect(agentRun(undefined)).toBe(DESIGN_DEFAULTS);
+  expect(agentRun(null)).toBe(CANVAS_DEFAULTS);
+  expect(agentRun(undefined)).toBe(CANVAS_DEFAULTS);
   const session = turnSession(SETUP);
   expect([session.model, session.effort]).toEqual(["claude-opus-5-5", "high"]);
-  expect(DESIGN_DEFAULTS.ranOn).toBeNull();
+  expect(CANVAS_DEFAULTS.ranOn).toBeNull();
 });
 
 test("--on dev-key pins Haiku at low effort for the turn, and labels its rows", () => {
@@ -95,4 +95,7 @@ test("--on dev-key still runs on the key alone: a sign-in in the shell never rea
 
 test("an unknown --on is refused before anything runs", () => {
   expect(() => agentRun("subscription")).toThrow(/--on takes dev-key/);
+  // Names every object has are not runs.
+  for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"])
+    expect(() => agentRun(name)).toThrow(/--on takes dev-key/);
 });
