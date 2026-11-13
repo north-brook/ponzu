@@ -27,12 +27,15 @@ declare global {
 const inMemory = import.meta.env.MODE === "development" || import.meta.env.MODE === "e2e";
 
 async function host(): Promise<Host | null> {
-  if (window.ponzuDesktop) return desktopHost(window.ponzuDesktop);
+  const desktop = window.ponzuDesktop;
   // The mode, not DEV: DEV follows NODE_ENV, which a test runner sets for the build too.
-  if (inMemory) {
+  if (inMemory && (!desktop || desktop.config.fake)) {
+    // A test build of the Mac app told to (PONZU_FAKE_BACKEND), which spare measures: the same
+    // world in memory, kept the way the Mac app keeps it (fake-host.ts's `shell`).
     const { fakeHost } = await import("./app/fake-host.ts");
-    return fakeHost();
+    return fakeHost(desktop ? { shell: desktop } : {});
   }
+  if (desktop) return desktopHost(desktop);
   return null;
 }
 

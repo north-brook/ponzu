@@ -94,6 +94,11 @@ export interface Config {
   /** Whether a remote debugging port may be opened on this build's windows. */
   remoteDebugging: boolean;
   /**
+   * Whether the studio runs on Ponzu Cloud in memory instead of the service (`fakeBackend`):
+   * only a test build or a run from a checkout, given PONZU_FAKE_BACKEND=1. Never a release.
+   */
+  fakeBackend: boolean;
+  /**
    * The PostHog project this build reports to, or null: no key, a test build, or a key or host
    * that doesn't parse. The person's own choice (telemetry-consent.ts) is applied on top.
    */
@@ -191,7 +196,11 @@ export function configFor(
     );
   }
   // A test build is the real app with the doors a developer's tools need, and nothing else.
-  const developer = { sessionFile: env.PONZU_SESSION_FILE || null, remoteDebugging: true };
+  const developer = {
+    sessionFile: env.PONZU_SESSION_FILE || null,
+    remoteDebugging: true,
+    fakeBackend: fakeBackend(env),
+  };
   if (packaged) {
     // A packaged build reports to the project it was built for; a test build, which spare and CI
     // drive, to none.
@@ -214,7 +223,7 @@ export function configFor(
       linkScheme: release ? "ponzu" : "ponzu-dev",
       cleansUpLegacy: release,
       updates: release,
-      ...(test ? developer : { sessionFile: null, remoteDebugging: false }),
+      ...(test ? developer : { sessionFile: null, remoteDebugging: false, fakeBackend: false }),
       posthog,
     };
   }
@@ -284,6 +293,34 @@ export function environmentOverride(env: NodeJS.ProcessEnv): BuildEnvironment | 
     throw new Error(`PONZU_ENVIRONMENT_OVERRIDE has no usable ${wrong.join(", ")}.`);
   }
   return { name, apiUrl, workosClientId, realtimeUrl, assetsUrl };
+}
+
+/**
+ * `PONZU_FAKE_BACKEND=1`, which only a test build or a run from a checkout reads: the window
+ * runs the studio on Ponzu Cloud in memory (apps/studio's fake host), apart from the person's
+ * data, keychain, links and network (main.ts), so spare can measure the packaged app on a
+ * canvas of its own without an account. The studio takes it only when it was built with the
+ * fake in it (`--mode e2e`, or Vite's development server); a release's studio has none.
+ */
+export function fakeBackend(env: NodeJS.ProcessEnv): boolean {
+  return env.PONZU_FAKE_BACKEND === "1";
+}
+
+/**
+ * Whether a launch that refuses the network (`blockNetwork` in smoke.ts) still lets `url`
+ * through: only the fake backend run from a checkout on Vite's development server, and only to
+ * that server when it is on this computer (its page, modules and hot reload socket). The smoke
+ * check lets nothing through, and nothing that would leave the computer ever passes.
+ */
+export function letThrough(
+  url: string,
+  config: Pick<Config, "fakeBackend" | "studioDevUrl">,
+): boolean {
+  if (!config.fakeBackend || !config.studioDevUrl || !URL.canParse(url)) return false;
+  const dev = new URL(config.studioDevUrl);
+  if (dev.hostname !== "localhost" && dev.hostname !== "127.0.0.1") return false;
+  const asked = new URL(url);
+  return asked.hostname === dev.hostname && asked.port === dev.port;
 }
 
 /**

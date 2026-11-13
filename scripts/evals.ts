@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /*
- * `bun run evals [judges|rejudge|ideas|agent|all] [suite…] [--samples N] [--turns N] [--cap USD] [--only id,id] [--judge name] [--parallel N]`
+ * `bun run evals [judges|rejudge|ideas|agent|all] [suite…] [--samples N] [--turns N] [--cap USD] [--only id,id] [--judge name] [--parallel N] [--on dev-key]`
  *
  * Runs the AI evals against the real models (docs/evals.md). They cost money and are not
  * deterministic, so `bun test` never runs them.
@@ -9,7 +9,8 @@
  *                          (--judge <name> for one; --only <ids> tries examples without recording)
  *   rejudge agent          judge the recorded agent turns again, with no new turn
  *   ideas                  the repo ideas suite (apps/api/evals/ideas)
- *   agent                  the agent's thread messages (apps/runner/evals/agent)
+ *   agent                  the agent's thread messages (apps/runner/evals/agent); with
+ *                          --on dev-key, on Haiku at low effort, rows kept apart (docs/evals.md)
  *   all                    judges, then every suite
  *
  * Everything runs on one Anthropic API key, PONZU_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY (the
@@ -35,11 +36,13 @@ import {
   percent,
   readCalibrations,
   type Suite,
+  type SuiteReport,
   TurnBudget,
   withoutSecret,
 } from "@ponzu/evals";
 import { ideasSuite } from "../apps/api/evals/ideas/ideas.eval.ts";
 import { agentSuite } from "../apps/runner/evals/agent/agent.eval.ts";
+import { agentRun } from "../apps/runner/evals/agent/harness.ts";
 
 const SUITES: Record<string, Suite> = { ideas: ideasSuite, agent: agentSuite };
 
@@ -72,6 +75,20 @@ const cap = Number(flag("cap") ?? process.env.PONZU_EVALS_SPEND_USD ?? 3);
 const meter = new Meter(cap);
 const models = anthropicModels(apiKey);
 const only = flag("only")?.split(",").filter(Boolean) ?? null;
+const on = flag("on") ?? null;
+if (on !== null) {
+  // Before anything spends: only the agent's turns can run elsewhere, and only where it knows.
+  if (command !== "agent" || named.some((name) => name !== "agent")) {
+    console.error("--on applies only to `bun run evals agent`.");
+    process.exit(2);
+  }
+  try {
+    agentRun(on);
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exit(2);
+  }
+}
 const ctx: EvalContext = {
   meter,
   turns: new TurnBudget(Number(flag("turns") ?? 6)),
@@ -81,6 +98,7 @@ const ctx: EvalContext = {
   only,
   parallel: Math.max(1, Number(flag("parallel") ?? 4)),
   onlyJudge: flag("judge") ?? null,
+  on,
   commit: gitCommit(),
   log: (line) => console.log(`  ${line}`),
 };
@@ -122,12 +140,22 @@ async function calibrateAll(suites: Suite[]) {
   return ok;
 }
 
+/** A report's pass rates; rows that ran elsewhere (`--on`) under their own heading. */
+function printRates(report: SuiteReport) {
+  for (const [criterion, rate] of Object.entries(report.rates))
+    console.log(`${criterion}: ${percent(rate)}`);
+  for (const [ranOn, rates] of Object.entries(report.ratesByRun ?? {})) {
+    console.log(`On ${ranOn}:`);
+    for (const [criterion, rate] of Object.entries(rates))
+      console.log(`  ${criterion}: ${percent(rate)}`);
+  }
+}
+
 async function runAll(suites: Suite[]) {
   for (const suite of suites) {
     console.log(`\n# The ${suite.name} suite`);
     const report = await suite.run(ctx);
-    for (const [criterion, rate] of Object.entries(report.rates))
-      console.log(`${criterion}: ${percent(rate)}`);
+    printRates(report);
     for (const line of report.notRun) console.log(`not run: ${line}`);
     const written = only && suite.name === "ideas" ? "partial.md" : "latest.md";
     console.log(`→ ${join(suite.resultsDir, written)}`);
@@ -142,8 +170,7 @@ try {
       if (!suite.rejudge) continue;
       console.log(`\n# Judging the ${suite.name} suite's recorded outputs again`);
       const report = await suite.rejudge(ctx);
-      for (const [criterion, rate] of Object.entries(report.rates))
-        console.log(`${criterion}: ${percent(rate)}`);
+      printRates(report);
     }
   } else if (command === "all") {
     ok = await calibrateAll(pick([]));

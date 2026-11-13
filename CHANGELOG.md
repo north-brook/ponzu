@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.3.2](https://github.com/north-brook/ponzu/compare/v2.3.1...v2.3.2) (2026-11-13)
+
+
+### Performance Improvements
+
+* **canvas:** keep less GPU memory while zooming out on big canvases ([#605](https://github.com/north-brook/ponzu/issues/605)) ([1d0cf73](https://github.com/north-brook/ponzu/commit/1d0cf73257fbf91f892db0222344cb534671e471))
+
+## [2.3.1](https://github.com/north-brook/ponzu/compare/v2.3.0...v2.3.1) (2026-11-13)
+
+
+### Performance Improvements
+
+* **canvas:** open a canvas's boards a frame's budget at a time, nearest first ([#598](https://github.com/north-brook/ponzu/issues/598)) ([73277f1](https://github.com/north-brook/ponzu/commit/73277f1323001862dbf10f20e479beed0ce28307))
+* **studio:** emphasis and strikethrough in markdown draw in time linear in the text ([#597](https://github.com/north-brook/ponzu/issues/597)) ([a3f0a5d](https://github.com/north-brook/ponzu/commit/a3f0a5d803d719c799585d8dd02ed1571ad5d480))
+
 ## [2.3.0](https://github.com/north-brook/ponzu/compare/v2.2.0...v2.3.0) (2026-11-13)
 
 
