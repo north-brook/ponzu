@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configFor } from "./config.ts";
@@ -54,12 +54,41 @@ test.skipIf(process.platform === "win32")(
       stdio: ["pipe", "ignore", "inherit"],
     });
     const exited = new Promise<number | null>((resolve) => app.once("exit", resolve));
-    removeOnceExited(folder, app.pid!);
-    expect(existsSync(folder)).toBe(true);
-    app.stdin!.end("go\n");
-    // Its last write lands in the folder: had the folder gone while it ran, the write would fail.
-    expect(await exited).toBe(0);
-    while (existsSync(folder)) await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(existsSync(folder)).toBe(false);
+    // The shell that removes the folder sleeps between its looks at the app. The `sleep` it finds
+    // notes each time it is called, so the test sees that shell go back to waiting. PATH is the
+    // test's only for the synchronous spawn inside removeOnceExited.
+    const tools = mkdtempSync(join(tmpdir(), "ponzu-tools-"));
+    const sleeps = join(tools, "sleeps");
+    writeFileSync(sleeps, "");
+    writeFileSync(
+      join(tools, "sleep"),
+      `#!/bin/sh\necho >> '${sleeps}'\nexec '${Bun.which("sleep")}' "$@"\n`,
+      { mode: 0o755 },
+    );
+    const path = process.env.PATH;
+    process.env.PATH = `${tools}:${path}`;
+    try {
+      removeOnceExited(folder, app.pid!);
+    } finally {
+      process.env.PATH = path;
+    }
+    try {
+      // The folder stays while the app runs. Seen without a clock: the shell that removes it
+      // goes back to waiting twice, so it has looked at the running app, slept, and looked
+      // again, and the folder is still there. A shell that removes it without waiting, or
+      // between one look and the next, ends this loop with the folder gone instead.
+      while (existsSync(folder) && readFileSync(sleeps, "utf8").length < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(existsSync(folder)).toBe(true);
+      app.stdin!.end("go\n");
+      // Its last write lands in the folder: had the folder gone while it ran, it would fail.
+      expect(await exited).toBe(0);
+      while (existsSync(folder)) await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(existsSync(folder)).toBe(false);
+    } finally {
+      app.kill();
+      rmSync(tools, { recursive: true, force: true });
+    }
   },
 );
