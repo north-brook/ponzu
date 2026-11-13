@@ -22,7 +22,7 @@ export interface TestChromium {
   readonly pid: number | null;
   /** A page in a fresh context of its own: no cookies, storage or permissions from another. */
   newPage(options?: BrowserContextOptions): Promise<Page>;
-  /** Kills the browser and resolves once Playwright has seen it go. Safe to call twice. */
+  /** Kills the browser and resolves once its process is gone (reaped). Safe to call twice. */
   close(): Promise<void>;
 }
 
@@ -84,7 +84,36 @@ async function end(browser: Browser, pid: number | null): Promise<void> {
         );
       }
     }
-    if (killed) await gone;
+    if (killed) {
+      await gone;
+      await browser.close();
+      await reaped(pid);
+      return;
+    }
   }
   await browser.close();
+}
+
+/**
+ * Until the killed Chrome has been reaped. Playwright disconnects when Chrome's pipe closes,
+ * which the kernel does the moment the process dies, but the process stays a zombie (and still
+ * answers `kill(pid, 0)`) until the runtime's child handler collects its exit status, a moment
+ * later and later still on a busy machine. close() promises Chrome is gone, so it waits for that.
+ * The bound only keeps a runtime that never reaps from hanging the caller; it is not expected.
+ */
+async function reaped(pid: number, within = 10_000): Promise<void> {
+  const until = Date.now() + within;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ESRCH") return;
+      throw err;
+    }
+    if (Date.now() >= until) {
+      console.warn(`Chrome ${pid} was killed but not reaped within ${within} ms.`);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
