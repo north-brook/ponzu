@@ -37,7 +37,10 @@ const Usage = z.object({
   /** What one credit sells for, in cents. */
   creditCents: z.number().int(),
   usedCredits: z.number().int(),
-  /** This period's allowance: the rate card's free credits for each person counted, pooled. */
+  /**
+   * This period's allowance: the rate card's free credits for each person counted, pooled, plus
+   * support's adjustments, never below zero.
+   */
   freeCredits: z.number().int(),
   /** Used past the free credits: what would be billed. */
   billedCredits: z.number().int(),

@@ -2718,14 +2718,32 @@ free credits are used up. A workspace has a monthly cap.
   from `awake` to whatever it moved to, in the statement that moved it, put down to the
   workspace and to the person behind the newest event of the canvas's feed when it was woken
   or last kept awake.
-- `credit_ledger` holds grants, use and adjustments. Balance and cap are checked
-  before every wake. A running turn is never cut off.
+- `usage_events` is the one record of use. `credit_ledger` holds what is not use: each
+  member's free grant, support's adjustments and, later, top-ups. Nothing writes a `use` row.
+  Balance and cap are checked before every wake. A running turn is never cut off.
 - Stripe receives the billed part as metered usage.
 - The iPhone shows usage and sells nothing.
 
 What is built so far is the reading of it: Plan and usage, worked out from `usage_events` and
-the rate card. There is no Stripe, no ledger write and no cap enforcement yet; the cap is stored
-for when there is.
+the rate card, and the meter's cuts below. There is no Stripe and no cap enforcement yet; the
+cap is stored for when there is.
+
+**The meter's cuts.** While `PONZU_BILLING` is `observe` or `on`, the minute's sweep first cuts
+every awake stretch that is due (`billing/meter.ts`), before any sandbox's own step: at the end
+of the billing period the stretch began in, once that has passed, and otherwise once it has run
+an hour, at its last whole second. A cut (`cutAwake`) meters the piece so far exactly as a sleep
+would, under the same id rule (`<canvas>/<epoch ms of where the piece began>`), attribution and
+rate card, and moves `awake_since` on to the cut; `state_at` still says when it woke, and is what
+the sweep's dead-runner check and the `sandbox slept` event's `awake_ms` read. A cut holds to the
+stretch it saw, and a move out of `awake` holds to the `awake_since` it read and tries once more
+if a cut landed meanwhile, so a cut racing a sleep or another cut never meters a second twice or
+loses one. Each sandbox is cut at most three times a run. While `PONZU_BILLING` is unset or `off`
+nothing is cut, and a stretch is metered whole when it ends, as before.
+
+**Adjustments.** `apps/api/scripts/credit.ts <workspace> <credits> "<note>"` writes one
+`adjustment` row for the period running now: a whole number of credits, not zero, with a note.
+The period's adjustments add to its free credits (a negative one takes some away), and the free
+credits never go below zero.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
@@ -2737,8 +2755,9 @@ period starts at midnight UTC on that day of every month, or on the month's last
 month is shorter (a workspace made on the 31st starts on February 28), and ends where the next
 starts (`billing/period.ts`). `period.end` is the day Plan and usage "bills" or "resets" on; an
 app formats it in UTC, or a person west of Greenwich reads the day before. A stretch of awake
-time counts in the period it began in, as its usage event is dated, and the stretch awake right
-now counts up to the moment of asking, under the card in effect.
+time counts in the period it began in, as its usage event is dated (the meter's cuts start a new
+piece at each period's end), and the stretch awake right now counts up to the moment of asking,
+or to the period's end for a period read after it ended, under the card in effect.
 
 **The arithmetic** is one module, `billing/credits.ts`, and every number it answers is an
 integer:
@@ -2747,7 +2766,8 @@ integer:
   by the card that was in effect when it began), plus what model turns cost (zero while every
   canvas runs on its owner's own plan), added up exactly and rounded down to a whole credit. A
   partial credit, under twelve minutes awake at 5 an hour, is never charged.
-- Free credits: the card's free credits per member × the people counted, pooled. The people
+- Free credits: the card's free credits per member × the people counted, pooled, plus the
+  period's adjustments, never below zero. The people
   counted are everyone who has been a member at any point in the period, plus anyone else whose
   use is in it. A member's allowance is granted once a period and never taken back: it is a
   `grant` row in `credit_ledger` for the period's start (`credit_ledger_grant_key` keeps it to

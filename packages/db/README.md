@@ -237,8 +237,8 @@ Money
 | Table | What it is for | |
 |---|---|---|
 | `rate_cards` | The numbers of the credit model, by version. A price change is a new row. | |
-| `usage_events` | One metered thing: a stretch of awake sandbox time, or one model turn and its tokens. | |
-| `credit_ledger` | Every change to a workspace's credits: grants, use, top-ups, refunds. The balance is the sum. | |
+| `usage_events` | One metered thing: a stretch of awake sandbox time (or a piece of one, cut at a period end or hourly while billing is on, `cutAwake`), or one model turn and its tokens. The one record of use. | |
+| `credit_ledger` | What changes a workspace's free credits other than use: grants, adjustments (`adjustCredits`), later top-ups and refunds. No `use` row is written; use is `usage_events`. | |
 
 Plumbing
 

@@ -69,6 +69,11 @@ export interface WorkspaceUsageRead {
    * someone who leaves mid-period is still counted.
    */
   granted: { userIds: string[]; departed: number };
+  /**
+   * The period's `adjustment` rows added up, in whole credits: support's credits (positive) and
+   * corrections (negative). They add to, or take from, the free credits. Zero without any.
+   */
+  adjustedCredits: number;
 }
 
 /** One rate card row `alias` as `RateCardNumbers`. */
@@ -84,7 +89,11 @@ const card = (alias: string) =>
  * A workspace's usage in the period [`start`, `end`), as of `now`, in one read: awake time and
  * model turns by person, canvas and rate card, with the stretch awake right now counted up to
  * `now` under the card in effect, and the people and canvases that names. A stretch counts in
- * the period it began in, as its usage event is dated. Null when there is no such workspace.
+ * the period it began in, as its usage event is dated; the live one is counted no further than
+ * `end`, so a past period read after its end never takes in time after it (a current period
+ * ends after `now`, so this changes nothing there). With `membersBefore` (the close passes the
+ * period's end), only members whose membership began before then are named, beside anyone whose
+ * use is in the period. Null when there is no such workspace.
  */
 export async function readWorkspaceUsage(
   db: Db,
@@ -94,11 +103,22 @@ export async function readWorkspaceUsage(
     start,
     end,
     now,
-  }: { workspaceId: string; viewerId: string; start: Date; end: Date; now: Date },
+    membersBefore,
+  }: {
+    workspaceId: string;
+    viewerId: string;
+    start: Date;
+    end: Date;
+    now: Date;
+    membersBefore?: Date;
+  },
 ): Promise<WorkspaceUsageRead | null> {
   const from = sql`${timeParam(start)}::timestamptz`;
   const until = sql`${timeParam(end)}::timestamptz`;
   const at = sql`${timeParam(now)}::timestamptz`;
+  const joinedBefore = membersBefore
+    ? sql`and m.created_at < ${timeParam(membersBefore)}::timestamptz`
+    : sql``;
   return queryJson<WorkspaceUsageRead>(
     db,
     sql`
@@ -117,7 +137,8 @@ export async function readWorkspaceUsage(
            and e.occurred_at >= ${from} and e.occurred_at < ${until}
         union all
         select s.awake_user_id, d.id, (select version from current_card),
-               greatest(0, round(extract(epoch from (${at} - s.awake_since))))::bigint, 0
+               greatest(0, round(extract(epoch from (least(${at}, ${until}) - s.awake_since))))::bigint,
+               0
           from sandboxes s join canvases d on d.id = s.canvas_id
          where d.workspace_id = ${workspaceId} and s.state = 'awake'
            and s.awake_since >= ${from} and s.awake_since < ${until}
@@ -128,12 +149,14 @@ export async function readWorkspaceUsage(
           from metered group by user_id, canvas_id, rate_card_version
       ),
       named as (
-        select m.user_id, m.role from memberships m where m.workspace_id = ${workspaceId}
+        select m.user_id, m.role from memberships m
+         where m.workspace_id = ${workspaceId} ${joinedBefore}
         union
         select distinct g.user_id, null from grouped g
          where g.user_id is not null
            and not exists (select 1 from memberships m
-                            where m.workspace_id = ${workspaceId} and m.user_id = g.user_id)
+                            where m.workspace_id = ${workspaceId} and m.user_id = g.user_id
+                              ${joinedBefore})
       )
       select json_build_object(
         'current', (select ${card("c")} from current_card c),
@@ -164,7 +187,11 @@ export async function readWorkspaceUsage(
                       'departed', count(*) filter (where l.user_id is null))
                       from credit_ledger l
                      where l.workspace_id = w.id and l.reason = 'grant'
-                       and l.period_start = ${from})
+                       and l.period_start = ${from}),
+        'adjustedCredits', (select coalesce(floor(sum(l.delta)), 0)::bigint
+                              from credit_ledger l
+                             where l.workspace_id = w.id and l.reason = 'adjustment'
+                               and l.period_start = ${from})
       ) as result
         from workspaces w
        where w.id = ${workspaceId}

@@ -5,6 +5,7 @@ import { afterAll, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import { seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { describeLive } from "../live.ts";
+import { usageEvents } from "../schema/index.ts";
 import { anonymiseUser, deleteUser, planAccountDeletion } from "./account-deletion.ts";
 import { upsertMembership } from "./accounts.ts";
 import { createCanvas } from "./canvases.ts";
@@ -20,7 +21,6 @@ import {
 import { registerDevice, setPingPrefs, updateDevice } from "./notifications.ts";
 import { recordReachableRepos } from "./repo-access.ts";
 import { postMessage } from "./thread.ts";
-import { recordUsage } from "./usage.ts";
 import { readWorkspaceUsage, setMonthlyCap } from "./workspace-usage.ts";
 
 describeLive("settings on a real Postgres", ({ db, close }) => {
@@ -143,7 +143,7 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       branch: null,
       doc: emptyDoc("Spend"),
     });
-    await recordUsage(db, {
+    await db.insert(usageEvents).values({
       id: `live-${canvas.id}`,
       workspaceId: workspace.id,
       canvasId: canvas.id,
@@ -155,7 +155,6 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       payer: "ponzu",
       rateCardVersion: 1,
       occurredAt: new Date("2026-11-10T00:00:00Z"),
-      periodStart: new Date("2026-11-09T00:00:00Z"),
     });
     await setMonthlyCap(db, { workspaceId: workspace.id, capCents: 5000 });
     const read = await readWorkspaceUsage(db, {

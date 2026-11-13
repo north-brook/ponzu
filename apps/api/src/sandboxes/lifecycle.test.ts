@@ -4,6 +4,7 @@ import {
   appendEvent,
   getCanvas,
   getSandbox,
+  getWorkspace,
   moveSandbox,
   newId,
   notifications,
@@ -12,6 +13,8 @@ import {
 } from "@ponzu/db";
 import { IMAGE_COMMANDS, RUNNER_HEADER, RUNNER_PORT } from "@ponzu/runner/protocol";
 import { canvasSandboxName, SandboxError, type Sandboxes } from "@ponzu/sandbox";
+import { meterAwake } from "../billing/meter.ts";
+import { billingPeriod } from "../billing/period.ts";
 import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import {
   createTestApp,
@@ -1228,4 +1231,118 @@ test("ponzu-stop is given its thirty seconds", async () => {
   }
   expect(given).toEqual([STOP_COMMAND_MS]);
   expect((await row(canvas.id)).state).toBe("asleep");
+});
+
+describe("the meter", () => {
+  const HOUR_MS = 60 * MINUTE;
+  const wholeSecond = (ms: number) => new Date(Math.floor(ms / 1000) * 1000);
+
+  /** Put the canvas's stretch back to `since`, as if it had woken then and stayed awake. */
+  async function awakeSince(canvasId: string, since: Date) {
+    await t.db.execute(
+      `update sandboxes set awake_since = '${since.toISOString()}', state_at = '${since.toISOString()}'
+        where canvas_id = '${canvasId}'`,
+    );
+  }
+
+  const sandboxUsage = async (canvasId: string) =>
+    (
+      (await rows(
+        `select seconds, occurred_at from usage_events
+          where canvas_id = '${canvasId}' and kind = 'sandbox' order by occurred_at`,
+      )) as { seconds: number; occurred_at: Date | string }[]
+    ).map((used) => ({ seconds: used.seconds, at: new Date(used.occurred_at).getTime() }));
+
+  async function withBilling<T>(mode: "off" | "observe" | "on", work: () => Promise<T>) {
+    const was = t.deps.features.billing;
+    t.deps.features.billing = mode;
+    try {
+      return await work();
+    } finally {
+      t.deps.features.billing = was;
+    }
+  }
+
+  test("while billing is off it cuts nothing, writes nothing, and the sweep answers as before", async () => {
+    const { canvas, runner } = await awakeCanvas();
+    const since = wholeSecond(t.clock.now() - 3 * HOUR_MS);
+    await awakeSince(canvas.id, since);
+    await runner.beat();
+    const ran = await withBilling("off", cron);
+    // The keys main's sweep answers, and no other.
+    expect(Object.keys(ran.steps.sandboxes!).toSorted()).toEqual(
+      [
+        "retire",
+        "stop",
+        "restart",
+        "lapse",
+        "stalled",
+        "sleep",
+        "cycle",
+        "extend",
+        "repair",
+        "reconciled",
+      ].toSorted(),
+    );
+    expect(await sandboxUsage(canvas.id)).toEqual([]);
+    expect(await row(canvas.id)).toMatchObject({ state: "awake", awakeSince: since });
+  });
+
+  test("while billing is observed it cuts an hour-long stretch, and the sleep meters the rest", async () => {
+    const { canvas, runner } = await awakeCanvas();
+    const since = wholeSecond(t.clock.now() - 2 * HOUR_MS);
+    await awakeSince(canvas.id, since);
+    await runner.beat();
+    const ran = await withBilling("observe", cron);
+    // (Other canvases this file left awake are cut too.)
+    expect(ran.steps.sandboxes!.metered).toBeGreaterThanOrEqual(1);
+    const cutAt = since.getTime() + Math.floor((t.clock.now() - since.getTime()) / 1000) * 1000;
+    expect(await sandboxUsage(canvas.id)).toEqual([
+      { seconds: (cutAt - since.getTime()) / 1000, at: since.getTime() },
+    ]);
+    // Still awake since it woke; metered on from the cut.
+    expect(await row(canvas.id)).toMatchObject({
+      state: "awake",
+      stateAt: since,
+      awakeSince: new Date(cutAt),
+    });
+
+    await withBilling("observe", () => idleToSleep(runner));
+    expect((await row(canvas.id)).state).toBe("asleep");
+    const used = await sandboxUsage(canvas.id);
+    expect(used).toHaveLength(2);
+    expect(used[1]!.at).toBe(cutAt);
+    // The pieces add up to the stretch, and the sleep still reports the whole stretch.
+    const awakeMs = captured("sandbox slept", canvas.id)!.awake_ms as number;
+    expect(used[0]!.seconds + used[1]!.seconds).toBe(Math.round(awakeMs / 1000));
+    expect(awakeMs).toBeGreaterThanOrEqual(2 * HOUR_MS);
+  });
+
+  test("a stretch across the period's start is cut there, each piece dated in its period", async () => {
+    const { canvas, runner } = await awakeCanvas();
+    const anchor = (await getWorkspace(t.db, ws.id))!.billingPeriodAnchor;
+    const { start } = billingPeriod(anchor, new Date(t.clock.now()));
+    const since = new Date(start.getTime() - 30 * MINUTE);
+    await awakeSince(canvas.id, since);
+    await runner.beat();
+    await withBilling("on", cron);
+    const used = await sandboxUsage(canvas.id);
+    expect(used[0]).toEqual({ seconds: 1800, at: since.getTime() });
+    // What came after the start is in the period running now, from its first instant (and, if
+    // the start was more than an hour ago, cut again an hour on in the same run).
+    if (used.length > 1) expect(used[1]!.at).toBe(start.getTime());
+    expect((await row(canvas.id)).awakeSince!.getTime()).toBeGreaterThanOrEqual(start.getTime());
+  });
+
+  test("two sweeps at once cut a stretch once", async () => {
+    const { canvas, runner } = await awakeCanvas();
+    const since = wholeSecond(t.clock.now() - 90 * MINUTE);
+    await awakeSince(canvas.id, since);
+    await runner.beat();
+    const now = new Date(t.clock.now());
+    await withBilling("observe", () =>
+      Promise.all([meterAwake(t.deps, now), meterAwake(t.deps, now)]),
+    );
+    expect(await sandboxUsage(canvas.id)).toEqual([{ seconds: 90 * 60, at: since.getTime() }]);
+  });
 });

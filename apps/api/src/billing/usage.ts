@@ -15,8 +15,9 @@ import type { BillingPeriod } from "./period.ts";
 /*
  * Plan and usage, worked out (docs/cloud.md, "Billing"): a workspace's usage this period with
  * the free credits, what would be billed and the cap, for everyone in it; and for its admins,
- * who used what, by person and by canvas. Nothing here is billed yet: there is no card, no
- * ledger write and no cap enforcement until billing is built.
+ * who used what, by person and by canvas. Nothing here is billed yet: there is no card and no
+ * cap enforcement until billing is built. Use is read from usage events alone; the ledger holds
+ * the grants and the adjustments, which add to the free credits.
  */
 
 export interface UsagePersonView {
@@ -92,7 +93,7 @@ export function workspaceUsage(
   const { current } = read;
   const usedCredits = creditsOf(total);
   const counted = countedPeople(read);
-  const free = freeCredits(counted, current.freeCreditsPerMember);
+  const free = freeCredits(counted, current.freeCreditsPerMember, read.adjustedCredits);
   const billed = billedCredits(usedCredits, free);
   const billedCents = centsFor(billed, current.creditMicrousd);
   const capCents = read.monthlyCapCents ?? current.defaultCapCents;

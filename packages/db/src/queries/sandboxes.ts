@@ -21,7 +21,8 @@ import { run } from "./run.ts";
  * to the states it moves from, and to the job holding a `waking` or `stopping` row, so of two
  * function instances racing on one sandbox only one moves it. Leaving `awake` meters the stretch
  * it was awake for, in the statement that moves it, so awake time is never lost and never
- * counted twice.
+ * counted twice. While billing is on, the meter also cuts a long stretch into pieces as it goes
+ * (`cutAwake`), each piece metered the same way.
  */
 
 export type SandboxRow = typeof sandboxes.$inferSelect;
@@ -203,7 +204,12 @@ export interface Move {
  * A move to `asleep` forgets the session's address and port token: nothing of it runs.
  */
 export async function moveSandbox(db: Db, request: Move): Promise<SandboxRow | null> {
-  const result = await move(db, request);
+  let result = await move(db, request);
+  // A move out of `awake` holds to the stretch it read (see `move`), so a meter's cut that
+  // landed while it waited on the row makes it do nothing. Tried once more from what is there
+  // now: it either moves the row and meters what is left of the stretch, or finds what a lost
+  // race always finds.
+  if (!result?.row && request.from.includes("awake")) result = await move(db, request);
   return result?.row ? toSandbox(result.row) : null;
 }
 
@@ -272,6 +278,13 @@ async function move(
       from.map((state) => sql`${state}`),
       sql`, `,
     )})`,
+    // An awake row moves only from the stretch it read, which is the one it meters. A cut
+    // (`cutAwake`) that commits while this waits on the row moves `awake_since` on, and metering
+    // from the old start would collide with the cut's event and lose what came after it; a wake
+    // that commits meanwhile starts a stretch this read as not awake, and would go unmetered. So
+    // it moves nothing then, and `moveSandbox` tries again. A row in any other state is as before.
+    sql`(s.state <> 'awake'
+         or s.awake_since is not distinct from (select b.awake_since from before b))`,
   ];
   if (by !== undefined) {
     const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
@@ -334,6 +347,85 @@ async function move(
       ) as result
     `,
   );
+}
+
+/**
+ * Meter the stretch an awake sandbox has been awake for up to `at`, and go on metering from
+ * `at`, in one statement (docs/cloud.md, "Billing"): the usage event for [`observedSince`, `at`)
+ * under the same id, attribution and rate card a sleep would have given it, and `awake_since`
+ * moved to `at`. Only while the row is awake on the stretch that began at `observedSince`, and
+ * `at` is after it: of two cuts, or a cut and a sleep, racing on one stretch, one wins and the
+ * other does nothing. The sandbox's state and `state_at` (when it woke) are left as they are.
+ * Answers whether it cut.
+ */
+export async function cutAwake(
+  db: Db,
+  { canvasId, at, observedSince }: { canvasId: string; at: Date; observedSince: Date },
+): Promise<boolean> {
+  const cutAt = sql`${timeParam(at)}::timestamptz`;
+  const since = sql`${timeParam(observedSince)}::timestamptz`;
+  const result = await queryJson<{ cut: boolean }>(
+    db,
+    sql`
+      with cut as (
+        update sandboxes s
+           set awake_since = ${cutAt}
+         where s.canvas_id = ${canvasId} and s.state = 'awake'
+           and s.awake_since = ${since} and ${cutAt} > ${since}
+        returning s.canvas_id, s.awake_user_id
+      ),
+      metered as (
+        insert into usage_events (id, workspace_id, canvas_id, user_id, kind, seconds, payer,
+                                  rate_card_version, occurred_at)
+        select c.canvas_id || '/' || floor(extract(epoch from ${since}) * 1000)::bigint,
+               d.workspace_id, d.id, c.awake_user_id, 'sandbox',
+               greatest(0, round(extract(epoch from (${cutAt} - ${since}))))::int,
+               'ponzu',
+               coalesce(
+                 (select max(version) from rate_cards where effective_from <= ${since}),
+                 (select min(version) from rate_cards)
+               ),
+               ${since}
+          from cut c
+          join canvases d on d.id = c.canvas_id
+        on conflict (id) do nothing
+      )
+      select json_build_object('cut', exists (select 1 from cut)) as result
+    `,
+  );
+  return result?.cut ?? false;
+}
+
+/** An awake sandbox, as the meter weighs where to cut it. */
+export interface AwakeToMeter {
+  canvasId: string;
+  awakeSince: Date;
+  /** Its workspace's billing period anchor (`billing_period_anchor`). */
+  periodAnchor: Date;
+}
+
+/** Every awake sandbox, with what the meter needs to cut it. */
+export async function listAwakeToMeter(db: Db): Promise<AwakeToMeter[]> {
+  const result = await queryJson<{
+    rows: { canvas_id: string; awake_since: string; anchor: string }[];
+  }>(
+    db,
+    sql`
+      select json_build_object('rows', coalesce(json_agg(json_build_object(
+        'canvas_id', s.canvas_id, 'awake_since', s.awake_since,
+        'anchor', w.billing_period_anchor
+      )), '[]'::json)) as result
+        from sandboxes s
+        join canvases d on d.id = s.canvas_id
+        join workspaces w on w.id = d.workspace_id
+       where s.state = 'awake'
+    `,
+  );
+  return (result?.rows ?? []).map((row) => ({
+    canvasId: row.canvas_id,
+    awakeSince: new Date(row.awake_since),
+    periodAnchor: new Date(row.anchor),
+  }));
 }
 
 /**

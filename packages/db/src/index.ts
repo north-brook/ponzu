@@ -350,10 +350,12 @@ export {
   takeRunnerLease,
 } from "./queries/runners.ts";
 export {
+  type AwakeToMeter,
   beginSandbox,
   type CheckpointCover,
   claimSandbox,
   countSandboxRestart,
+  cutAwake,
   deleteSandboxRow,
   getAwakeSandboxAddress,
   getCheckpointCover,
@@ -361,6 +363,7 @@ export {
   getSandboxOwners,
   getWakeContext,
   liftAgentBlockers,
+  listAwakeToMeter,
   listCanvasesWithSandboxOn,
   listSandboxesToSweep,
   listSandboxImages,
@@ -459,12 +462,9 @@ export {
 } from "./queries/uploads.ts";
 export {
   addLedgerEntry,
-  type LedgerBalance,
-  ledgerBalance,
+  adjustCredits,
   type NewLedgerEntry,
-  type NewUsageEvent,
   recordTurnUsage,
-  recordUsage,
   type TurnModelUsage,
   type TurnUsage,
 } from "./queries/usage.ts";

@@ -42,6 +42,14 @@ export interface SleepOptions {
   silenced?: boolean;
 }
 
+/**
+ * How long an awake row has been awake at `now`: since it woke (`state_at`), not since
+ * `awake_since`, which the meter moves on as it cuts. Zero for a row that is not awake.
+ */
+export function awakeFor(row: Pick<SandboxRow, "state" | "stateAt">, now: number): number {
+  return row.state === "awake" ? now - row.stateAt.getTime() : 0;
+}
+
 /** Put the awake `row` to sleep. False when it was not this call that moved it. */
 export async function putToSleep(
   deps: JobDeps,
@@ -62,7 +70,7 @@ export async function putToSleep(
     ...(options.idleBefore ? { idleBefore: options.idleBefore } : {}),
   });
   if (!stopping) return false;
-  const awakeMs = row.awakeSince ? clock.now() - row.awakeSince.getTime() : 0;
+  const awakeMs = awakeFor(row, clock.now());
   const began = clock.now();
   if (options.silenced) await revokeRunnerTokens(db, canvasId);
   if (stopping.sessionId) {

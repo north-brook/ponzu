@@ -6,7 +6,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { actorFor, rename, seedCanvas, seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { describeLive } from "../live.ts";
-import { authStates, canvasOps, events, jobs, memberships } from "../schema/index.ts";
+import { authStates, canvasOps, events, jobs, memberships, usageEvents } from "../schema/index.ts";
 import { upsertMembership } from "./accounts.ts";
 import { getCanvas, getCanvasHead } from "./canvases.ts";
 import { openClaudeSignIn } from "./claude-sign-ins.ts";
@@ -18,7 +18,7 @@ import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
 import { claimRepoIdeas, type IdeasPolicy } from "./repo-ideas.ts";
 import { takeRunnerLease } from "./runners.ts";
-import { beginSandbox, claimSandbox, moveSandbox } from "./sandboxes.ts";
+import { beginSandbox, claimSandbox, cutAwake, moveSandbox } from "./sandboxes.ts";
 import { commitReversal } from "./undo.ts";
 
 const times = <T>(count: number, make: (index: number) => T): T[] =>
@@ -327,6 +327,43 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     const held = claims.flatMap((claim) => (claim && "sandbox" in claim ? [claim.sandbox] : []));
     expect(held).toHaveLength(1);
     expect(claims.filter((claim) => claim === null)).toHaveLength(7);
+  }, 60_000);
+
+  test("cuts and a sleep of one awake stretch at once meter every second once", async () => {
+    const limits = { perWorkspace: 100, perOwner: 100 };
+    const woke = new Date(Date.UTC(2026, 10, 30, 20));
+    const second = (n: number) => new Date(woke.getTime() + n * 1000);
+    for (let round = 0; round < 6; round++) {
+      const { canvas } = await seedCanvas(db);
+      await beginSandbox(db, { canvasId: canvas.id, now: woke, by: "w", limits });
+      await moveSandbox(db, {
+        canvasId: canvas.id,
+        from: ["waking"],
+        to: "awake",
+        now: woke,
+        by: "w",
+      });
+      // Four meters that all saw the stretch begin at `woke`, cutting at different points, and a
+      // sleep after all of them: whatever order the database takes them in, the events add up
+      // to the stretch, none overlaps another, and the sandbox ends asleep.
+      const results = await Promise.all([
+        ...times(4, (racer) =>
+          cutAwake(db, { canvasId: canvas.id, at: second(3600 + racer * 60), observedSince: woke }),
+        ),
+        moveSandbox(db, { canvasId: canvas.id, from: ["awake"], to: "asleep", now: second(7200) }),
+      ]);
+      const cuts = results.slice(0, 4).filter((result) => result === true);
+      expect(cuts.length).toBeLessThanOrEqual(1);
+      expect(results[4]).toMatchObject({ state: "asleep" });
+      const used = await db
+        .select({ seconds: usageEvents.seconds, at: usageEvents.occurredAt })
+        .from(usageEvents)
+        .where(eq(usageEvents.canvasId, canvas.id))
+        .orderBy(usageEvents.occurredAt);
+      expect(used.reduce((sum, event) => sum + event.seconds!, 0)).toBe(7200);
+      expect(used[0]!.at).toEqual(woke);
+      expect(used).toHaveLength(1 + cuts.length);
+    }
   }, 60_000);
 
   test("one person starting Claude sign-ins at once has one open", async () => {

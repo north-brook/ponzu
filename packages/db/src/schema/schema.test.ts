@@ -9,7 +9,6 @@ import { getCanvas } from "../queries/canvases.ts";
 import { commitOps } from "../queries/ops.ts";
 import { createQuestion } from "../queries/questions.ts";
 import { appendThreadItem } from "../queries/thread.ts";
-import { recordUsage } from "../queries/usage.ts";
 import { createTestDb } from "../testing.ts";
 import * as schema from "./index.ts";
 
@@ -131,7 +130,7 @@ describe("deleting", () => {
 
   test("a canvas leaves its usage behind, for the bill", async () => {
     const seeded = await seedCanvas(db);
-    await recordUsage(db, {
+    await db.insert(schema.usageEvents).values({
       id: "use_kept",
       workspaceId: seeded.workspace.id,
       canvasId: seeded.canvas.id,
@@ -143,7 +142,6 @@ describe("deleting", () => {
       payer: "ponzu",
       rateCardVersion: 1,
       occurredAt: new Date(),
-      periodStart: new Date("2026-11-01T00:00:00Z"),
     });
 
     await db.delete(schema.canvases).where(eq(schema.canvases.id, seeded.canvas.id));
