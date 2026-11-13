@@ -562,10 +562,23 @@ export function sendFrame(page: Page): Promise<SendFrame> {
   });
 }
 
-function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
-  return page.evaluate(
-    ([selector, steps]) =>
-      new Promise<Toggle>((resolve, reject) => {
+/** Where `toggle` leaves what it saw, on the page's window, for the test to read. */
+interface Toggled {
+  toggle?: Toggle;
+  failed?: string;
+}
+
+/**
+ * The press and its frames run in the page, and leave what they saw on the window, which the
+ * test reads once it is there: no evaluate waits on a promise in the page for longer than it
+ * takes to run. (The page gives up by itself, 10 s on, if the panes never rest.)
+ */
+async function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
+  await page.evaluate(
+    ([selector, steps]) => {
+      const toggled: Toggled = {};
+      (window as unknown as { toggled: Toggled }).toggled = toggled;
+      void new Promise<Toggle>((resolve, reject) => {
         const main = document.querySelector("main")!;
         const win = document.querySelector("header")!.parentElement!;
         const x = (el: Element | null | undefined) => el?.getBoundingClientRect().left ?? NaN;
@@ -702,9 +715,30 @@ function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
           }
           rest(end);
         });
-      }),
+      }).then(
+        (toggle) => {
+          toggled.toggle = toggle;
+        },
+        (error: unknown) => {
+          toggled.failed = String(error);
+        },
+      );
+    },
     [selector, steps] as const,
   );
+  for (;;) {
+    const settled = await page.evaluate(() => {
+      const { toggle, failed } = (window as unknown as { toggled: Toggled }).toggled;
+      return !!(toggle || failed);
+    });
+    if (settled) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const { toggle: seen, failed } = await page.evaluate(
+    () => (window as unknown as { toggled: Toggled }).toggled,
+  );
+  if (!seen) throw new Error(failed);
+  return seen;
 }
 
 /** Where one piece of the chrome is in a frame of an arrival, and how opaque it is drawn. */
