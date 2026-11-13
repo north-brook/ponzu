@@ -30,6 +30,7 @@ bun apps/studio/perf/run.ts --only website.zoom --profile traces   # keep each t
 | `metrics.ts` | What each number means, and when a difference is a change and not noise. |
 | `report.ts` | The pull request's comment, and main's history. |
 | `history.ts` | One line of history from a run, for the workflow. |
+| `desktop.sh` | The same on the desktop app, on a Mac's GPU, for spare ("Profiling"). |
 | `../../../.github/workflows/perf.yml` | Measures every pull request against its base, comments, keeps main's history. |
 
 ## The numbers
@@ -89,9 +90,44 @@ When a number moves, or something feels slow and no number says so yet:
 4. **Fix the cause, then re-run** with `--base` on the build from before the fix, and put the table
    in the pull request.
 
-To measure the packaged app on a Mac's GPU instead of headless Chrome, a checkout run takes
-`PONZU_FAKE_BACKEND=1` (apps/desktop/src/config.ts) and then accepts a debugging port; that runs on
-spare, never on a workstation.
+### On the desktop app
+
+Headless Chrome draws with no screen: its frame rate is a timer's, and its raster and GPU work
+are not a Mac's. To read those, the same scenarios run in the desktop app, on a Mac's GPU and
+display. It opens windows, so it runs on spare through fleet-work's desktop lease, never on a
+workstation or a person's Mac:
+
+```sh
+fleet job start spare --repo ponzu --source <checkout> --agent command --resource desktop \
+  --env PERF_BASE -- apps/studio/perf/desktop.sh --only website,examples --rounds 3
+fleet job wait <id> --artifacts-to <new dir>      # electron.md, headless.md, their .json and logs
+```
+
+`desktop.sh` builds the studio with the fake in it (`vite build --mode e2e`), and `PERF_BASE`'s
+(a commit) beside it, and the checkout's main process (`apps/desktop`, `bun scripts/build.ts`).
+It runs `run.ts --electron apps/desktop/run-dev.sh --head <dir> --base <dir>`, then the same in
+headless Chrome on the same machine. `PERF_RECORD=<seconds>` also records the screen, when the
+lease can.
+
+`--electron <launcher>` starts the checkout's app (Ponzu Local) for each suite, as headless takes a
+fresh browser, with `PONZU_FAKE_BACKEND=1`, `--remote-debugging-port=0`, and `PONZU_STUDIO_URL`
+set to the harness's own server of the build. On the fake backend the app keeps apart from the
+person: a throwaway data folder, no keychain, no links, and no request off the computer but to
+that server (apps/desktop/src/config.ts, `letThrough`). The harness attaches over CDP, puts the
+probe in, and reloads the window as `?as=returning`.
+
+`--cdp http://127.0.0.1:<port>` attaches to an app already running instead, and measures the
+studio it carries: a test build (`PONZU_TEST_BUILD=1 bun run package:dir` in apps/desktop, with
+the studio built `--mode e2e`) started with `PONZU_FAKE_BACKEND=1` and
+`--remote-debugging-port=<port>`. It takes no `--base`; run it once per build.
+
+Either way, only a window on Ponzu Cloud in memory is measured: the harness refuses a port off
+this computer and a window whose shell doesn't say `fake`. A release can't be attached to at all:
+it quits when given a debugging port, and its studio has no fake.
+
+The window is the app's own size at the display's density (the comment's machine line says
+which), not headless's 1512×945 at 2×, so compare an Electron run with another Electron run on
+the same Mac, not with CI's numbers.
 
 ## What we've learned
 
