@@ -103,7 +103,7 @@ export interface CanvasSearch {
    * names the window holds, while it is on its way.
    */
   busy: boolean;
-  /** The API didn't answer, and there is nothing else to show. */
+  /** The API didn't answer: `results` are the names the window holds, or null for none. */
   failed: boolean;
 }
 
@@ -140,10 +140,16 @@ export function shownResults({
       failed: false,
     };
   }
-  if (failed) return { ...NOTHING, failed: true };
+  const names = searchByName(query, [...canvases]);
+  // With no answer (the API is down, or is one from before it searched), the names the window
+  // holds still show, as search did before the API answered it; only with none is it said.
+  if (failed) {
+    return names.canvases.length
+      ? { results: names, busy: false, failed: true }
+      : { ...NOTHING, failed: true };
+  }
   // Names alone can't say there is nothing: with none of them matching, the list waits for the
   // answer ("Searching…" if it is slow) rather than saying "No results" before it is asked.
-  const names = searchByName(query, [...canvases]);
   return names.canvases.length ? { results: names, busy: true, failed: false } : NOTHING;
 }
 

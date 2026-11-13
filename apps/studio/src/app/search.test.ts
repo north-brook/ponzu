@@ -81,6 +81,15 @@ test("no answer and nothing to show says search isn't answering", () => {
   });
 });
 
+test("no answer, but names that match: the names the window holds still show", () => {
+  // An API without the route (one deployed before it), or one that is down: search by name,
+  // which needs no API, keeps working as it did before the API searched.
+  const shown = shownResults({ ...known, query: "pricing", failed: true });
+  expect(shown.failed).toBe(true);
+  expect(shown.busy).toBe(false);
+  expect(shown.results?.canvases.map((hit) => hit.canvas.id)).toEqual([pricing.id]);
+});
+
 test("each result opens where it is: a canvas, a board on its page, a page, a comment's thread", () => {
   const opened: (string | ResultPlace)[] = [];
   const open = {

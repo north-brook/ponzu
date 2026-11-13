@@ -149,7 +149,8 @@ export function useResultSelection(results: SearchResults | null) {
  * Results as you type, in groups (Canvases, Boards, Comments, Messages, Pull requests, People)
  * with what matched highlighted.
  * `results` is null while the first answer for the query is on its way; a line says so only if
- * that takes longer than a moment. `failed`: search didn't answer, and there is nothing to show.
+ * that takes longer than a moment. `failed`: search didn't answer; with no `results` either, a
+ * line says so.
  */
 export function SearchResultsView({
   query,

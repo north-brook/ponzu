@@ -259,8 +259,9 @@ request opens its canvas on the pull request tab, as ⌘P does; on the canvas al
 message or a pull request leaves its page as it was. A person sets the sidebar's filter to them
 (`{ person, projects: null }`). A comment deleted since its answer shows
 where it was and says "That comment was deleted. This is where it was." With nothing to show,
-"Searching…" appears after 300 ms; nothing found reads "No results for “q”"; no answer reads
-"Search isn't answering. Try again in a moment." Results are masked in a private recording.
+"Searching…" appears after 300 ms; nothing found reads "No results for “q”". With no answer
+(the API is down, or is one from before it had the route), the names the window holds still
+show; only when none match does it read "Search isn't answering. Try again in a moment." Results are masked in a private recording.
 
 ## Keyboard
 
