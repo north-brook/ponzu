@@ -5,6 +5,7 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
+    "./comment-picture": "./src/comment-picture.tsx",
     "./icons": "./src/icons.tsx",
     "./ladder": "./src/ladder.ts",
     "./modifier-hint": "./src/modifier-hint.ts",
@@ -23,6 +24,7 @@
     "@ponzu/render": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "modern-screenshot": "^4.7.0",
     "radix-ui": "^1.8.1",
     "tailwind-merge": "^3.7.0"
   },

@@ -6,6 +6,7 @@ import type {
   SessionPersistence,
   SignInResult,
 } from "@ponzu/desktop/bridge";
+import type { Beat } from "../cloud/create/landing.ts";
 import type { Lights } from "../cloud/window/chrome.tsx";
 
 declare global {
@@ -75,6 +76,12 @@ export interface Host {
    * Absent where there is no shell.
    */
   setUsageSharing?(enabled: boolean): Promise<boolean>;
+  /**
+   * How the beat after a send from the create page passes (cloud/create/landing.ts). Left out
+   * everywhere but the in-memory host's tests, which end it when they say: the window's clock,
+   * LANDING_BEAT_MS.
+   */
+  landingBeat?: Beat;
 }
 
 /** The shell's notifications, with the app's version for registering this install. */

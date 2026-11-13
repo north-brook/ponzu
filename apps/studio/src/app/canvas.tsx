@@ -115,49 +115,96 @@ export function useOpenCanvas(
       setOpen(null);
       return;
     }
-    const { api, live } = host;
-    const source = new CloudSource({
-      api,
-      live,
-      canvasId,
-      me: actor,
-      focused: focusedNow.current,
-      ...(cache ? { cache } : {}),
-    });
-    const thread = new ThreadStore({ ponzu, live, canvasId, meId: actor.id }).start();
     const known = made.current?.id === canvasId ? made.current : null;
-    if (known?.message) thread.seed(known.message, known.attachments);
-    const asks = new AskStore({ ponzu, live, canvasId, onError: (m) => saying.current(m) });
-    asks.start();
-    const uploads = new Uploads({ ponzu, canvasId });
-    const pictures = new CommentPictures({
-      canvasId,
-      meId: actor.id,
-      source,
-      api: api.canvases,
-      draw: drawCommentPicture,
-      drawable: hasPictureArea,
-    }).start();
-    const pullRequest = new PullRequestStore({
+    const { canvas, close } = openCanvas({
+      host,
       ponzu,
+      actor,
+      cache,
       canvasId,
-      say: (m) => saying.current(m),
-      tellAgent: (text) => thread.send(text, []),
+      focused: focusedNow.current,
+      known,
+      saying,
     });
-    setOpen({ id: canvasId, source, thread, asks, uploads, pictures, pullRequest, fresh: known });
-    return () => {
+    setOpen(canvas);
+    return close;
+  }, [host, ponzu, actor, cache, canvasId]);
+  // The source alone, not `open`: a closure here that read `open` would put it in this render's
+  // scope, which the closures of the canvas opened next would then keep (see `openCanvas`).
+  const openSource = open?.source;
+  useEffect(() => {
+    openSource?.setFocused(focused);
+  }, [openSource, focused]);
+  return open && open.id === canvasId ? open : null;
+}
+
+/**
+ * Makes an open canvas's source and stores, and what closes them. It lives outside the hook on
+ * purpose: V8 gives every closure made in one function a single shared scope, chained to the scope
+ * of the render around it. Closures the stores keep (an ask's error, the pull request's sentence
+ * and its word to the agent) made inside the hook's effect would keep that render, and with it
+ * the canvas open before, whose stores keep the render before that: every canvas opened in the
+ * window, with its whole document, for as long as the window lives. Made here, they keep only
+ * what they are given.
+ */
+function openCanvas({
+  host,
+  ponzu,
+  actor,
+  cache,
+  canvasId,
+  focused,
+  known,
+  saying,
+}: {
+  host: Host;
+  ponzu: ConstructorParameters<typeof ThreadStore>[0]["ponzu"];
+  actor: Actor;
+  cache: DocCache | undefined;
+  canvasId: string;
+  focused: boolean;
+  known: FreshCanvas | null;
+  saying: { readonly current: (notice: string) => void };
+}): { canvas: OpenCanvas; close: () => void } {
+  const { api, live } = host;
+  const source = new CloudSource({
+    api,
+    live,
+    canvasId,
+    me: actor,
+    focused,
+    ...(cache ? { cache } : {}),
+  });
+  const thread = new ThreadStore({ ponzu, live, canvasId, meId: actor.id }).start();
+  if (known?.message) thread.seed(known.message, known.attachments);
+  const asks = new AskStore({ ponzu, live, canvasId, onError: (m) => saying.current(m) });
+  asks.start();
+  const uploads = new Uploads({ ponzu, canvasId });
+  const pictures = new CommentPictures({
+    canvasId,
+    meId: actor.id,
+    source,
+    api: api.canvases,
+    draw: drawCommentPicture,
+    drawable: hasPictureArea,
+  }).start();
+  const pullRequest = new PullRequestStore({
+    ponzu,
+    canvasId,
+    say: (m) => saying.current(m),
+    tellAgent: (text) => thread.send(text, []),
+  });
+  return {
+    canvas: { id: canvasId, source, thread, asks, uploads, pictures, pullRequest, fresh: known },
+    close: () => {
       source.close();
       thread.close();
       asks.close();
       uploads.close();
       pictures.close();
       pullRequest.close();
-    };
-  }, [host, ponzu, actor, cache, canvasId]);
-  useEffect(() => {
-    open?.source.setFocused(focused);
-  }, [open, focused]);
-  return open && open.id === canvasId ? open : null;
+    },
+  };
 }
 
 export function useSourceState(source: CloudSource) {

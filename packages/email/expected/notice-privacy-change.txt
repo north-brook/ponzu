@@ -1,0 +1,16 @@
+Subject: Ponzu's privacy policy changes on February 1
+Preview: Ponzu will use your email address to send a Friday recap of what you shipped.
+
+Ponzu's privacy policy changes on February 1
+
+Ponzu will use your email address to send a Friday recap of what you shipped.
+
+Read the new policy https://ponzu.design/privacy
+
+See what changed on GitHub https://github.com/north-brook/ponzu/commits/main/apps/web/app/(legal)/privacy/page.mdx
+
+You get this because Ponzu's terms promise it by email. It can't be turned off.
+
+Questions? Reply to this email.
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { launchChromium, type TestChromium } from "@ponzu/render/testing";
 import { ARRIVE_LAG_MS } from "./arrive.ts";
+import { bundle, canvasCss } from "./dom-lib.ts";
 
 /*
  * An empty canvas's first board, in a real browser: the view waits at 100% where the board will
@@ -12,13 +12,6 @@ import { ARRIVE_LAG_MS } from "./arrive.ts";
  */
 
 type Page = Parameters<NonNullable<ChromiumOptions["preparePage"]>>[0];
-type Browser = { newPage(): Promise<Page>; close(): Promise<void> };
-const { chromium: playwright } = (await import(
-  Bun.resolveSync(
-    "playwright-core",
-    dirname(Bun.resolveSync("@ponzu/render/chromium", import.meta.dir)),
-  )
-)) as { chromium: { launch(o: object): Promise<Browser> } };
 const chromium = findChromium();
 setDefaultTimeout(30_000);
 
@@ -104,34 +97,48 @@ window.pzDashAt = (t) => {
 };
 `;
 
+/**
+ * Waits for the canvas to come to rest: a zoom shown, and the zoom, every board's place and the
+ * count of finite animations still running (none) the same over four frames in a row. A wait on
+ * the camera, not on time: a slow machine changes how long it takes, never what it finds.
+ */
+const settled = (page: Page) =>
+  page.waitForFunction(
+    () => {
+      const w = window as any;
+      const zoom = [...document.querySelectorAll("button, span")]
+        .map((e) => e.textContent)
+        .find((t) => /^\d+%$/.test(t ?? ""));
+      const boards = [...document.querySelectorAll("[data-pz-board]")].map((el) => {
+        const r = el.getBoundingClientRect();
+        return `${r.left},${r.top},${r.width},${r.height}`;
+      });
+      const moving = document
+        .getAnimations()
+        .filter(
+          (a) => a.playState === "running" && a.effect?.getComputedTiming().endTime !== Infinity,
+        ).length;
+      const now = `${zoom}|${boards.join(";")}|${moving}`;
+      if (moving === 0 && now === w.pzRest?.last) w.pzRest.same++;
+      else w.pzRest = { last: now, same: 0 };
+      return zoom !== undefined && w.pzRest.same >= 3;
+    },
+    undefined,
+    { polling: "raf" },
+  );
+
 describe.skipIf(!chromium)("an empty canvas's first board in Chromium", () => {
-  let browser: Browser;
+  let browser: TestChromium;
   let page: Page;
   let code: string;
   let css: string;
 
   beforeAll(async () => {
-    const dir = import.meta.dir;
-    const entry = join(dir, ".first-board-entry.tsx");
-    await Bun.write(entry, ENTRY);
-    const built = await Bun.build({
-      entrypoints: [entry],
-      target: "browser",
-      format: "esm",
-      define: { "process.env.NODE_ENV": '"production"' },
-    });
-    await Bun.file(entry).delete();
-    if (!built.success) throw new AggregateError(built.logs, "bundle failed");
-    code = await built.outputs[0]!.text();
-    const out = join(tmpdir(), `pz-first-${process.pid}.css`);
-    const tw = Bun.spawnSync(
-      [join(dir, "../node_modules/.bin/tailwindcss"), "-i", join(dir, "styles.css"), "-o", out],
-      { stderr: "pipe" },
-    );
-    if (tw.exitCode !== 0) throw new Error(tw.stderr.toString());
-    css = await Bun.file(out).text();
-    await Bun.file(out).delete();
-    browser = await playwright.launch({ executablePath: chromium!, headless: true });
+    [code, css] = await Promise.all([
+      bundle("first-board", ENTRY, { "process.env.NODE_ENV": '"production"' }),
+      canvasCss(),
+    ]);
+    browser = await launchChromium(chromium!);
   });
   afterAll(() => browser?.close());
 
@@ -145,9 +152,10 @@ describe.skipIf(!chromium)("an empty canvas's first board in Chromium", () => {
     await page.addScriptTag({ content: code, type: "module" });
     await page.waitForFunction(() => "pzMount" in window);
     await page.evaluate(() => (window as any).pzMount());
-    await new Promise((r) => setTimeout(r, 300));
+    await settled(page);
     await page.evaluate(() => (window as any).pzWatch());
-    await new Promise((r) => setTimeout(r, 100));
+    // A few frames of the empty page are watched before the board lands.
+    await page.waitForFunction(() => (window as any).pzFrames.length >= 6);
     await page.evaluate(() => (window as any).pzCreate(0, 0));
     await page.waitForFunction(() => (window as any).pzDone);
     const frames = (await page.evaluate(() => (window as any).pzFrames)) as {
@@ -198,17 +206,10 @@ describe.skipIf(!chromium)("an empty canvas's first board in Chromium", () => {
     await page.addScriptTag({ content: code, type: "module" });
     await page.waitForFunction(() => "pzMount" in window);
     await page.evaluate(() => (window as any).pzMount());
-    await new Promise((r) => setTimeout(r, 200));
+    await settled(page);
     await page.evaluate(() => (window as any).pzCreate(0, 0));
-    await new Promise((r) => setTimeout(r, 600));
-    // The person zooms in and pans away from where the board landed.
-    await page.mouse.move(600, 400);
-    await page.keyboard.down("Control");
-    await page.mouse.wheel(0, -60);
-    await page.keyboard.up("Control");
-    await new Promise((r) => setTimeout(r, 300));
-    await page.mouse.wheel(240, 160);
-    await new Promise((r) => setTimeout(r, 300));
+    await page.waitForFunction(() => document.querySelector("[data-pz-board]") !== null);
+    await settled(page);
     const camera = () =>
       page.evaluate(() => {
         const zoom = [...document.querySelectorAll("button, span")]
@@ -217,17 +218,37 @@ describe.skipIf(!chromium)("an empty canvas's first board in Chromium", () => {
         const r = document.querySelector("[data-pz-board]")?.getBoundingClientRect();
         return { zoom, at: r ? `${Math.round(r.left)},${Math.round(r.top)}` : null };
       });
+    // The person zooms in and pans away from where the board landed.
+    await page.mouse.move(600, 400);
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -60);
+    await page.keyboard.up("Control");
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll("button, span")].some(
+        (e) => /^\d+%$/.test(e.textContent ?? "") && e.textContent !== "100%",
+      ),
+    );
+    await settled(page);
+    const zoomed = await camera();
+    await page.mouse.wheel(240, 160);
+    await page.waitForFunction((at) => {
+      const r = document.querySelector("[data-pz-board]")!.getBoundingClientRect();
+      return `${Math.round(r.left)},${Math.round(r.top)}` !== at;
+    }, zoomed.at);
+    await settled(page);
     const before = await camera();
     expect(before.zoom).not.toBe("100%");
     await page.evaluate(() =>
       (window as any).pzSource.apply({ op: "artboard.delete", id: "ab_card" }),
     );
-    await new Promise((r) => setTimeout(r, 200));
+    await page.waitForFunction(() => document.querySelector("[data-pz-board]") === null);
+    await settled(page);
     const empty = await camera();
     expect(empty.at).toBeNull();
     expect(empty.zoom).toBe(before.zoom);
     await page.evaluate(() => (window as any).pzSource.undo());
-    await new Promise((r) => setTimeout(r, 300));
+    await page.waitForFunction(() => document.querySelector("[data-pz-board]") !== null);
+    await settled(page);
     expect(await camera()).toEqual(before);
     await page.close();
   });

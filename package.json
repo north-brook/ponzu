@@ -1,7 +1,7 @@
 {
   "name": "ponzu-monorepo",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "workspaces": [
     "packages/*",
@@ -11,7 +11,7 @@
     "dev": "bun run --filter @ponzu/studio dev",
     "build": "bun run --filter '*' build",
     "test": "bun test",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit && tsc -p packages/client/tsconfig.model.json --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
     "evals": "bun scripts/evals.ts"
@@ -23,6 +23,7 @@
     "@neondatabase/api-client": "2.7.3",
     "@octokit/core": "7.0.8",
     "@ponzu/evals": "workspace:*",
+    "@react-email/ui": "6.11.5",
     "@types/bun": "latest",
     "@vercel/sdk": "1.28.53",
     "@workos-inc/node": "12.0.0",
@@ -30,10 +31,13 @@
     "typescript": "^5.9.3",
     "zod": "^4"
   },
+  "overrides": {
+    "@react-email/render": "2.2.0"
+  },
   "patchedDependencies": {
     "@react-native-menu/menu@2.0.0": "patches/@react-native-menu%2Fmenu@2.0.0.patch",
     "react-native-screens@4.30.0": "patches/react-native-screens@4.30.0.patch",
     "expo-router@58.0.25": "patches/expo-router@58.0.25.patch"
   },
-  "packageManager": "bun@1.4.2"
+  "packageManager": "bun@1.4.4"
 }

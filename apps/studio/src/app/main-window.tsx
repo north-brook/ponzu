@@ -666,10 +666,14 @@ function WorkspaceWindow({
   /** The canvas the send made, once the API has said. */
   const sentFor = useRef<string | null>(null);
   const railOpen = sent ? true : ui.railOpen;
-  useLanding(sent, (open) => {
-    setSent(null);
-    update((now) => ({ ...now, railOpen: open }));
-  });
+  useLanding(
+    sent,
+    (open) => {
+      setSent(null);
+      update((now) => ({ ...now, railOpen: open }));
+    },
+    host.landingBeat,
+  );
   const railToggle = {
     open: railOpen,
     onToggle: () => {

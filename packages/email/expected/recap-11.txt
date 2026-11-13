@@ -1,0 +1,58 @@
+Subject: Shipped this week: Kettle onboarding and 10 more
+Preview: 12 pull requests from your canvases were merged this week.
+
+Friday, November 13
+
+Shipped this week
+
+Merged since last Friday, from canvases you own.
+
+Kettle onboarding https://ponzu.design/canvases/cnv_1?open=pull-request
+
+#41 and #44 merged this week · Northbrook
+
+Pricing page https://ponzu.design/canvases/cnv_2?open=pull-request
+
+#44 merged Wednesday · Kettle Labs
+
+Settings refresh https://ponzu.design/canvases/cnv_3?open=pull-request
+
+#47 merged Thursday · Northbrook
+
+Empty states https://ponzu.design/canvases/cnv_4?open=pull-request
+
+#50 merged Monday · Kettle Labs
+
+Search results https://ponzu.design/canvases/cnv_5?open=pull-request
+
+#53 merged Tuesday · Northbrook
+
+Billing banner https://ponzu.design/canvases/cnv_6?open=pull-request
+
+#56 merged Wednesday · Kettle Labs
+
+Invite flow https://ponzu.design/canvases/cnv_7?open=pull-request
+
+#59 merged Thursday · Northbrook
+
+Mobile nav https://ponzu.design/canvases/cnv_8?open=pull-request
+
+#62 merged Monday · Kettle Labs
+
+Changelog https://ponzu.design/canvases/cnv_9?open=pull-request
+
+#65 merged Tuesday · Northbrook
+
+Docs home https://ponzu.design/canvases/cnv_10?open=pull-request
+
+#68 merged Wednesday · Kettle Labs
+
+And 1 more canvas.
+
+Have a good weekend.
+
+You get this on Fridays when a pull request from a canvas you own was merged.
+
+Stop Friday emails https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.recap.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

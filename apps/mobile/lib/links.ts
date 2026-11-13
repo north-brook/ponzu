@@ -1,8 +1,8 @@
 import { type AppLink, parseAppLink } from "@ponzu/core/links";
 
 /*
- * The app's only reader of links: deep links (app/+native-intent.tsx), and later pushes and the
- * links in a thread. A link is only ever a request to show something the person could open
+ * The app's only reader of links: deep links (app/+native-intent.tsx), pings (whose ids
+ * lib/push/payload.ts turns into a link through `@ponzu/core/push`) and the links in a thread. A link is only ever a request to show something the person could open
  * anyway: it never signs in, writes or sends anything. It must use this build's own scheme
  * (`ponzu`, or Ponzu Dev's `ponzu-dev`); anything else is refused, so a link meant for the
  * other app never opens here.
@@ -25,6 +25,8 @@ export type Route =
         question?: string;
         thread?: string;
         message?: string;
+        /** Opened by a tap on a ping (lib/push/payload.ts); never from a link. */
+        ping?: string;
       };
     }
   | { screen: "github-setup"; params: { result: string; workspace?: string } }
@@ -91,6 +93,46 @@ export function pathOf(route: Route): string {
       return "/auth/callback";
     case "settings":
       return `/settings${query(route.params)}`;
+  }
+}
+
+/** A page's or board's id, as the canvas's own addresses carry them. */
+const PLACE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** A canvas's own address on the web, exactly: https, the host alone, the one path. */
+const CANVAS_ADDRESS =
+  /^https:\/\/ponzu\.design\/(?:canvases|designs)\/([A-Za-z0-9_-]{1,64})\/?(?:\?([^#\s]*))?(?:#[^\s]*)?$/;
+
+/**
+ * A link in Ponzu's reply in the thread, if it is to a canvas: the canvas's own address as the
+ * API gives it to the agent (`https://ponzu.design/canvases/<id>?page=…` or `?artboard=…`, and
+ * the older `/designs/<id>`), or this build's own canvas link. Anything else is an ordinary link
+ * (or none). Read exactly, as the Mac reads it (apps/studio/src/cloud/ui/canvas-address.ts): a
+ * place that isn't an id, or named twice, makes it not a canvas link at all.
+ */
+export function threadLink(
+  href: string,
+  scheme: string,
+): Extract<Route, { screen: "canvas" }> | null {
+  const address = CANVAS_ADDRESS.exec(href.trim());
+  if (address) {
+    const params: { page?: string; artboard?: string } = {};
+    for (const pair of (address[2] ?? "").split("&")) {
+      if (!pair) continue;
+      const at = pair.indexOf("=");
+      const name = at < 0 ? pair : pair.slice(0, at);
+      const value = at < 0 ? "" : pair.slice(at + 1);
+      if (name !== "page" && name !== "artboard") continue;
+      if (params[name] !== undefined || !PLACE_ID.test(value)) return null;
+      params[name] = value;
+    }
+    return { screen: "canvas", id: address[1]!, params };
+  }
+  try {
+    const route = parseLink(href.trim(), scheme);
+    return route?.screen === "canvas" ? route : null;
+  } catch {
+    // React Native's URLSearchParams throws on bad percent-encoding: not a canvas link.
+    return null;
   }
 }
 

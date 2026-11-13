@@ -147,6 +147,7 @@ test("the Mac's release leaves out what Release Please leaves out of it", () => 
     "packages/db",
     "packages/sandbox",
     "packages/evals",
+    "packages/email",
     "infra",
     "docs",
   ]);

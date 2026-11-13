@@ -105,6 +105,71 @@ afterEach(() => {
 });
 
 describe("comments on a canvas", () => {
+  test("a comment's picture: the page is asked for it, and the thread keeps its PNG", async () => {
+    await openPricing();
+    await waitFor(() => expect(commentEnabled()).toBe(true));
+    const pageId = pricing().sequencer.doc.pages[0]!.id;
+    await say({ t: "longpress", pageId, artboardId: "ab_plans", x: 40, y: 60 });
+    await typeAndSend("With a picture");
+    const op = sent("op").find((m) => m.t === "op" && m.op.op === "thread.create");
+    const thread = op?.t === "op" && op.op.op === "thread.create" ? op.op.thread : null;
+    const messageId = thread!.messages[0]!.id;
+    // Asked of the page as it is sent, after the op that puts it on the canvas.
+    await waitFor(() => expect(sent("picture")).toHaveLength(1));
+    const ask = sent("picture")[0]!;
+    expect(ask).toEqual({
+      t: "picture",
+      id: expect.any(String),
+      threadId: thread!.id,
+      messageId,
+    });
+    expect(mockPage.got.findIndex((m) => m.t === "picture")).toBeGreaterThan(
+      mockPage.got.indexOf(op!),
+    );
+    // The page draws it and answers with each theme's PNG.
+    await say({
+      t: "picture",
+      id: ask.t === "picture" ? ask.id : "",
+      light: btoa("\x89PNG light"),
+      dark: btoa("\x89PNG dark"),
+    });
+    const kept = () =>
+      pricing().thread.find(
+        ({ item }) => item.kind === "comment" && item.payload.messageId === messageId,
+      )?.item.payload as { picture?: { light: string; dark: string } } | undefined;
+    await waitFor(() =>
+      expect(kept()?.picture).toMatchObject({
+        light: expect.stringMatching(/\.png$/),
+        dark: expect.stringMatching(/\.png$/),
+      }),
+    );
+    // The chat shows it from here, as it was drawn, without loading it back.
+    await fireEvent.press(screen.getByTestId("stack-chat"));
+    expect(await screen.findByTestId("chat-comment-picture")).toBeTruthy();
+  });
+
+  test("a comment whose page draws no picture still goes, and reads without one", async () => {
+    await openPricing();
+    await waitFor(() => expect(commentEnabled()).toBe(true));
+    const pageId = pricing().sequencer.doc.pages[0]!.id;
+    await say({ t: "longpress", pageId, x: 90_000, y: 90_000 });
+    await typeAndSend("Far out");
+    await waitFor(() => expect(sent("picture")).toHaveLength(1));
+    const ask = sent("picture")[0]!;
+    await say({ t: "picture", id: ask.t === "picture" ? ask.id : "", none: true });
+    await waitFor(() =>
+      expect(
+        pricing().thread.some(
+          ({ item }) => item.kind === "comment" && item.payload.text === "Far out",
+        ),
+      ).toBe(true),
+    );
+    const item = pricing().thread.find(
+      ({ item }) => item.kind === "comment" && item.payload.text === "Far out",
+    )?.item.payload as { picture?: unknown };
+    expect(item.picture).toBeUndefined();
+  });
+
   test("Comment, a tap, words, Send: the comment is on the canvas at once, then the API's", async () => {
     await openPricing();
     await waitFor(() => expect(commentEnabled()).toBe(true));

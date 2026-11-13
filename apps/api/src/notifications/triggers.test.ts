@@ -538,15 +538,18 @@ describe("billing", () => {
     expect(pushesTo(phone.token)).toHaveLength(0);
   });
 
-  test("a personal workspace's person hears it as theirs", async () => {
-    const { ws, owner, mate, phone } = await billed();
-    // A personal workspace has one person; the others are taken out.
-    await t.db.execute(`update workspaces set kind = 'personal' where id = '${ws.id}'`);
-    for (const login of [mate, `lee${scenes}`, `ines${scenes}`]) {
-      await t.db.execute(
-        `delete from memberships where workspace_id = '${ws.id}' and user_id = '${ws.people[login]!.userId}'`,
-      );
-    }
+  test("a personal workspace's person hears it as theirs, and its collaborators never do", async () => {
+    const { ws, owner, mate, other, reader, phone } = await billed();
+    // The workspace is the owner's own GitHub account. Everyone else in it is a collaborator on
+    // its repos, one of them made an admin.
+    await t.db.execute(
+      `update workspaces set kind = 'personal', github_account_id = ${ws.people[owner]!.github.id} where id = '${ws.id}'`,
+    );
+    await t.db.execute(
+      `update memberships set role = 'admin' where workspace_id = '${ws.id}' and user_id = '${ws.people[mate]!.userId}'`,
+    );
+    const collaborators = [mate, other, reader];
+    const phones = await Promise.all(collaborators.map((login) => registerPhone(ws, login)));
     await notify(t.deps, {
       kind: "billing",
       workspaceId: ws.id,
@@ -558,7 +561,10 @@ describe("billing", () => {
     expect(pushesTo(phone.token).map((message) => message.body)).toEqual([
       "You've used this month's free credits.",
     ]);
-    expect((await rowsOf({ workspaceId: ws.id }))[0]!.userId).toBe(ws.people[owner]!.userId);
+    // One row, the person's: no collaborator has it in their inbox or on their phone.
+    const rows = await rowsOf({ workspaceId: ws.id });
+    expect(rows.map((row) => row.userId)).toEqual([ws.people[owner]!.userId]);
+    for (const collaborator of phones) expect(pushesTo(collaborator.token)).toHaveLength(0);
   });
 
   test("an admin who is not one by the time it goes is not pinged", async () => {
@@ -583,5 +589,40 @@ describe("billing", () => {
       state: "cancelled",
       outcome: "access",
     });
+  });
+
+  test("a collaborator's billing row in a personal workspace is not sent, its person's is", async () => {
+    const { ws, owner, mate, phone } = await billed();
+    const matePhone = await registerPhone(ws, mate);
+    await registerMac(ws, owner);
+    await registerMac(ws, mate);
+    // Written while the workspace counted both as admins, as an older API would have for a
+    // personal workspace's collaborator.
+    await t.db.execute(
+      `update memberships set role = 'admin' where workspace_id = '${ws.id}' and user_id = '${ws.people[mate]!.userId}'`,
+    );
+    await notify(t.deps, {
+      kind: "billing",
+      workspaceId: ws.id,
+      periodStart: PERIOD,
+      notice: "free_used",
+      amountCents: null,
+    });
+    await t.backgroundDone();
+    const rows = await rowsOf({ workspaceId: ws.id });
+    const mateRow = rows.find((row) => row.userId === ws.people[mate]!.userId);
+    expect(mateRow).toBeDefined();
+    expect((await deliveriesOf(mateRow!.id))[0]).toMatchObject({ state: "waiting" });
+    // Before it goes, the workspace turns out to be the owner's own account.
+    await t.db.execute(
+      `update workspaces set kind = 'personal', github_account_id = ${ws.people[owner]!.github.id} where id = '${ws.id}'`,
+    );
+    await later(MAC_DEFER_MS);
+    expect(pushesTo(matePhone.token)).toHaveLength(0);
+    expect((await deliveriesOf(mateRow!.id))[0]).toMatchObject({
+      state: "cancelled",
+      outcome: "access",
+    });
+    expect(pushesTo(phone.token)).toHaveLength(1);
   });
 });

@@ -5,8 +5,9 @@
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { launchChromium } from "@ponzu/render/testing";
 import type { Composition, Rect } from "../src/cloud/gallery/compositions.ts";
 import { prebuilt } from "./prebuilt.ts";
 
@@ -49,12 +50,9 @@ export const SITE_SCALE = 2;
 
 export const chromiumPath = findChromium();
 
-export async function launch(): Promise<Browser> {
-  if (!chromiumPath) throw new Error("No Chrome or Chromium found (set PONZU_CHROMIUM).");
-  const { chromium } = (await import(
-    Bun.resolveSync("playwright-core", dirname(Bun.resolveSync("@ponzu/render/chromium", STUDIO)))
-  )) as { chromium: { launch(o: object): Promise<Browser> } };
-  return chromium.launch({ executablePath: chromiumPath, headless: true });
+/** Headless Chromium whose close() kills it rather than waiting on Chrome to quit (@ponzu/render/testing). */
+export function launch(): Promise<Browser> {
+  return launchChromium(chromiumPath);
 }
 
 /**
@@ -562,10 +560,23 @@ export function sendFrame(page: Page): Promise<SendFrame> {
   });
 }
 
-function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
-  return page.evaluate(
-    ([selector, steps]) =>
-      new Promise<Toggle>((resolve, reject) => {
+/** Where `toggle` leaves what it saw, on the page's window, for the test to read. */
+interface Toggled {
+  toggle?: Toggle;
+  failed?: string;
+}
+
+/**
+ * The press and its frames run in the page, and leave what they saw on the window, which the
+ * test reads once it is there: no evaluate waits on a promise in the page for longer than it
+ * takes to run. (The page gives up by itself, 10 s on, if the panes never rest.)
+ */
+async function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
+  await page.evaluate(
+    ([selector, steps]) => {
+      const toggled: Toggled = {};
+      (window as unknown as { toggled: Toggled }).toggled = toggled;
+      void new Promise<Toggle>((resolve, reject) => {
         const main = document.querySelector("main")!;
         const win = document.querySelector("header")!.parentElement!;
         const x = (el: Element | null | undefined) => el?.getBoundingClientRect().left ?? NaN;
@@ -702,9 +713,30 @@ function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
           }
           rest(end);
         });
-      }),
+      }).then(
+        (toggle) => {
+          toggled.toggle = toggle;
+        },
+        (error: unknown) => {
+          toggled.failed = String(error);
+        },
+      );
+    },
     [selector, steps] as const,
   );
+  for (;;) {
+    const settled = await page.evaluate(() => {
+      const { toggle, failed } = (window as unknown as { toggled: Toggled }).toggled;
+      return !!(toggle || failed);
+    });
+    if (settled) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const { toggle: seen, failed } = await page.evaluate(
+    () => (window as unknown as { toggled: Toggled }).toggled,
+  );
+  if (!seen) throw new Error(failed);
+  return seen;
 }
 
 /** Where one piece of the chrome is in a frame of an arrival, and how opaque it is drawn. */

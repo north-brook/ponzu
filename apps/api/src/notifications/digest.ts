@@ -9,16 +9,18 @@ import {
   notifyWorkspaceFacts,
   stampDigestSent,
 } from "@ponzu/db";
+import { renderEmail } from "@ponzu/email";
 import { z } from "zod";
 import type { Deps } from "../deps/index.ts";
-import { MailError, mailErrorOf } from "../deps/mail.ts";
-import { RetryLater } from "../jobs/retry.ts";
+import { emailPaused } from "../email/kinds.ts";
+import { canvasHref, settingsHref } from "../email/links.ts";
+import { sendEmail } from "../email/send.ts";
+import type { Environment } from "../env.ts";
 import { type JobDeps, type RunningJob, runJob } from "../jobs/run.ts";
 import { titleOf } from "./copy.ts";
 import { canvasFactsOf } from "./facts.ts";
 import { isBillingKind } from "./kinds.ts";
 import { billingRecipients, canRead } from "./recipients.ts";
-import { unsubscribeToken } from "./unsubscribe.ts";
 
 /*
  * The daily email (docs/cloud.md, "Notifications"): once a day, from 9:00 where the person is,
@@ -28,10 +30,11 @@ import { unsubscribeToken } from "./unsubscribe.ts";
  *
  * Every five minutes the cron's `digests` step records an `email.digest` job for each of up to
  * `DIGEST_BATCH` people whose email is due (`digestsDue`), keyed `digest:<user>:<local date>`,
- * and runs them one after another. The job reads
- * their notifications, drops what they can no longer read, sends one email through `deps.mail`
- * with the job's key as Resend's idempotency key, and stamps `digest_sent_on`. With nothing to
- * say it only stamps.
+ * and runs them one after another. The job reads their notifications, drops what they can no
+ * longer read and the billing notices that had an email of their own, sends one email through
+ * `sendEmail` (email/send.ts) with the job's key as Resend's idempotency key, and stamps
+ * `digest_sent_on`. With nothing to say it only stamps. While `digest` is in PONZU_EMAIL_PAUSED
+ * nothing is recorded, and a job recorded before stamps the day without sending.
  *
  * The email says nothing a ping would not: each canvas's name (or a billing ping's workspace's)
  * and the rows' own sentences, which copy.ts wrote. Never anything a person or the agent wrote
@@ -45,12 +48,6 @@ export const DIGEST_WINDOW_MS = 24 * 60 * 60_000;
 
 /** At most this many lines under one canvas; the rest are counted in a last line. */
 export const DIGEST_LINES_PER_GROUP = 10;
-
-/** How long a send that Resend could not take now waits before it is tried again. */
-const DIGEST_RETRY_MS = 5 * 60_000;
-
-/** Where a canvas's link lands: the site's page that hands it to the app. */
-export const SITE_URL = "https://ponzu.design";
 
 const DigestPayload = z.object({
   userId: z.string().min(1).max(64),
@@ -88,7 +85,9 @@ export async function enqueueDigests(
   deps: JobDeps & Pick<Deps, "background">,
   now: Date,
 ): Promise<{ due: number; recorded: number }> {
-  if (!deps.mail.enabled) return { due: 0, recorded: 0 };
+  if (!deps.mail.enabled || emailPaused(deps.config.email, "digest")) {
+    return { due: 0, recorded: 0 };
+  }
   const due = await digestsDue(deps.db, { now, limit: DIGEST_BATCH });
   const worker = `${DIGEST_JOB}:${crypto.randomUUID()}`;
   const held: Job[] = [];
@@ -130,16 +129,23 @@ export interface DigestEmail {
   text: string;
 }
 
-/** The link a row opens on the site: its canvas, with what to open there riding along. */
-export function digestHref(row: Pick<Notification, "canvasId" | "link">): string | null {
-  if (!row.canvasId) return null;
-  const url = new URL(`/canvases/${encodeURIComponent(row.canvasId)}`, SITE_URL);
-  url.searchParams.set("open", row.link.open);
-  if (row.link.pageId) url.searchParams.set("page", row.link.pageId);
-  if (row.link.artboardId) url.searchParams.set("artboard", row.link.artboardId);
-  if (row.link.questionId) url.searchParams.set("question", row.link.questionId);
-  if (row.link.commentThreadId) url.searchParams.set("comment", row.link.commentThreadId);
-  return url.toString();
+/**
+ * The link a row opens on the site (email/links.ts): its canvas, with what to open there riding
+ * along, or for a billing notice its workspace's Plan and usage.
+ */
+export function digestHref(
+  environment: Environment,
+  row: Pick<Notification, "id" | "canvasId" | "workspaceId" | "kind" | "link">,
+): string | null {
+  if (row.canvasId) return canvasHref(environment, row.canvasId, row.link);
+  if (isBillingKind(row.kind) && row.workspaceId) {
+    return settingsHref(environment, {
+      section: "usage",
+      workspaceId: row.workspaceId,
+      notificationId: row.id,
+    });
+  }
+  return null;
 }
 
 /**
@@ -154,7 +160,7 @@ export function digestHref(row: Pick<Notification, "canvasId" | "link">): string
  * or a kept answer that changed to less than read, drops the canvas.
  */
 export async function digestGroups(
-  deps: Pick<JobDeps, "db">,
+  deps: Pick<JobDeps, "db" | "config">,
   userId: string,
   rows: readonly Notification[],
 ): Promise<DigestGroup[]> {
@@ -190,7 +196,10 @@ export async function digestGroups(
     groups.push({
       group: {
         name: titleOf(name),
-        lines: kept.map((row) => ({ text: row.body, href: digestHref(row) })),
+        lines: kept.map((row) => ({
+          text: row.body,
+          href: digestHref(deps.config.build.environment, row),
+        })),
         more: sorted.length - kept.length,
         billing: kind === "workspace",
       },
@@ -200,99 +209,18 @@ export async function digestGroups(
   return groups.sort((a, b) => b.newest - a.newest).map(({ group }) => group);
 }
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-/** "Ponzu: 3 things on 2 canvases", "… and your plan", or "Ponzu: 1 thing on your plan". */
-export function digestSubject(things: number, canvases: number, billing: boolean): string {
-  const where = [
-    ...(canvases > 0 ? [count(canvases, "canvas", "canvases")] : []),
-    ...(billing ? ["your plan"] : []),
-  ].join(" and ");
-  return `Ponzu: ${count(things, "thing", "things")} on ${where}`;
-}
-
-const INTRO = "Here is what Ponzu told you about in the last day.";
-const FOOTER = "You get this email once a day because it is on in Ponzu's Settings.";
-const STOP = "Stop these emails";
-
-function escapeHtml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-const moreLine = (more: number) => `And ${more} more.`;
-
-/** The email itself, from its groups. */
-export function digestEmail(
+/**
+ * The email itself, from its groups, rendered by @ponzu/email's digest template: a canvas-first
+ * subject ("Kettle onboarding: 3 things since yesterday"), each group's name as a heading and
+ * its lines as link rows. The same groups render the same bytes, so a retry under the same
+ * idempotency key sends what the first attempt did.
+ */
+export async function digestEmail(
   groups: readonly DigestGroup[],
   { unsubscribeUrl }: { unsubscribeUrl: string },
-): DigestEmail {
-  const things = groups.reduce((sum, group) => sum + group.lines.length + group.more, 0);
-  const canvases = groups.filter((group) => !group.billing).length;
-  const subject = digestSubject(
-    things,
-    canvases,
-    groups.some((group) => group.billing),
-  );
-
-  const text = [
-    INTRO,
-    "",
-    ...groups.flatMap((group) => [
-      group.name,
-      ...group.lines.map((line) => `- ${line.text}${line.href ? ` ${line.href}` : ""}`),
-      ...(group.more > 0 ? [`- ${moreLine(group.more)}`] : []),
-      "",
-    ]),
-    FOOTER,
-    `${STOP}: ${unsubscribeUrl}`,
-    "",
-  ].join("\n");
-
-  const font =
-    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;";
-  const html = [
-    "<!doctype html>",
-    '<html lang="en"><head><meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width,initial-scale=1">',
-    `<title>${escapeHtml(subject)}</title></head>`,
-    `<body style="margin:0;padding:24px 16px;background:#ffffff;color:#1c1c1c;${font}font-size:15px;line-height:1.5">`,
-    '<div style="max-width:560px;margin:0 auto">',
-    `<p style="margin:0 0 20px">${escapeHtml(INTRO)}</p>`,
-    ...groups.map((group) =>
-      [
-        `<h2 style="margin:20px 0 6px;font-size:16px;font-weight:600">${escapeHtml(group.name)}</h2>`,
-        '<ul style="margin:0;padding-left:20px">',
-        ...group.lines.map((line) => {
-          const words = escapeHtml(line.text);
-          return line.href
-            ? `<li><a href="${escapeHtml(line.href)}" style="color:#1c1c1c">${words}</a></li>`
-            : `<li>${words}</li>`;
-        }),
-        ...(group.more > 0 ? [`<li>${escapeHtml(moreLine(group.more))}</li>`] : []),
-        "</ul>",
-      ].join(""),
-    ),
-    `<p style="margin:28px 0 0;color:#6b6b6b;font-size:13px">${escapeHtml(FOOTER)} `,
-    `<a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b6b6b">${STOP}</a>.</p>`,
-    "</div></body></html>",
-  ].join("");
-
+): Promise<DigestEmail> {
+  const { subject, html, text } = await renderEmail("digest", { groups, unsubscribeUrl });
   return { subject, html, text };
-}
-
-/** Where the person's unsubscribe link goes: this API's own address. */
-export async function unsubscribeUrl(
-  deps: Pick<JobDeps, "vault" | "config">,
-  userId: string,
-): Promise<string> {
-  const url = new URL("/v1/email/unsubscribe", deps.config.sandbox.apiUrl);
-  url.searchParams.set("t", await unsubscribeToken(deps.vault, userId));
-  return url.toString();
 }
 
 /** The `email.digest` job: one person's email for one local date. */
@@ -322,37 +250,21 @@ export async function runDigestJob(
     return;
   }
 
-  const unsubscribe = await unsubscribeUrl(deps, userId);
-  const email = digestEmail(groups, { unsubscribeUrl: unsubscribe });
-  try {
-    await deps.mail.send({
-      to: person.email,
-      ...email,
-      headers: {
-        "List-Unsubscribe": `<${unsubscribe}>`,
-        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-      },
-      idempotencyKey: digestKey(userId, localDate),
-    });
-  } catch (error) {
-    const failure = error instanceof MailError ? error : mailErrorOf(null);
-    if (failure.code === "rate_limited" || failure.code === "unavailable") {
-      throw new RetryLater(DIGEST_RETRY_MS, `Resend could not take the email: ${failure.code}.`);
-    }
-    // `duplicate`: this key's email went already. `rejected`: sending it again will not help.
-    // Either way, today's is done.
-    await stampDigestSent(db, { userId, localDate });
-    if (failure.code === "rejected") {
-      log.error("digest_failed", { userId, failure: failure.code, status: failure.status });
-      deps.analytics.exception(failure, { job: DIGEST_JOB });
-    } else {
-      log.warn("digest_duplicate", { userId });
-    }
-    return;
-  }
-  await stampDigestSent(db, { userId, localDate });
-  log.info("digest_sent", {
+  // The one door (email/send.ts). It throws RetryLater when Resend could not take the email now,
+  // and the job goes again in five minutes with the same key.
+  const outcome = await sendEmail(deps, {
+    kind: "digest",
     userId,
+    key: digestKey(userId, localDate),
+    render: ({ unsubscribeUrl }) =>
+      renderEmail("digest", { groups, unsubscribeUrl: unsubscribeUrl! }),
+  });
+  if (outcome === "off") return;
+  // Sent, or done with for good (refused, held, paused, turned off since): today's is done.
+  await stampDigestSent(db, { userId, localDate });
+  log.info("digest_done", {
+    userId,
+    outcome,
     groups: groups.length,
     lines: groups.reduce((sum, group) => sum + group.lines.length + group.more, 0),
   });

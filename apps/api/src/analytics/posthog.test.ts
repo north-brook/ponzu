@@ -128,10 +128,9 @@ test("people and workspaces get their profiles, and an exception goes to error t
     repositorySelection: "all",
   });
   withScope(scope, () => analytics.exception(new Error("boom"), { status: 500 }));
+  // An exception is queued only once its stack is read, and posthog-node's flush waits for that:
+  // the send the capture scheduled carries it, however long the read takes.
   await sent();
-  // Exceptions are put on the queue a moment later, once their stack is read.
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  await analytics.flush();
 
   const byName = new Map(ph.events().map((e) => [e.event, e]));
   expect(byName.get("$identify")).toMatchObject({

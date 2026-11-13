@@ -5,8 +5,7 @@
 //
 // CANVAS_WORDS_PATHS=<glob>[,<glob>…] limits every check to those paths, and a glob that starts
 // with ! leaves its paths out: a slice's own gate.
-import { expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DECIDED } from "./canvas-words/decided.ts";
@@ -21,11 +20,28 @@ const chosen = (p: string) =>
 const excluded = EXCLUDE.map((r) => new Bun.Glob(r.glob));
 const again = INCLUDE_AGAIN.map((r) => new Bun.Glob(r.glob));
 const inScope = (p: string) => !excluded.some((g) => g.match(p)) || again.some((g) => g.match(p));
-const tracked = execFileSync("git", ["ls-files"], { cwd: ROOT, maxBuffer: 1 << 28 })
-  .toString()
-  .split("\n")
-  .filter(Boolean);
-const files = tracked.filter((p) => inScope(p) && chosen(p));
+
+/**
+ * git's output and exit code. Awaited, never execFileSync: Bun 1.4.2's sync spawns can lose a
+ * child's exit in a `bun test --parallel` worker and wait on it forever (oven-sh/bun#47257).
+ */
+async function git(args: string[]): Promise<{ code: number; stdout: string }> {
+  const child = Bun.spawn(["git", ...args], {
+    cwd: ROOT,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, , code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { code, stdout };
+}
+
+let tracked: string[] = [];
+let files: string[] = [];
 
 const read = (path: string): string | null => {
   const buffer = readFileSync(join(ROOT, path));
@@ -47,19 +63,26 @@ const OLD_ID = /(?<![\w])(?:des|dsn)_[A-Za-z0-9[]/;
 const keepMatches = KEEP.map((rule) => new Bun.Glob(rule.path));
 const used = new Set<number>();
 const misses: string[] = [];
-for (const path of files) {
-  const text = read(path);
-  if (text === null) continue;
-  text.split("\n").forEach((line, i) => {
-    if (!WORD.test(line) && !OLD_ID.test(line)) return;
-    const k = KEEP.findIndex((rule, j) => keepMatches[j]!.match(path) && line.includes(rule.has));
-    if (k >= 0) return void used.add(k);
-    const left = blank(path, line);
-    const isDoc = /\.mdx?$/.test(path);
-    if (WORD.test(left) || (!isDoc && OLD_ID.test(left)))
-      misses.push(`${path}:${i + 1}: ${line.trim()}`);
-  });
-}
+
+beforeAll(async () => {
+  const listed = await git(["ls-files"]);
+  expect(listed.code).toBe(0);
+  tracked = listed.stdout.split("\n").filter(Boolean);
+  files = tracked.filter((p) => inScope(p) && chosen(p));
+  for (const path of files) {
+    const text = read(path);
+    if (text === null) continue;
+    text.split("\n").forEach((line, i) => {
+      if (!WORD.test(line) && !OLD_ID.test(line)) return;
+      const k = KEEP.findIndex((rule, j) => keepMatches[j]!.match(path) && line.includes(rule.has));
+      if (k >= 0) return void used.add(k);
+      const left = blank(path, line);
+      const isDoc = /\.mdx?$/.test(path);
+      if (WORD.test(left) || (!isDoc && OLD_ID.test(left)))
+        misses.push(`${path}:${i + 1}: ${line.trim()}`);
+    });
+  }
+});
 
 test("no line in scope says design but for the format, third-party names and the kept lines", () => {
   expect(misses).toEqual([]);
@@ -108,27 +131,25 @@ test("the decided words are in place", () => {
   expect(wrong).toEqual([]);
 });
 
-const grep = (pattern: string, ...paths: string[]) => {
-  try {
-    return execFileSync("git", ["grep", "-n", "-I", "-P", pattern, "--", ...paths], { cwd: ROOT })
-      .toString()
-      .trim()
-      .split("\n")
-      .filter((l) => {
-        const [path, , ...rest] = l.split(":");
-        const line = rest.join(":");
-        // A KEEP line may name the old form on purpose (the spec saying it still redirects).
-        const kept = KEEP.some((k, j) => keepMatches[j]!.match(path!) && line.includes(k.has));
-        return inScope(path!) && chosen(path!) && !kept;
-      });
-  } catch {
-    return [];
-  }
+const grep = async (pattern: string, ...paths: string[]) => {
+  const found = await git(["grep", "-n", "-I", "-P", pattern, "--", ...paths]);
+  // git grep exits 1 when nothing matches.
+  if (found.code !== 0) return [];
+  return found.stdout
+    .trim()
+    .split("\n")
+    .filter((l) => {
+      const [path, , ...rest] = l.split(":");
+      const line = rest.join(":");
+      // A KEEP line may name the old form on purpose (the spec saying it still redirects).
+      const kept = KEEP.some((k, j) => keepMatches[j]!.match(path!) && line.includes(k.has));
+      return inScope(path!) && chosen(path!) && !kept;
+    });
 };
 
 // The old link and address forms are written nowhere; only the readers that accept them remain.
 // Each check is its own test, so one failing never hides another.
-test("nothing writes an old link, route, variable, tool or footer", () => {
+test("nothing writes an old link, route, variable, tool or footer", async () => {
   const readers = [
     ":!apps/studio/src/cloud/ui/canvas-address*",
     ":!apps/web/next.config.ts",
@@ -139,7 +160,7 @@ test("nothing writes an old link, route, variable, tool or footer", () => {
     ":!scripts/canvas-words*",
   ];
   expect(
-    grep(
+    await grep(
       "ponzu\\.design/designs?/|ponzu(?:-dev|-preview)?://design/|/v1/designs\\b|PONZU_DESIGN_ID|update_design|Designed in Ponzu",
       ".",
       ...readers,
@@ -147,15 +168,15 @@ test("nothing writes an old link, route, variable, tool or footer", () => {
   ).toEqual([]);
 });
 
-test("nothing makes an id with the old prefix", () => {
-  expect(grep('newId\\("des"\\)|\\.id\\("dsn"\\)', ".")).toEqual([]);
+test("nothing makes an id with the old prefix", async () => {
+  expect(await grep('newId\\("des"\\)|\\.id\\("dsn"\\)', ".")).toEqual([]);
 });
 
 // The other meanings of "canvas" have their own words (the plan's naming table). "The open
 // canvas" is the canvas open in the window; the space off every board is the ground.
-test("the other meanings of canvas keep their own words", () => {
+test("the other meanings of canvas keep their own words", async () => {
   expect(
-    grep(
+    await grep(
       "canvas-pane(?!s)|CANVAS_PANEL|CANVAS_MIN|canvasStep|tab: \"canvas\"|/canvas/canvas|CanvasCanvas|canvas(?:'s)? canvas|(?i:\\bonto (?:the|a|its) open canvas\\b|\\bopen canvas of\\b|\\bpage's open canvas\\b|\\bcanvas(?:'s)? pane\\b)",
       ".",
       ":!scripts/canvas-words*",

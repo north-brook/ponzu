@@ -14,8 +14,28 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | `canvases.yaml` | Maya's list in every state: the row waiting on her first, with its question; the working row; Settled folding the settled canvas away; holding a row to settle it; settings from the lockup switching to Northbrook, and usage with nothing to pay. |
 | `new-canvas.yaml` | Sam, with no canvases: New canvas comes by itself, in Scratch, in the Mac's words; Send waits for a prompt, then makes the canvas and opens it. Maya: New canvas from the header, the picker grouped by workspace, and a repo in Northbrook moving the statement to it. |
 | `canvas.yaml` | A canvas from its row (the fake's Pricing page): the web view draws it, the placeholder gives way, the title and the floating stack (Comment, Chat, no pull request); Back to the list. |
-| `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it. |
+| `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it; the chat then shows the picture of where it was left, which the canvas page drew as it was sent. |
 | `comment-modes.yaml` | A hold on the FAQ board brings the field up in voice, which says it can't hear (the microphone is refused); Type instead and Speak instead switch; typed words swiped away stay as an unsent pin, which brings the field back with them. |
+| `chat.yaml` | The Pricing page's chat (seed `chat`): Maya's bubbles, Ponzu's reply from its Markdown, the aside and working line while the turn runs; words typed with the keyboard up and sent mid-run land as a bubble; Stop ends the turn ("You stopped it"); a swipe down closes the sheet; opened again, the reply's link to the Plans board closes it and focuses that board. |
+| `needs-you.yaml` | The Pricing page waiting on Maya (seed `needs-you`): Chat says three questions wait; opened, the asks take the composer's place with the pager across four pages; a single choice, then a multi-select with a note typed with the keyboard up (Send stays on screen above it), the plan's first paragraph and then all of it with Approve, and the permission with Allow; once the last is sent the composer is back. |
+| `pull-request.yaml` | The Pricing page's pull request (seed `pull-request`): the stack's button opens its sheet with Status (checks passed, Theo approved, two comments) and three files; the checks and a file's diff open inside the sheet and Back returns; Merge asks in the system's action sheet, Cancel merges nothing, Merge merges it and the button goes. |
+| `search.yaml` | Search on the Pricing page's thread and a comment (seed `search`): before typing, the recent canvases, the Pricing page saying Claude is working; "pricing" finds the canvas by name; "plans" finds the Plans board and, under Threads, Maya's comment and her ask, pressable with the keyboard up; her ask opens the canvas with the chat up at it. |
+| `pings.yaml` | On an API that sends pings (seed `pings`), with the app's data cleared and iOS not yet asked (`shared/start-fresh.yaml`): nothing asks at launch; the first comment brings the ask in onboarding's words; Turn on notifications brings iOS's prompt, and Allow closes the ask; Settings shows Notifications in the Mac's words. |
+
+Then, unless `PUSH=0`, `run.sh` sends pings with `xcrun simctl push`
+(`push/*.apns`, each as Expo's service delivers one, its data under `body`;
+`push/payloads.test.ts` holds them to the fake's ids). While each flow in
+`push/` runs, its ping is sent every two seconds. Maestro reads only the app's
+own views, not iOS's banner over them, so a flow taps the banner where iOS
+draws it, at the top of the screen. `warm-open.yaml` opens Onboarding, and
+`warm-tap.yaml` taps the Pricing page's needs-you banner, which opens its chat
+at that question. `foreground.yaml` taps where a banner would be while pull
+request pings about the Pricing page, on screen, arrive: none shows, so the
+pull request sheet never opens. `other-canvas.yaml` taps Onboarding's banner,
+which opens Onboarding's chat. `cold-open.yaml` seeds the next launch
+(`relaunch=1`) and ends the app, and `cold-tap.yaml` taps the permission
+ping's banner over the home screen, which starts the app and, once Maya is
+signed in, opens the chat at the permission.
 
 With `REMOUNT=1` (`--env REMOUNT=1` on the job), `run.sh` then tests the remount iOS forces on a canvas: `remount/open.yaml`
 opens the Pricing page and waits for its boards, `run.sh` ends that
@@ -28,7 +48,7 @@ has not yet run on spare; once it passes there, make it the default.
 `shared/start.yaml` opens the client onto Metro and closes the development
 menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
 (`lib/cloud/backend.fake.ts`: signed-out, signed-in, empty, github-reauth,
-too-old, setup-where, setup-claude, canvases); only a fake build takes it. Every flow checks no development warning
+too-old, setup-where, setup-claude, canvases, chat, needs-you, pull-request, pings, search); only a fake build takes it. Every flow checks no development warning
 ("Cannot update a component…") is on screen.
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
@@ -44,7 +64,21 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `canvas-placeholder`, `canvas-gone`, `back`, `title`, `page-menu`, `stack-pr`,
 `stack-comment`, `stack-chat`, `canvas-hint`, `comment-sheet`, `comment-field`,
 `comment-input`, `comment-error`, `to-type`, `to-voice`, `send`, `thread-sheet`,
-`resolve`, `thread-note`, `thread-read-only`, `draft-sheet`, `move-done`. A
+`resolve`, `thread-note`, `thread-read-only`, `draft-sheet`, `move-done`,
+`chat-sheet`, `chat-thread`, `chat-input`, `chat-send`, `chat-stop`,
+`chat-attach`, `chat-working`, `chat-waiting`, `chat-line`, `chat-read-only`, `chat-comment-picture`, `chat-comment-open`,
+`stack-chat-badge`, `needs-you`, `needs-you-header`, `needs-you-pager`,
+`needs-you-previous`, `needs-you-next`, `needs-you-option`, `needs-you-note`,
+`needs-you-send`, `needs-you-plan`, `needs-you-read-plan`, `needs-you-blocked`,
+`chat-pull-request`, `pr-sheet`, `pr-number`, `pr-open-github`, `pr-close`,
+`pr-title`, `pr-checks`, `pr-reviews`, `pr-comments`, `pr-file`, `pr-back`,
+`pr-check`, `pr-diff`, `pr-diff-none`, `pr-action`, `pr-failed`, `pr-note`,
+`pr-foot-line`, `ping-ask`, `ping-ask-turn-on`, `ping-ask-not-now`,
+`settings-notifications`, `settings-ping-this-iphone`, `canvases-notice`,
+`search-recent`, `search-recent-<id>`, `search-results`,
+`search-section-<canvases|boards|threads>`, `search-canvas-<id>`,
+`search-<page|board>-<canvas id>-<id>`, `search-<message|comment>-<canvas
+id>-<id>`, `search-searching`, `search-none`, `search-failed`. A
 canvas's row reads as its VoiceOver label ("Pricing page, 1 waiting for you,
 site, …"), so flows match it with a pattern. Give a new screen a `testID` named
 after it.

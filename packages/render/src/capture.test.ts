@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
-import { chromium as playwright } from "playwright-core";
 import { captureScale, clampScale, MAX_CAPTURE_PX } from "./capture.ts";
 import { ChromiumRenderer, findChromium } from "./chromium.ts";
+import { launchChromium } from "./testing.ts";
 
 test("capture scale keeps the image within a GPU texture", () => {
   expect(clampScale(undefined)).toBe(1);
@@ -54,7 +54,7 @@ describe.skipIf(!chromium)("tall artboards in Chromium", () => {
     },
   });
   // A second browser that only reads pixels back out of the images.
-  const reader = playwright.launch({ executablePath: chromium ?? undefined, headless: true });
+  const reader = launchChromium(chromium);
   // Together: closing a browser takes seconds.
   afterAll(
     () => Promise.all([renderer.close(), stalling.close(), reader.then((b) => b.close())]),

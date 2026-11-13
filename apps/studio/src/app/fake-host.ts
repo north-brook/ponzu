@@ -2,6 +2,7 @@ import type { Session, SessionState } from "@ponzu/client";
 import { createFakeBackend, type FakeBackend, type FakePerson } from "@ponzu/client/testing";
 import { type Artboard, newId, newOpId, type Op } from "@ponzu/core";
 import type { DeepLink, MacNotice, MenuCommand } from "@ponzu/desktop/bridge";
+import type { Beat } from "../cloud/create/landing.ts";
 import type { Host, HostNotifications } from "./host.ts";
 import { linksWithInstalls } from "./installs.ts";
 
@@ -18,7 +19,8 @@ import { linksWithInstalls } from "./installs.ts";
  * to twice that, each answer its own; `meLatency`: `me` by that much more again), and `as`
  * relaunches signed in, as someone part way through setup (`where`: nothing set up; `claude`:
  * their account set up, Claude not yet connected; `iphone`: Claude connected too) or past it
- * (`returning`).
+ * (`returning`). `beat=held` holds the beat after a send from the create page until the test
+ * ends it (`beats`).
  */
 
 /** The ideas Maya's own repo gets, once they have been made. */
@@ -55,6 +57,22 @@ export interface FakeWorld {
   signInsEnded: number;
   /** The app's asks of the API: how many it has made, and how many it is still waiting on. */
   answers: { asked: number; waiting: number };
+  /**
+   * Keep every answer the app asks for from now in hand until `releaseAnswers`: the asks are
+   * made, and counted waiting, but none comes back. For a test of what the window shows before
+   * an answer is in, so that holds however slowly the machine paints, not only while the
+   * answer's `latency` outlasts a frame.
+   */
+  holdAnswers(): void;
+  /** Every held answer comes back, and the ones asked for from now come as they would. */
+  releaseAnswers(): void;
+  /**
+   * With `?beat=held`, the beat after a send from the create page (cloud/create/landing.ts)
+   * passes only when `end` says: `waiting` counts the beats under way, each from the moment
+   * the composer lands until it ends or the person goes to the thread. Without it, null: the
+   * beat runs on the window's clock.
+   */
+  beats: { readonly waiting: number; end(): void } | null;
   /**
    * The Mac's notifications, played (with `?mac=1`; null otherwise): every banner the studio
    * asked to show and take away, the dock's number, and a click on a banner.
@@ -111,6 +129,8 @@ export function fakeHost(): Host {
   } else {
     backend.latencyMs = latency;
   }
+  // `email=1`: an API that can send email (RESEND_API_KEY set), so Settings has its Email group.
+  if (params.get("email") === "1") backend.features = { ...backend.features, email: true };
   const as = params.get("as");
   const stage = ["where", "claude", "iphone", "returning"].indexOf(as ?? "");
   if (stage >= 1) {
@@ -131,7 +151,9 @@ export function fakeHost(): Host {
     };
   }
   const answers = { asked: 0, waiting: 0 };
-  countAnswers(client.api, answers);
+  /** While a test holds the answers: what lets them come back. */
+  let answersHeld: { promise: Promise<void>; resolve: () => void } | null = null;
+  countAnswers(client.api, answers, () => answersHeld?.promise ?? null);
   const session = signedOutUntilAsked(client.session, me, as ? backend.latencyMs : null);
   const links = new Set<(link: DeepLink) => void>();
   const commands = new Set<(command: MenuCommand) => void>();
@@ -196,6 +218,14 @@ export function fakeHost(): Host {
   const mac = params.get("mac") === "1" ? fakeMac(sendLink) : null;
   /** Sign-ins out in the "browser", while a test holds them there. */
   let held: { promise: Promise<void>; resolve: () => void } | null = null;
+  /** `?beat=held`: the beats under way, each ended when the test says. */
+  const beats = params.get("beat") === "held" ? new Set<() => void>() : null;
+  const landingBeat: Beat | undefined = beats
+    ? (over) => {
+        beats.add(over);
+        return () => beats.delete(over);
+      }
+    : undefined;
 
   window.ponzuFake = {
     backend,
@@ -231,6 +261,28 @@ export function fakeHost(): Host {
     signInsStarted: 0,
     signInsEnded: 0,
     answers,
+    holdAnswers() {
+      if (answersHeld) return;
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => {
+        resolve = done;
+      });
+      answersHeld = { promise, resolve };
+    },
+    releaseAnswers() {
+      answersHeld?.resolve();
+      answersHeld = null;
+    },
+    beats: beats && {
+      get waiting() {
+        return beats.size;
+      },
+      end() {
+        const over = [...beats];
+        beats.clear();
+        for (const fn of over) fn();
+      },
+    },
     mac: mac?.world ?? null,
   };
   const world = window.ponzuFake;
@@ -264,6 +316,7 @@ export function fakeHost(): Host {
     openExternal,
     docStorage: null,
     notifications: mac?.host ?? null,
+    ...(landingBeat ? { landingBeat } : {}),
   };
 }
 
@@ -306,15 +359,24 @@ function fakeMac(sendLink: (link: DeepLink) => void): { host: HostNotifications;
 /**
  * Counts, in place, every ask of `api` (each method of it and of the groups in it): Realtime's
  * reads too, which go through the same object. A test waits on `waiting` reaching none rather
- * than for a guess at how long the slowest answer takes.
+ * than for a guess at how long the slowest answer takes. While `held` gives a promise, an
+ * answer comes back only once it has settled (holdAnswers).
  */
-function countAnswers(api: object, answers: FakeWorld["answers"]) {
+function countAnswers(
+  api: object,
+  answers: FakeWorld["answers"],
+  held: () => Promise<void> | null,
+) {
   const methods = api as Record<string, unknown>;
   for (const [key, value] of Object.entries(methods)) {
     if (typeof value === "function") {
       methods[key] = (...args: unknown[]) => {
-        const result: unknown = value.apply(api, args);
-        if (!(result instanceof Promise)) return result;
+        const asked: unknown = value.apply(api, args);
+        if (!(asked instanceof Promise)) return asked;
+        const gate = held();
+        // A refusal while held is the caller's once it comes back, not unhandled before then.
+        if (gate) asked.catch(() => {});
+        const result = gate ? gate.then(() => asked) : asked;
         answers.asked++;
         answers.waiting++;
         const done = () => {
@@ -324,7 +386,7 @@ function countAnswers(api: object, answers: FakeWorld["answers"]) {
         return result;
       };
     } else if (value && typeof value === "object") {
-      countAnswers(value, answers);
+      countAnswers(value, answers, held);
     }
   }
 }

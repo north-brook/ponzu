@@ -225,6 +225,13 @@
       "when": 1794500754127,
       "tag": "0031_search",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794584483679,
+      "tag": "0032_email",
+      "breakpoints": true
     }
   ]
 }

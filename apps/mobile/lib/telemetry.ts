@@ -10,7 +10,9 @@ import type { GesturePerf } from "../canvas/protocol";
 export type Event =
   | ["app opened", Record<string, never>?]
   /** A sample of gestures on the canvas: how the canvas's frames kept up (lib/canvas-perf.ts). */
-  | ["canvas gesture", GesturePerf];
+  | ["canvas gesture", GesturePerf]
+  /** Another account holds this phone's push token from another install: never the token. */
+  | ["device token conflict", Record<string, never>?];
 
 /** Whether this build could send anything: not yet. */
 export const canTrack = false;

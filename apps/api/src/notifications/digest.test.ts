@@ -21,7 +21,6 @@ import {
   digestEmail,
   digestHref,
   digestKey,
-  digestSubject,
   runDigestJob,
 } from "./digest.ts";
 import { unsubscribeToken, unsubscribeUser } from "./unsubscribe.ts";
@@ -30,6 +29,10 @@ import { unsubscribeToken, unsubscribeUser } from "./unsubscribe.ts";
  * The daily email, on the real app with a fake Resend (FakeMail) and a clock that moves only when
  * a test moves it. The clock starts at 2026-01-01 00:00 UTC; Lisbon is on UTC then, and New
  * York five hours behind.
+ *
+ * The app says it is production unless a test says otherwise: outside production every email
+ * goes only to PONZU_EMAIL_ALLOW (email/send.test.ts covers that), so these see the email
+ * exactly as a person would.
  */
 
 const opened: TestApp[] = [];
@@ -37,8 +40,8 @@ afterEach(async () => {
   for (const app of opened.splice(0)) await app.close();
 });
 
-async function app(options: { mail?: boolean } = { mail: true }) {
-  const t = await createTestApp(options);
+async function app(options: Parameters<typeof createTestApp>[0] = { mail: true }) {
+  const t = await createTestApp({ environment: "production", ...options });
   opened.push(t);
   return t;
 }
@@ -152,25 +155,30 @@ describe("the daily email", () => {
 
     const site = `https://ponzu.design/canvases/${canvas.id}`;
     expect(email!.to).toBe(address);
-    expect(email!.subject).toBe("Ponzu: 2 things on 1 canvas");
+    expect(email!.subject).toBe(`${canvas.name}: 2 things since yesterday`);
     expect(email!.idempotencyKey).toBe(`digest:${userId}:2026-01-01`);
     expect(email!.idempotencyKey).toBe(digestKey(userId, "2026-01-01"));
     expect(withoutToken(email!.text)).toBe(
       [
+        "Since yesterday",
+        "",
         "Here is what Ponzu told you about in the last day.",
         "",
         canvas.name,
-        `- Ponzu replied to your comment. ${site}?open=thread&question=q_1`,
-        `- Sam left 2 comments. ${site}?open=comment&page=pg_1&artboard=ab_1&comment=ct_1`,
+        `Ponzu replied to your comment. ${site}?open=thread&question=q_1`,
+        `Sam left 2 comments. ${site}?open=comment&page=pg_1&artboard=ab_1&comment=ct_1`,
         "",
         "You get this email once a day because it is on in Ponzu's Settings.",
-        `Stop these emails: ${TEST_API_URL}/v1/email/unsubscribe?t=<token>`,
+        "",
+        `Stop these emails ${TEST_API_URL}/v1/email/unsubscribe?t=<token>`,
+        "",
+        "Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016",
         "",
       ].join("\n"),
     );
     const unsubscribe = email!.headers["List-Unsubscribe"]!;
     expect(unsubscribe).toMatch(
-      new RegExp(`^<${TEST_API_URL}/v1/email/unsubscribe\\?t=usr_[A-Za-z0-9]+\\.pzv1\\.`),
+      new RegExp(`^<${TEST_API_URL}/v1/email/unsubscribe\\?t=usr_[A-Za-z0-9]+\\.digest\\.pzv1\\.`),
     );
     expect(email!.headers).toEqual({
       "List-Unsubscribe": unsubscribe,
@@ -313,11 +321,15 @@ describe("the daily email", () => {
     });
     expect(await cronAt(t, "2026-01-01T09:00:00Z")).toEqual({ due: 1, recorded: 1 });
     const [email] = t.mail.sent;
-    expect(email!.subject).toBe("Ponzu: 2 things on 1 canvas and your plan");
+    // The workspace is named for its GitHub account; a billing group reads "<workspace>'s plan".
+    const plan = `${ws.github.installation.account.login}'s plan`;
+    expect(email!.subject).toBe(`${canvas.name} and ${plan}: 2 things since yesterday`);
     expect(email!.text).not.toContain("Not yours");
     expect(email!.text).not.toContain("Someone else's cap.");
-    // The billing line has no link: there is no page on the site for Plan and usage.
-    expect(email!.text).toContain("- Your workspace has used 80% of this month's $100 cap.\n");
+    // The billing line opens the workspace's Plan and usage, through the site's /settings page.
+    expect(email!.text).toContain(
+      `${plan}\nYour workspace has used 80% of this month's $100 cap. https://ponzu.design/settings?section=usage&workspace=${ws.id}&n=ntf_`,
+    );
   });
 
   test("a question's words never reach the email, only the canvas's name and Ponzu's", async () => {
@@ -348,7 +360,7 @@ describe("the daily email", () => {
     await t.backgroundDone();
     expect(await cronAt(t, "2026-01-01T09:00:00Z")).toEqual({ due: 1, recorded: 1 });
     const [email] = t.mail.sent;
-    expect(email!.text).toContain(`${canvas.name}\n- Ponzu has a question for you. `);
+    expect(email!.text).toContain(`${canvas.name}\nPonzu has a question for you. `);
     for (const part of [email!.subject, email!.text, email!.html]) {
       expect(part).not.toContain("Nightjar");
     }
@@ -369,14 +381,16 @@ describe("the daily email", () => {
     expect(t.mail.sent.map((email) => email.idempotencyKey)).toEqual([
       `digest:${userId}:2026-01-01`,
     ]);
-    expect(t.mail.sent[0]!.subject).toBe("Ponzu: 1 thing on 1 canvas");
+    expect(t.mail.sent[0]!.subject).toBe(`${canvas.name}: Ponzu replied to your comment`);
     expect(t.mail.sent[0]!.text).not.toContain("Later.");
 
     // The next day Resend refuses it: logged, the date stamped, and not tried again.
     await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
     t.mail.failNext("rejected");
     expect(await cronAt(t, "2026-01-02T09:00:00Z")).toEqual({ due: 1, recorded: 1 });
-    expect(t.logs.filter((line) => line.event === "digest_failed")).toHaveLength(1);
+    expect(t.logs.filter((line) => line.event === "email_refused")).toMatchObject([
+      { kind: "digest", job: `digest:${userId}:2026-01-02`, failure: "rejected" },
+    ]);
     expect(await cronAt(t, "2026-01-02T10:00:00Z")).toEqual({ due: 0, recorded: 0 });
     expect(t.mail.sent).toHaveLength(1);
   });
@@ -396,10 +410,11 @@ describe("sending in batches", () => {
     expect(answer.steps.digests).toEqual({ due: 1, recorded: 1 });
     await t.backgroundDone();
     expect(t.mail.sent).toHaveLength(1);
-    const lines = t.mail.sent[0]!.text.split("\n").filter((line) => line.startsWith("- "));
-    expect(lines).toHaveLength(DIGEST_LINES_PER_GROUP + 1);
-    expect(lines.at(-1)).toBe("- And 2 more.");
-    expect(t.mail.sent[0]!.subject).toBe("Ponzu: 12 things on 1 canvas");
+    const lines = t.mail.sent[0]!.text.split("\n");
+    const rows = lines.filter((line) => line.startsWith("Ponzu replied to your comment. "));
+    expect(rows).toHaveLength(DIGEST_LINES_PER_GROUP);
+    expect(lines[lines.lastIndexOf(rows.at(-1)!) + 1]).toBe("And 2 more.");
+    expect(t.mail.sent[0]!.subject).toBe(`${canvas.name}: 12 things since yesterday`);
   });
 
   test("a step takes at most a batch, and the next slot takes the rest", async () => {
@@ -423,27 +438,41 @@ describe("unsubscribing", () => {
   const tokenOf = (email: { headers: Record<string, string> }) =>
     new URL(email.headers["List-Unsubscribe"]!.slice(1, -1)).searchParams.get("t")!;
 
-  test("the email's link turns the email off, as a page, and the toggle shows it", async () => {
+  test("following the email's link asks and changes nothing; its button turns the email off", async () => {
     const t = await app();
     const { canvas, ws, userId } = await person(t);
     await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
     await cronAt(t, "2026-01-01T09:00:00Z");
     const token = tokenOf(t.mail.sent[0]!);
+    const path = `/v1/email/unsubscribe?t=${encodeURIComponent(token)}`;
 
-    const page = await t.app.request(`/v1/email/unsubscribe?t=${encodeURIComponent(token)}`);
+    // A link scanner, or the person, follows it: a page that asks, and nothing else.
+    const page = await t.app.request(path);
     expect(page.status).toBe(200);
     expect(page.headers.get("content-type")).toContain("text/html");
     expect(page.headers.get("referrer-policy")).toBe("no-referrer");
-    expect(page.headers.get("content-security-policy")).toBeTruthy();
-    expect(await page.text()).toContain("You won't get Ponzu's daily email any more.");
+    expect(page.headers.get("content-security-policy")).toContain("form-action 'self'");
+    const html = await page.text();
+    expect(html).toContain("Stop Ponzu's daily email?");
+    expect(html).toContain(`<form method="post" action="${path.replaceAll("&", "&amp;")}">`);
+    expect(html).toContain('<input type="hidden" name="via" value="page">');
+    expect((await digestRecipient(t.db, userId))?.emailDigest).toBe(true);
+    expect(t.analytics.events.filter((e) => e.event === "email unsubscribed")).toEqual([]);
+
+    // The button.
+    const done = await t.app.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "via=page",
+    });
+    expect(done.status).toBe(200);
+    expect(await done.text()).toContain("You won't get Ponzu's daily email any more.");
     expect((await digestRecipient(t.db, userId))?.emailDigest).toBe(false);
 
-    // Off: the next day nothing is due. Following the link again is the same page.
+    // Off: the next day nothing is due. Following the link again still only asks.
     await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
     expect(await cronAt(t, "2026-01-02T09:00:00Z")).toEqual({ due: 0, recorded: 0 });
-    expect(
-      (await t.app.request(`/v1/email/unsubscribe?t=${encodeURIComponent(token)}`)).status,
-    ).toBe(200);
+    expect((await t.app.request(path)).status).toBe(200);
   });
 
   test("a mail app's one-click POST turns it off with 204", async () => {
@@ -500,22 +529,61 @@ describe("unsubscribing", () => {
 });
 
 describe("the email's parts", () => {
-  test("the subject counts things and canvases, and names the plan for billing", () => {
-    expect(digestSubject(1, 1, false)).toBe("Ponzu: 1 thing on 1 canvas");
-    expect(digestSubject(3, 2, false)).toBe("Ponzu: 3 things on 2 canvases");
-    expect(digestSubject(4, 2, true)).toBe("Ponzu: 4 things on 2 canvases and your plan");
-    expect(digestSubject(1, 0, true)).toBe("Ponzu: 1 thing on your plan");
+  test("the subject is canvas-first, and names the plan for billing", async () => {
+    const line = (text: string) => ({ text, href: null });
+    const subject = async (groups: Parameters<typeof digestEmail>[0]) =>
+      (await digestEmail(groups, { unsubscribeUrl: "https://api.test/u" })).subject;
+    const canvas = (name: string, n: number) => ({
+      name,
+      lines: Array.from({ length: n }, () => line("Ponzu finished what you asked.")),
+      more: 0,
+      billing: false,
+    });
+    expect(await subject([canvas("Fernwood", 1)])).toBe("Fernwood: Ponzu finished what you asked");
+    expect(await subject([canvas("Fernwood", 3), canvas("Kettle", 2)])).toBe(
+      "Fernwood and Kettle: 5 things since yesterday",
+    );
+    expect(
+      await subject([
+        {
+          name: "Northbrook",
+          lines: [line("You've used 80% of this month's $100 cap.")],
+          more: 0,
+          billing: true,
+        },
+      ]),
+    ).toBe("You've used 80% of this month's $100 cap");
   });
 
-  test("a link carries the canvas and what to open, and nothing else", () => {
-    expect(digestHref({ canvasId: "cnv_1", link: { open: "pull-request" } })).toBe(
+  test("a link carries the canvas and what to open, a billing line its plan, and nothing else", () => {
+    const row = {
+      id: "ntf_1",
+      canvasId: "cnv_1" as string | null,
+      workspaceId: "wks_1",
+      kind: "reply" as const,
+      link: { open: "pull-request" as const },
+    };
+    expect(digestHref("production", row)).toBe(
       "https://ponzu.design/canvases/cnv_1?open=pull-request",
     );
-    expect(digestHref({ canvasId: null, link: { open: "usage" } })).toBeNull();
+    // From any other environment the page opens the development app.
+    expect(digestHref("dev", row)).toBe(
+      "https://ponzu.design/canvases/cnv_1?open=pull-request&app=ponzu-dev",
+    );
+    const billing = {
+      ...row,
+      canvasId: null,
+      kind: "billing_cap_warning" as const,
+      link: { open: "usage" as const },
+    };
+    expect(digestHref("production", billing)).toBe(
+      "https://ponzu.design/settings?section=usage&workspace=wks_1&n=ntf_1",
+    );
+    expect(digestHref("production", { ...billing, kind: "reply" })).toBeNull();
   });
 
-  test("names are escaped in the HTML, and past ten lines a group counts the rest", () => {
-    const email = digestEmail(
+  test("names are escaped in the HTML, and past ten lines a group counts the rest", async () => {
+    const email = await digestEmail(
       [
         {
           name: `<script>alert("x")</script>`,
@@ -529,10 +597,10 @@ describe("the email's parts", () => {
       ],
       { unsubscribeUrl: "https://api.test/v1/email/unsubscribe?t=a&b" },
     );
-    expect(email.subject).toBe("Ponzu: 12 things on 1 canvas");
+    expect(email.subject).toBe(`<script>alert("x")</script>: 12 things since yesterday`);
     expect(email.html).not.toContain("<script>");
     expect(email.html).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
     expect(email.html).toContain("t=a&amp;b");
-    expect(email.text).toContain("- And 2 more.\n");
+    expect(email.text).toContain("\nAnd 2 more.\n");
   });
 });

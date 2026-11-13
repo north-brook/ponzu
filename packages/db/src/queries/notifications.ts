@@ -33,13 +33,17 @@ import { QueryError, run } from "./run.ts";
 
 const at = (time: Date) => sql`${timeParam(time)}::timestamptz`;
 
-/** The events that may ping a person, and the daily email. */
+/** The events that may ping a person, and the emails they can turn off. */
 export interface PingPrefs {
   needsYou: boolean;
   replies: boolean;
   prReady: boolean;
   teammateComments: boolean;
   emailDigest: boolean;
+  /** The "people joined" email, for workspaces they are an admin of. */
+  emailTeam: boolean;
+  /** The Friday recap. */
+  emailRecap: boolean;
 }
 
 /** A person's toggles, read from their row as the API already holds it. */
@@ -50,6 +54,8 @@ export function pingPrefsOf(user: User): PingPrefs {
     prReady: user.pingPrReady,
     teammateComments: user.pingTeammateComments,
     emailDigest: user.emailDigest,
+    emailTeam: user.emailTeam,
+    emailRecap: user.emailRecap,
   };
 }
 
@@ -69,13 +75,16 @@ export async function setPingPrefs(
           ping_teammate_comments = coalesce(${prefs.teammateComments ?? null}::boolean,
                                             ping_teammate_comments),
           email_digest = coalesce(${prefs.emailDigest ?? null}::boolean, email_digest),
+          email_team = coalesce(${prefs.emailTeam ?? null}::boolean, email_team),
+          email_recap = coalesce(${prefs.emailRecap ?? null}::boolean, email_recap),
           updated_at = now()
         where id = ${userId}
         returning *
       )
       select json_build_object(
         'needsYou', ping_needs_you, 'replies', ping_replies, 'prReady', ping_pr_ready,
-        'teammateComments', ping_teammate_comments, 'emailDigest', email_digest
+        'teammateComments', ping_teammate_comments, 'emailDigest', email_digest,
+        'emailTeam', email_team, 'emailRecap', email_recap
       ) as result from changed
     `,
   );
@@ -834,7 +843,7 @@ export async function recentPushes(
  * A person's notifications made since `since` that they have not read, for the daily email: by
  * canvas (the ones about none last), oldest first within each. A muted row is in it while it is
  * unread, as every row is; one the person has read since (on the Mac, or by opening its canvas)
- * is not news.
+ * is not news, and neither is one that had an email of its own (`emailed_at`, a billing notice).
  */
 export function listRecentForDigest(
   db: Db,
@@ -849,6 +858,7 @@ export function listRecentForDigest(
           eq(notifications.userId, userId),
           sql`${notifications.createdAt} >= ${at(since)}`,
           sql`${notifications.readAt} is null`,
+          sql`${notifications.emailedAt} is null`,
         ),
       )
       .orderBy(
@@ -1026,6 +1036,7 @@ function toNotification(json: Record<string, unknown>): Notification {
     readAt: time(json.read_at),
     readVia: (json.read_via as NotificationReadVia | null) ?? null,
     resolvedAt: time(json.resolved_at),
+    emailedAt: time(json.emailed_at),
   };
 }
 
@@ -1410,13 +1421,19 @@ export async function lastNotifiedAt(
   return new Map(rows.map((row) => [row.userId, new Date(row.at)]));
 }
 
-/** What a billing ping about a workspace needs: its name, its kind, its period and its members. */
+/**
+ * What a billing ping about a workspace needs: its name, its kind, its period, the GitHub account
+ * it is, and its members with their GitHub user ids, so that a personal workspace's person can be
+ * told apart from the collaborators who are members of it too.
+ */
 export interface NotifyWorkspaceFacts {
   id: string;
   name: string;
   kind: WorkspaceKind;
   billingPeriodAnchor: Date;
-  members: { userId: string; role: MemberRole }[];
+  /** `workspaces.github_account_id`: for a personal workspace, its person's GitHub user id. */
+  githubAccountId: number;
+  members: { userId: string; role: MemberRole; githubUserId: number }[];
 }
 
 /** A workspace's facts for a billing ping, or null when there is no such workspace. */
@@ -1431,6 +1448,7 @@ export async function notifyWorkspaceFacts(
         name: workspaces.name,
         kind: workspaces.kind,
         billingPeriodAnchor: workspaces.billingPeriodAnchor,
+        githubAccountId: workspaces.githubAccountId,
       })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId)),
@@ -1438,8 +1456,13 @@ export async function notifyWorkspaceFacts(
   if (!workspace) return null;
   const members = await run(
     db
-      .select({ userId: memberships.userId, role: memberships.role })
+      .select({
+        userId: memberships.userId,
+        role: memberships.role,
+        githubUserId: users.githubUserId,
+      })
       .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
       .where(eq(memberships.workspaceId, workspaceId))
       .orderBy(memberships.userId),
   );

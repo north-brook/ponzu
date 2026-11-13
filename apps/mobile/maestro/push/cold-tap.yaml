@@ -1,0 +1,38 @@
+appId: design.ponzu.app.dev
+name: push-cold-tap
+---
+# Part 6: the app is not running and run.sh sends the permission ping every
+# couple of seconds, so its banner shows over the home screen. Tapping it
+# starts the app, which holds the tap until Maya is signed in and off the
+# launch screen, then opens the Pricing page's chat at the permission.
+- repeat:
+    while:
+      notVisible:
+        id: needs-you
+    times: 20
+    commands:
+      - runFlow:
+          when:
+            visible: ".*Ponzu is asking for your permission.*"
+          commands:
+            - tapOn: ".*Ponzu is asking for your permission.*"
+      - runFlow:
+          when:
+            notVisible: ".*Ponzu is asking for your permission.*"
+          commands:
+            - tapOn:
+                point: "50%,8%"
+                retryTapIfNoChange: false
+      # The development client may show its menu on a fresh start.
+      - runFlow:
+          when:
+            visible:
+              id: xmark
+          commands:
+            - tapOn:
+                id: xmark
+- extendedWaitUntil:
+    visible:
+      id: needs-you
+    timeout: 60000
+- assertVisible: "Run the visual tests"

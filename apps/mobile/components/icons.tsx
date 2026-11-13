@@ -8,6 +8,7 @@ import {
   Clock01Icon,
   Comment01Icon,
   ComputerIcon,
+  DashboardSquare01Icon,
   Delete02Icon,
   File01Icon,
   Folder01Icon,
@@ -31,6 +32,7 @@ import {
   QrCodeIcon,
   RefreshIcon,
   Search01Icon,
+  StopIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
@@ -91,8 +93,12 @@ export const ICONS = {
   alert: AlertCircleIcon,
   /** New canvas, in the canvases list's header */
   newCanvas: PencilEdit02Icon,
-  /** Attach, in New canvas's composer */
+  /** Attach, in New canvas's composer and the chat's */
   plus: PlusSignIcon,
+  /** Stop the agent's turn, in the chat's composer */
+  stop: StopIcon,
+  /** A board found by Search, as the Mac's ⌘K marks one */
+  board: DashboardSquare01Icon,
 } as const satisfies Record<string, IconSvgElement>;
 
 function icon(svg: IconSvgElement, size: number, width: number) {
@@ -136,6 +142,8 @@ export const Quiet = icon(ICONS.quiet, 28, 1.6);
 export const AlertCircle = icon(ICONS.alert, 18, 2);
 export const NewCanvas = icon(ICONS.newCanvas, 20, 1.8);
 export const Plus = icon(ICONS.plus, 20, 1.8);
+export const Stop = icon(ICONS.stop, 16, 2.2);
+export const BoardIcon = icon(ICONS.board, 16, 1.7);
 
 /** A page's icon, by the names design.json uses (lib/page-icons.ts): the same glyph as its menu's. */
 export function PageIcon({ name, size = 16, color, width = 1.7 }: P & { name?: string }) {

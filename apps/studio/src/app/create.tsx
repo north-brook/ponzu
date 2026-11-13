@@ -264,13 +264,9 @@ export function CreateView({
       );
     } catch (failure) {
       // Back to the page as it was: the words, the images, the project; nothing travels back.
+      // The page gives the caret back to the field as it shows it again (create-page.tsx).
       setLaunched(false);
       onLaunchFailed();
-      requestAnimationFrame(() =>
-        document
-          .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
-          ?.focus({ preventScroll: true }),
-      );
       analytics.capture("notice shown", { notice: "canvas_not_made" });
       setError(
         failure instanceof ApiError && failure.code === "network"

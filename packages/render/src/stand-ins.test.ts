@@ -105,11 +105,20 @@ describe("the faces that carry a Mac font's line height", () => {
   });
 });
 
-/** Families fontconfig knows on this machine; none where there is no fontconfig. */
-function installed(): Set<string> {
+/**
+ * Families fontconfig knows on this machine; none where there is no fontconfig. Awaited, never
+ * spawnSync: Bun 1.4.2's sync spawns can lose a child's exit in a `bun test --parallel` worker
+ * and wait on it forever (oven-sh/bun#47257).
+ */
+async function installed(): Promise<Set<string>> {
   if (process.platform !== "linux") return new Set();
   try {
-    const out = Bun.spawnSync(["fc-list", ":", "family"]).stdout.toString();
+    const child = Bun.spawn(["fc-list", ":", "family"], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const [out] = await Promise.all([new Response(child.stdout).text(), child.exited]);
     return new Set(out.split("\n").flatMap((line) => line.split(",").map((f) => f.trim())));
   } catch {
     return new Set();
@@ -117,7 +126,7 @@ function installed(): Set<string> {
 }
 
 const chromium = findChromium();
-const have = installed();
+const have = await installed();
 const widths: Record<string, number> = reference.widths;
 const heights: Record<string, number> = reference.heights;
 setDefaultTimeout(30_000);
