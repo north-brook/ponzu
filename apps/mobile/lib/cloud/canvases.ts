@@ -7,11 +7,29 @@ import {
   type LiveSnapshot,
   type QuestionRow,
 } from "@ponzu/client";
-import { keepUnchanged, membersById, type Person, type WorkspaceKind } from "@ponzu/client/model";
+import {
+  type CanvasFilter,
+  keepUnchanged,
+  membersById,
+  NO_FILTER,
+  type Person,
+  toSummary,
+  type WorkspaceKind,
+} from "@ponzu/client/model";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { backend } from "./backend";
-import { buildList, type CanvasList, previewWatch, questionWatch } from "./list";
+import { setFilter, useKeptFilter } from "./filter";
+import {
+  buildList,
+  type CanvasList,
+  type FilterChoices,
+  filterChoices,
+  filterInView,
+  filterList,
+  previewWatch,
+  questionWatch,
+} from "./list";
 import { phoneKeys } from "./persist";
 import { useCloud } from "./query";
 import { useWorkspaceInView } from "./workspace";
@@ -165,30 +183,101 @@ function useQuestions(ids: readonly string[]): ReadonlyMap<string, readonly Ques
   return rows;
 }
 
-/**
- * The canvases list: the workspace in view's canvases in the Mac sidebar's order with their
- * previews, people and the questions waiting on the viewer, and the settled ones apart.
- */
-export function useCanvasList(): {
-  userId: string | null;
-  workspace: ShownWorkspace | null;
-  list: CanvasList | undefined;
-  /** Still waiting for anything to show. */
-  loading: boolean;
-} {
+/** The workspace's members by id, for whose a canvas is; null until they are known. */
+function useMembers(workspaceId: string | null): ReadonlyMap<string, Person> | null {
   const cloud = useCloud();
-  const { userId, workspace } = useWorkspaces();
-  const workspaceId = workspace?.id ?? null;
-  const kind = workspace?.kind ?? "personal";
-  const { rows, failed, ended } = useRows(workspaceId);
   const members = useQuery({
     ...cloud.queries.workspace(workspaceId ?? ""),
     enabled: workspaceId !== null,
   });
-  const people = useMemo(
-    () => (members.data ? membersById(members.data.members) : NO_PEOPLE),
-    [members.data],
+  return useMemo(() => (members.data ? membersById(members.data.members) : null), [members.data]);
+}
+
+/** The filter on the workspace in view: what it offers, the filter as it applies, a way to change it. */
+export interface FilterState {
+  /** The viewer, whom the filter calls "You". */
+  me: string | null;
+  choices: FilterChoices;
+  /**
+   * The kept filter as it applies now (`filterInView`): none while the workspace has no active
+   * canvas to filter, and everyone while its members aren't known yet (whose a canvas is isn't).
+   */
+  filter: CanvasFilter;
+  /** The kept filter has been read: until then the list waits rather than show everything. */
+  ready: boolean;
+  /** Kept for this person and workspace, here and on the next launch. */
+  setFilter: (filter: CanvasFilter) => void;
+}
+
+function useFilterOn(
+  userId: string | null,
+  workspace: ShownWorkspace | null,
+  rows: readonly CanvasListRow[] | undefined,
+  members: ReadonlyMap<string, Person> | null,
+): FilterState {
+  const workspaceId = workspace?.id ?? null;
+  const kind = workspace?.kind ?? "personal";
+  const read = useKeptFilter(userId, workspaceId);
+  const kept = read ?? NO_FILTER;
+  // The active canvases, as the Mac's filter counts them: the settled tray isn't filtered.
+  const choices = useMemo(
+    () =>
+      filterChoices(
+        (rows ?? [])
+          .filter((row) => row.status === "active")
+          .map((row) => toSummary(row, { people: members ?? NO_PEOPLE })),
+        { kind, members, me: userId },
+      ),
+    [rows, kind, members, userId],
   );
+  const filter = useMemo(() => {
+    // Until the rows come there's nothing to tell a stale key by: the filter stays as kept.
+    if (!rows) return kept;
+    if (choices.projects.length === 0) return NO_FILTER;
+    const now = filterInView(kept, choices);
+    return choices.people === null && now.person !== null ? { ...now, person: null } : now;
+  }, [rows, kept, choices]);
+  const set = useCallback(
+    (next: CanvasFilter) => {
+      if (userId && workspaceId) void setFilter(userId, workspaceId, next);
+    },
+    [userId, workspaceId],
+  );
+  return { me: userId, choices, filter, ready: read !== undefined, setFilter: set };
+}
+
+/** The filter on the workspace in view, for the filter sheet (components/filter-sheet.tsx). */
+export function useCanvasFilter(): FilterState {
+  const { userId, workspace } = useWorkspaces();
+  const workspaceId = workspace?.id ?? null;
+  const { rows } = useRows(workspaceId);
+  const members = useMembers(workspaceId);
+  return useFilterOn(userId, workspace, rows, members);
+}
+
+/**
+ * The canvases list: the workspace in view's canvases in the Mac sidebar's order with their
+ * previews, people and the questions waiting on the viewer, and the settled ones apart; and the
+ * same list through the person's filter (`shown`), which the Canvases tab draws.
+ */
+export function useCanvasList(): {
+  userId: string | null;
+  workspace: ShownWorkspace | null;
+  /** Every canvas, whatever the filter. */
+  list: CanvasList | undefined;
+  /** The active canvases the filter keeps, and the settled tray as it is. */
+  shown: CanvasList | undefined;
+  filter: FilterState;
+  /** Still waiting for anything to show. */
+  loading: boolean;
+} {
+  const { userId, workspace } = useWorkspaces();
+  const workspaceId = workspace?.id ?? null;
+  const kind = workspace?.kind ?? "personal";
+  const { rows, failed, ended } = useRows(workspaceId);
+  const members = useMembers(workspaceId);
+  const people = members ?? NO_PEOPLE;
+  const filter = useFilterOn(userId, workspace, rows, members);
   const previews = useMemo(() => (rows ? previewWatch(rows) : []), [rows]);
   const watched = useMemo(() => (rows ? questionWatch(rows, kind) : []), [rows, kind]);
   const assetsUrls = useAssetsUrls(previews);
@@ -204,10 +293,16 @@ export function useCanvasList(): {
   useEffect(() => {
     last.current = list;
   }, [list]);
+  const shown = useMemo(
+    () => (list && filter.ready ? filterList(list, filter.filter) : undefined),
+    [list, filter.ready, filter.filter],
+  );
   return {
     userId,
     workspace,
     list,
-    loading: list === undefined && !failed && !ended,
+    shown,
+    filter,
+    loading: (list === undefined || !filter.ready) && !failed && !ended,
   };
 }

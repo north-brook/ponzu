@@ -342,3 +342,20 @@ export const SEARCH = {
 
 /** What the canvases list says when the workspace has no canvases: where they come from. */
 export const EMPTY_CANVASES = "No canvases yet. Canvases you make in Ponzu show up here.";
+
+/**
+ * The canvases list's filter, in the Mac sidebar's filter menu's words
+ * (apps/studio/src/cloud/sidebar/{filter-menu,sidebar}.tsx); copy.test.ts reads them there.
+ */
+export const FILTER = {
+  title: "Filter",
+  /** The header's button, to VoiceOver, while a filter is on. */
+  on: "Filter (on)",
+  person: "Person",
+  everyone: "Everyone",
+  you: "You",
+  repo: "Repo",
+  scratch: "Scratch",
+  none: "No canvases match this filter.",
+  clear: "Clear filter",
+} as const;

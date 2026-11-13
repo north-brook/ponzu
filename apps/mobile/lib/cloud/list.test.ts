@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { CanvasListRow, QuestionRow } from "@ponzu/client";
-import { keepUnchanged } from "@ponzu/client/model";
+import { keepUnchanged, NO_FILTER, type Person } from "@ponzu/client/model";
 import {
   askLine,
   buildList,
+  type CanvasList,
+  filterChoices,
+  filterInView,
+  filterList,
   firstQuestion,
   indicatorOf,
   type ListContext,
@@ -246,4 +250,82 @@ test("VoiceOver hears the row as the Mac's label, with the question it waits on"
   const scratch = buildList([row({ name: "Poster", repoId: null, repoFullName: null })], context())
     .active[0]!.canvas;
   expect(rowLabel(scratch, null, null)).toBe("Poster, Scratch, Scratch");
+});
+
+describe("the filter", () => {
+  const person = (id: string): Person => ({ id, name: id, login: id, avatarUrl: null });
+  const members = new Map([
+    ["usr_sam", person("usr_sam")],
+    ["usr_maya", person("usr_maya")],
+  ]);
+  const site = { repoId: "repo_site", repoFullName: "acme/site" };
+  const app = { repoId: "repo_app", repoFullName: "acme/app" };
+  const scratch = { repoId: null, repoFullName: null, branch: null };
+  const rows = [
+    row({ name: "Pricing", ownerId: "usr_maya", ...site }),
+    row({ name: "Checkout", ownerId: "usr_sam", ...site }),
+    row({ name: "Onboarding", ownerId: "usr_maya", ...app }),
+    row({ name: "Poster", ownerId: "usr_maya", ...scratch }),
+    row({
+      name: "Sign-up",
+      ownerId: "usr_sam",
+      status: "settled",
+      settledAt: "2026-11-02T00:00:00.000Z",
+      ...app,
+    }),
+  ];
+  const list = buildList(rows, context({ people: members }));
+  const canvases = [...list.active, ...list.settled].map((r) => r.canvas);
+  const names = (shown: CanvasList) => ({
+    active: shown.active.map((r) => r.canvas.name).sort(),
+    settled: shown.settled.map((r) => r.canvas.name),
+  });
+
+  test("on a team: you first, then the rest of its members; projects with counts, Scratch last", () => {
+    const choices = filterChoices(canvases, { kind: "org", members, me: "usr_maya" });
+    expect(choices.people?.map((p) => p.id)).toEqual(["usr_maya", "usr_sam"]);
+    // Settled canvases count too: the filter keeps the tray's as well.
+    expect(choices.projects.map((p) => [p.repo?.name ?? p.key, p.count])).toEqual([
+      ["app", 2],
+      ["site", 2],
+      ["scratch", 1],
+    ]);
+  });
+
+  test("a personal workspace has nobody to filter by; a team's members not yet known, null", () => {
+    expect(filterChoices(canvases, { kind: "personal", members, me: "usr_maya" }).people).toEqual(
+      [],
+    );
+    expect(filterChoices(canvases, { kind: "org", members: null, me: "usr_maya" }).people).toBe(
+      null,
+    );
+  });
+
+  test("a person keeps their canvases, the tray's too", () => {
+    expect(names(filterList(list, { person: "usr_sam", projects: null }))).toEqual({
+      active: ["Checkout"],
+      settled: ["Sign-up"],
+    });
+  });
+
+  test("an unchecked repo goes from the list; the tray, as the Mac's, isn't filtered", () => {
+    expect(
+      names(filterList(list, { person: null, projects: ["repo:repo_site", "scratch"] })),
+    ).toEqual({ active: ["Checkout", "Poster", "Pricing"], settled: ["Sign-up"] });
+  });
+
+  test("no filter is the same list", () => {
+    expect(filterList(list, NO_FILTER)).toBe(list);
+  });
+
+  test("a kept filter naming a repo with no canvases now, or someone gone, shows everything", () => {
+    const choices = filterChoices(canvases, { kind: "org", members, me: "usr_maya" });
+    const stale = { person: "usr_gone", projects: ["repo:repo_gone"] };
+    const filter = filterInView(stale, choices);
+    expect(filter).toEqual(NO_FILTER);
+    expect(names(filterList(list, filter)).active).toHaveLength(4);
+    // Members not known yet: the person stays until they are.
+    const waiting = filterChoices(canvases, { kind: "org", members: null, me: "usr_maya" });
+    expect(filterInView({ person: "usr_sam", projects: null }, waiting).person).toBe("usr_sam");
+  });
 });

@@ -7,6 +7,7 @@ import { setBadge } from "../push/native";
 import { devices, stopPings } from "../push/pings";
 import { backend } from "./backend";
 import { DOC_CACHE_PATH, fileStorage } from "./files";
+import { forgetFilters } from "./filter";
 import { forgetNewCanvas } from "./new-canvas";
 import { useCloud } from "./query";
 import { keysToClear, signOut } from "./sign-out";
@@ -32,6 +33,7 @@ export function useSignOut(): () => Promise<void> {
         closeLive: () => cloud.live.close(),
         clearFiles: async () => {
           forgetWorkspaces();
+          forgetFilters();
           forgetNewCanvas();
           fileStorage(...DOC_CACHE_PATH).clear();
           // Unsent words: on disk they're `ponzu.drafts.*` keys, which go below.
