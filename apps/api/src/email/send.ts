@@ -1,6 +1,6 @@
 import { emailRecipient } from "@ponzu/db";
 import type { RenderedEmail } from "@ponzu/email";
-import type { Deps } from "../deps/index.ts";
+import type { Config, Deps } from "../deps/index.ts";
 import { MailError, type MailMessage, mailErrorOf } from "../deps/mail.ts";
 import { RetryLater } from "../jobs/retry.ts";
 import { EMAIL_KINDS, type EmailKind, emailAllowed, emailPaused } from "./kinds.ts";
@@ -59,8 +59,26 @@ export interface SendRequest {
   render(parts: RenderParts): Promise<RenderedEmail> | RenderedEmail;
 }
 
+/** What became of one email, with where it went and Resend's id for it when it was taken. */
+export interface SendResult {
+  outcome: SendOutcome;
+  /** The address it was for, read at send time; null when it was not read or there was none. */
+  address: string | null;
+  /** Resend's id, when Resend took it (`sent`). */
+  resendId: string | null;
+}
+
+/** The settings `sendEmail` reads: a deployment's, or the notice script's few. */
+export interface SendConfig {
+  build: Pick<Config["build"], "environment">;
+  email: Config["email"];
+  sandbox: Pick<Config["sandbox"], "apiUrl">;
+}
+
 /** What `sendEmail` reads: a job's deps, or a script's. */
-export type SendDeps = Pick<Deps, "db" | "log" | "mail" | "vault" | "analytics" | "config">;
+export type SendDeps = Pick<Deps, "db" | "log" | "mail" | "vault" | "analytics"> & {
+  config: SendConfig;
+};
 
 /** How long a send Resend could not take now waits before it is tried again. */
 export const SEND_RETRY_MS = 5 * 60_000;
@@ -73,7 +91,7 @@ export const DEV_SUBJECT_PREFIX = "[Dev] ";
 
 /** Where an unsubscribe link goes: this API's own address, so dev's mail stops dev's email. */
 export async function unsubscribeUrl(
-  deps: Pick<Deps, "vault" | "config">,
+  deps: Pick<Deps, "vault"> & { config: Pick<SendConfig, "sandbox"> },
   userId: string,
   category: NonNullable<(typeof EMAIL_KINDS)[EmailKind]["unsubscribe"]>,
 ): Promise<string> {
@@ -83,32 +101,45 @@ export async function unsubscribeUrl(
 }
 
 export async function sendEmail(deps: SendDeps, request: SendRequest): Promise<SendOutcome> {
+  return (await deliverEmail(deps, request)).outcome;
+}
+
+/**
+ * `sendEmail`, answering also the address it was for and Resend's id: what a legal notice's
+ * record keeps. Nothing else about it differs.
+ */
+export async function deliverEmail(deps: SendDeps, request: SendRequest): Promise<SendResult> {
   const { kind, userId, key } = request;
   const { log, config } = deps;
   if (key.length === 0 || key.length > IDEMPOTENCY_KEY_MAX) {
     throw new Error(`An email's key is 1 to ${IDEMPOTENCY_KEY_MAX} characters.`);
   }
-  if (!deps.mail.enabled) return "off";
+  const ended = (outcome: SendOutcome, address: string | null = null): SendResult => ({
+    outcome,
+    address,
+    resendId: null,
+  });
+  if (!deps.mail.enabled) return ended("off");
   if (emailPaused(config.email, kind)) {
     log.info("email_paused", { kind, job: key });
-    return "paused";
+    return ended("paused");
   }
 
   const rules = EMAIL_KINDS[kind];
   const person = await emailRecipient(deps.db, userId);
   if (!person?.email) {
     log.info("email_no_address", { kind, job: key });
-    return "no_address";
+    return ended("no_address");
   }
   if (rules.pref !== null && !person[rules.pref]) {
     log.info("email_opted_out", { kind, job: key });
-    return "opted_out";
+    return ended("opted_out", person.email);
   }
 
   const production = config.build.environment === "production";
   if (!production && !emailAllowed(config.email.allow, person.email)) {
     log.info("email_held", { kind, job: key });
-    return "held";
+    return ended("held", person.email);
   }
 
   const unsubscribe = rules.unsubscribe
@@ -134,8 +165,9 @@ export async function sendEmail(deps: SendDeps, request: SendRequest): Promise<S
     ],
   };
 
+  let resendId: string;
   try {
-    await deps.mail.send(message);
+    ({ id: resendId } = await deps.mail.send(message));
   } catch (error) {
     const failure = error instanceof MailError ? error : mailErrorOf(null);
     if (failure.code === "rate_limited" || failure.code === "unavailable") {
@@ -145,7 +177,7 @@ export async function sendEmail(deps: SendDeps, request: SendRequest): Promise<S
       // This key's email went already: it is sent, once.
       log.warn("email_duplicate", { kind, job: key });
       deps.analytics.capture("email sent", { kind }, { distinctId: userId });
-      return "duplicate";
+      return ended("duplicate", person.email);
     }
     log.error("email_refused", {
       kind,
@@ -160,9 +192,9 @@ export async function sendEmail(deps: SendDeps, request: SendRequest): Promise<S
       { distinctId: userId },
     );
     deps.analytics.exception(failure, { email: kind });
-    return "refused";
+    return ended("refused", person.email);
   }
   log.info("email_sent", { kind, job: key });
   deps.analytics.capture("email sent", { kind }, { distinctId: userId });
-  return "sent";
+  return { outcome: "sent", address: person.email, resendId };
 }

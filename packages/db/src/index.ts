@@ -109,9 +109,18 @@ export {
 } from "./queries/claude.ts";
 export { openClaudeSignIn, setClaudeSignInSession } from "./queries/claude-sign-ins.ts";
 export {
+  claimEmailNotice,
+  countWithoutAddress,
+  type EmailNoticeOutcome,
+  type EmailNoticeRecord,
   type EmailRecipient,
+  emailNoticeRecords,
   emailRecipient,
+  existingUsers,
+  finishEmailNotice,
   type Joiner,
+  type NoticeAudience,
+  noticeAudience,
   RECAP_HOUR,
   type RecapDue,
   type RecapMerge,

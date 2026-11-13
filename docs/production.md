@@ -461,6 +461,14 @@ Off until the founder's email steps (docs/cloud.md, "Email"). When production ha
   `DATABASE_URL=… bun apps/api/scripts/email-stamp-members.ts` against production's database
   once, so only people who join from then on are announced. It only moves each workspace's
   window start later, so running it twice is harmless.
+- Legal notices are the founder's to send, from a machine with production's `DATABASE_URL`,
+  `RESEND_API_KEY` and `PONZU_EMAIL_REPLY_TO`, and `PONZU_ENVIRONMENT=production`:
+  `bun apps/api/scripts/notice.ts --notice <id> --dry-run`, read the counts and the rendered
+  email, then `--send`. It records each person in `email_notices` and never sends anyone a
+  notice twice, so it can be run again after any stop. Exit 1 lists the ids of records still
+  `pending` after a day: look each up at Resend by its key, `notice/<notice>/<user>`.
+- The billing-starts notice (`billing-starts`, with its day written in a reviewed pull request)
+  goes at least 30 days before `PONZU_BILLING=on` in production; the script refuses it sooner.
 
 ### The GitHub repository
 

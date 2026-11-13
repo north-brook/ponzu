@@ -1,6 +1,11 @@
-import { and, asc, eq, gt, inArray, isNull, lt, lte, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { memberships, notifications, users, workspaces } from "../schema/index.ts";
+import type { EMAIL_NOTICE_OUTCOMES } from "../enums.ts";
+import { emailNotices, memberships, notifications, users, workspaces } from "../schema/index.ts";
+
+/** How a legal notice's email ended for one person. */
+export type EmailNoticeOutcome = (typeof EMAIL_NOTICE_OUTCOMES)[number];
+
 import { queryJson, timeParam } from "./json.ts";
 import { DIGEST_DEFAULT_TIME_ZONE } from "./notifications.ts";
 import { run } from "./run.ts";
@@ -489,4 +494,176 @@ export async function stampRecapSent(
       })
       .where(eq(users.id, userId)),
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Legal notices (docs/cloud.md, "Email"): what the terms promise by email, sent by the founder's
+// script (apps/api/scripts/notice.ts), with a record of each person's in `email_notices`. A row
+// is written `pending` before its send and gets its outcome after; only a `pending` row is ever
+// written again, so a person is sent a notice at most once whatever the script meets.
+
+/** Who a notice goes to: the people who pay, or everyone with an account. */
+export type NoticeAudience = "billing" | "everyone";
+
+/**
+ * The people a notice goes to, by id, sorted.
+ * - `billing` (billing starts, a price rise): every admin of every organisation's workspace, and
+ *   the person of each personal workspace (the member whose GitHub account it is, never a
+ *   collaborator of it): the people billing's own notices go to.
+ * - `everyone` (a terms or privacy change, shutting down): every person with an account.
+ * A person is listed once however many workspaces they are in. Their address is read when each
+ * email is sent; someone without one is still listed, and recorded `no_address`.
+ */
+export async function noticeAudience(db: Db, audience: NoticeAudience): Promise<string[]> {
+  if (audience === "everyone") {
+    const rows = await run(db.select({ id: users.id }).from(users).orderBy(asc(users.id)));
+    return rows.map((row) => row.id);
+  }
+  const rows = await run(
+    db
+      .selectDistinct({ id: memberships.userId })
+      .from(memberships)
+      .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(
+        or(
+          and(eq(workspaces.kind, "org"), eq(memberships.role, "admin")),
+          and(eq(workspaces.kind, "personal"), eq(users.githubUserId, workspaces.githubAccountId)),
+        ),
+      )
+      .orderBy(asc(memberships.userId)),
+  );
+  return rows.map((row) => row.id);
+}
+
+/** Which of `userIds` have an account, sorted. */
+export async function existingUsers(db: Db, userIds: readonly string[]): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const rows = await run(
+    db
+      .select({ id: users.id })
+      .from(users)
+      .where(inArray(users.id, [...userIds]))
+      .orderBy(asc(users.id)),
+  );
+  return rows.map((row) => row.id);
+}
+
+/** How many of `userIds` have no address now. */
+export async function countWithoutAddress(db: Db, userIds: readonly string[]): Promise<number> {
+  let count = 0;
+  // In slices, so a notice to everyone never builds one enormous statement.
+  for (let at = 0; at < userIds.length; at += 1000) {
+    const [row] = await run(
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(inArray(users.id, userIds.slice(at, at + 1000)), isNull(users.email))),
+    );
+    count += Number(row?.count ?? 0);
+  }
+  return count;
+}
+
+/** One person's record of a notice. */
+export interface EmailNoticeRecord {
+  userId: string;
+  outcome: EmailNoticeOutcome;
+  createdAt: Date;
+}
+
+const noticeRecord = {
+  userId: emailNotices.userId,
+  outcome: emailNotices.outcome,
+  createdAt: emailNotices.createdAt,
+};
+
+/** Every record of the notice so far, by person. */
+export async function emailNoticeRecords(
+  db: Db,
+  noticeId: string,
+): Promise<Map<string, EmailNoticeRecord>> {
+  const rows = await run(
+    db.select(noticeRecord).from(emailNotices).where(eq(emailNotices.noticeId, noticeId)),
+  );
+  return new Map(rows.map((row) => [row.userId, row]));
+}
+
+/**
+ * Write the person's `pending` record of the notice before it is sent, unless they have one.
+ * Answers the record as it now stands, so the caller sends only while it is `pending`, and
+ * young enough that Resend's idempotency key still holds.
+ */
+export async function claimEmailNotice(
+  db: Db,
+  {
+    noticeId,
+    userId,
+    workspaceId,
+    now,
+  }: { noticeId: string; userId: string; workspaceId: string | null; now: Date },
+): Promise<EmailNoticeRecord> {
+  await run(
+    db
+      .insert(emailNotices)
+      .values({
+        noticeId,
+        userId,
+        workspaceId,
+        outcome: "pending",
+        createdAt: sql`${timeParam(now)}::timestamptz`,
+      })
+      .onConflictDoNothing(),
+  );
+  const [row] = await run(
+    db
+      .select(noticeRecord)
+      .from(emailNotices)
+      .where(and(eq(emailNotices.noticeId, noticeId), eq(emailNotices.userId, userId))),
+  );
+  if (!row) throw new Error("The notice's record was not written.");
+  return row;
+}
+
+/**
+ * Write how the person's notice ended. Only a `pending` record changes, so each person's
+ * outcome is written once. Answers whether it was written.
+ */
+export async function finishEmailNotice(
+  db: Db,
+  {
+    noticeId,
+    userId,
+    outcome,
+    address,
+    resendId,
+    sentAt,
+  }: {
+    noticeId: string;
+    userId: string;
+    outcome: Exclude<EmailNoticeOutcome, "pending">;
+    address: string | null;
+    resendId: string | null;
+    sentAt: Date | null;
+  },
+): Promise<boolean> {
+  const written = await run(
+    db
+      .update(emailNotices)
+      .set({
+        outcome,
+        address,
+        resendId,
+        sentAt: sentAt ? sql`${timeParam(sentAt)}::timestamptz` : null,
+      })
+      .where(
+        and(
+          eq(emailNotices.noticeId, noticeId),
+          eq(emailNotices.userId, userId),
+          eq(emailNotices.outcome, "pending"),
+        ),
+      )
+      .returning({ userId: emailNotices.userId }),
+  );
+  return written.length > 0;
 }

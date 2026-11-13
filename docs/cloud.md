@@ -2999,8 +2999,9 @@ answers but "off" stamps the date: sent, refused, held, paused or turned off sin
 
 Ponzu's emails are rendered by `@ponzu/email` (React Email) to an HTML and a text part, and sent
 through Resend with its official SDK, which only `apps/api/src/deps/mail.ts` imports. Today the
-daily digest, people joined and the Friday recap are sent; the billing notices and the legal
-notices are built on the same door by later slices. Production has no `RESEND_API_KEY`, so
+daily digest, people joined and the Friday recap are sent, and the founder's script sends the
+legal notices; the billing notices are built on the same door by a later slice. Production has
+no `RESEND_API_KEY`, so
 everything here is off there: nothing is sent, no email job is recorded, and no route answers
 differently.
 
@@ -3108,6 +3109,34 @@ canvases, 3 pull requests merged`, with no canvas or workspace name in the subje
 body, until the founder chooses names. It never carries a pull request's title, a repository, or
 anything else a person or the agent wrote. Nothing is read, stamped or recorded while email is
 off or `recap` is paused; a job recorded before the pause stamps the Friday without sending.
+
+**Legal notices** (`notice`, `apps/api/src/email/notice.ts`). What the terms and privacy policy
+promise to say by email: billing starting, a price rise, a change to the terms or the privacy
+policy, Ponzu closing, and a suspension. Nothing in the product sends one: the founder runs
+`DATABASE_URL=… PONZU_ENVIRONMENT=… RESEND_API_KEY=… bun apps/api/scripts/notice.ts --notice <id>
+--dry-run|--send`. Each notice is a file in `apps/api/src/email/notices/` named for its id, with
+its kind, the day it takes effect (`YYYY-MM-DD`, said in UTC with no time) and any summary in
+Ponzu's own words, reviewed in a pull request; `billing-starts` waits for the founder's day, and
+`dev-check` exists only to check the script on dev and is refused on production. Billing starting
+and a price rise go to every admin of an organisation's workspace and the person of each personal
+workspace (never a collaborator of one); a terms, privacy or closing notice to everyone with an
+account; a suspension to the people `--user` names, with `--case <id>` (each suspension is
+recorded as `suspension/<case>`), `--reason-file` (the founder's words, at most 1,000 characters,
+sent as escaped text: the one place a person's own words are in any email) and, for a workspace,
+`--workspace`. `--dry-run` writes nothing: it prints counts (people, without an address, already
+recorded by outcome, to send, and the ids of `pending` records over a day old) and renders the
+email to a file. `--send` refuses before writing anything while email is off, for a dated notice
+less than 30 days before its day (a terms change may pass `--sooner`, the terms' "sooner if the
+law or stopping abuse needs it"), for a notice with no day, and for `dev-check` on production.
+For each person it writes the `pending` record, sends with Resend's key
+`notice/<notice>/<user>` at most 5 times a second (so the API's own emails stay under Resend's 10
+a second), then writes the outcome, the address and Resend's id. A rerun sends to nobody whose
+record is finished. A `pending` record under 24 hours old (the script stopped mid-send) is sent
+again under the same key, which Resend answers with the first email; an older one is listed by
+id, never sent again, and the script exits 1 for the founder to check it at Resend. When Resend
+asks it to wait, the script stops there and is run again. A notice is never paused, carries no
+unsubscribe link, and outside production goes only to `PONZU_EMAIL_ALLOW` (the rest are recorded
+`held`). Its output carries counts and ids, never an address, a name or the reason.
 
 **Environments.** Production sends to anyone the rules choose once its key exists, and starts
 with every kind in `PONZU_EMAIL_PAUSED` until the founder releases them. Dev, previews and a
