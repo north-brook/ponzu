@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.2](https://github.com/north-brook/ponzu/compare/v2.3.1...v2.3.2) (2026-11-13)
+
+
+### Performance Improvements
+
+* **canvas:** keep less GPU memory while zooming out on big canvases ([#605](https://github.com/north-brook/ponzu/issues/605)) ([1d0cf73](https://github.com/north-brook/ponzu/commit/1d0cf73257fbf91f892db0222344cb534671e471))
+
 ## [2.3.1](https://github.com/north-brook/ponzu/compare/v2.3.0...v2.3.1) (2026-11-13)
 
 
