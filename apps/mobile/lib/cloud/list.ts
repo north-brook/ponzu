@@ -11,13 +11,13 @@ import {
   type Person,
   type ProjectCount,
   projectCounts,
-  pruneFilter,
   type RowIndicator,
   rowIndicator,
   toAsk,
   toSummary,
   type WorkspaceKind,
 } from "@ponzu/client/model";
+import { pruneFilter } from "./filter-rules";
 
 /*
  * The canvases list as the phone draws it (docs/mobile.md, "The canvases list"), pure: the live
