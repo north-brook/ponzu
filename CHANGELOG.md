@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/north-brook/ponzu/compare/v1.80.1...v2.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* ponzu cloud ([#561](https://github.com/north-brook/ponzu/issues/561))
+
+### Features
+
+* ponzu cloud ([#561](https://github.com/north-brook/ponzu/issues/561)) ([4c8a130](https://github.com/north-brook/ponzu/commit/4c8a130f86a2fb3546749959aa83cf1098670a7b))
+
 ## [1.80.1](https://github.com/north-brook/ponzu/compare/v1.80.0...v1.80.1) (2026-11-10)
 
 
