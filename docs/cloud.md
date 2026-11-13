@@ -2999,7 +2999,7 @@ answers but "off" stamps the date: sent, refused, held, paused or turned off sin
 
 Ponzu's emails are rendered by `@ponzu/email` (React Email) to an HTML and a text part, and sent
 through Resend with its official SDK, which only `apps/api/src/deps/mail.ts` imports. Today the
-daily digest and people joined are sent; the billing notices, the Friday recap and the legal
+daily digest, people joined and the Friday recap are sent; the billing notices and the legal
 notices are built on the same door by later slices. Production has no `RESEND_API_KEY`, so
 everything here is off there: nothing is sent, no email job is recorded, and no route answers
 differently.
@@ -3085,6 +3085,28 @@ announced again. Before `team` is first released in an environment, `DATABASE_UR
 apps/api/scripts/email-stamp-members.ts` moves every workspace's window start to now (never
 back), so only people who join from then on are announced. The email names people by
 `users.name` and `@login` only, with no avatars and no button.
+
+**The Friday recap** (`recap`, `apps/api/src/email/recap.ts`). On Fridays from 15:00 where the
+person is (their app's time zone, or New York when it reported none or one Postgres does not
+know, the digest's guard), the pull requests merged that week from canvases they own, only in
+weeks when there were any. A merge is the thread notice `ti_pr-<n>-merged`, written once when
+Ponzu first sees it; its time stands in for the merge's, and the week is `[last Friday 15:00,
+this Friday 15:00)` in the person's zone, computed in Postgres so it follows daylight saving.
+Every five minutes, from Friday 00:00 UTC to Saturday 13:00 UTC (outside those hours it cannot
+be Friday afternoon anywhere, and the step reads nothing), the `recaps` step stamps in one
+statement everyone due with no merge from a canvas they own (`users.recap_sent_on`, the Friday),
+then records an `email.recap` job keyed `recap:<user>:<Friday>` for each of up to 20 of the rest
+and runs them one after another. A Friday missed entirely is skipped, never caught up. The job
+keeps a canvas only while the person still owns it, is a member of its workspace now, and could
+read it when it was last merged (the kept access answer judged at that merge, not at send time,
+so a person who has not opened Ponzu since still hears). It sends with Resend's key
+`recap/<user>/<Friday>`, stamps `recap_sent_on`, and on the first real send sets
+`recap_first_sent_at`, which drops the one-time introduction from every later recap; with nothing
+left it only stamps. The recap is in its counts-only form (`RECAP_FORM`): `Shipped this week: 2
+canvases, 3 pull requests merged`, with no canvas or workspace name in the subject, preview or
+body, until the founder chooses names. It never carries a pull request's title, a repository, or
+anything else a person or the agent wrote. Nothing is read, stamped or recorded while email is
+off or `recap` is paused; a job recorded before the pause stamps the Friday without sending.
 
 **Environments.** Production sends to anyone the rules choose once its key exists, and starts
 with every kind in `PONZU_EMAIL_PAUSED` until the founder releases them. Dev, previews and a

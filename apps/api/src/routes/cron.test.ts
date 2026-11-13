@@ -95,6 +95,7 @@ test("only the scheduler's secret runs it", async () => {
       prune_notifications: { expired: 0, deleted: 0, devices: 0 },
       // Email is off without RESEND_API_KEY, as here: nothing is found due.
       digests: { due: 0, recorded: 0 },
+      recaps: { stamped: 0, due: 0, recorded: 0 },
       maintenance: { lifted: 0, started: 0, queued: 0 },
       pull_requests: { swept: 0 },
       // The test clock starts on the hour, when the hourly retention sweep is due.

@@ -7,6 +7,7 @@ import { jobsStep } from "./steps/jobs.ts";
 import { maintenanceStep } from "./steps/maintenance.ts";
 import { pruneNotificationsStep } from "./steps/prune-notifications.ts";
 import { pullRequestSweepStep } from "./steps/pull-request-sweep.ts";
+import { recapsStep } from "./steps/recaps.ts";
 import { receiptsStep } from "./steps/receipts.ts";
 import { resolveQuestionsStep } from "./steps/resolve-questions.ts";
 import { retentionStep } from "./steps/retention.ts";
@@ -53,6 +54,7 @@ export const CRON_STEPS: readonly CronStep[] = [
   resolveQuestionsStep,
   pruneNotificationsStep,
   digestsStep,
+  recapsStep,
   maintenanceStep,
   pullRequestSweepStep,
   archivesStep,

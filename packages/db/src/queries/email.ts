@@ -1,7 +1,8 @@
 import { and, asc, eq, gt, inArray, isNull, lt, lte, ne, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { memberships, notifications, users, workspaces } from "../schema/index.ts";
-import { timeParam } from "./json.ts";
+import { queryJson, timeParam } from "./json.ts";
+import { DIGEST_DEFAULT_TIME_ZONE } from "./notifications.ts";
 import { run } from "./run.ts";
 
 /*
@@ -250,4 +251,242 @@ export async function stampAllMembersAnnounced(db: Db, { now }: { now: Date }): 
       .returning({ id: workspaces.id }),
   );
   return moved.length;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The Friday recap (docs/cloud.md, "Email"): on Fridays from 15:00 where the person is, the
+// pull requests merged that week from canvases they own. `users.recap_sent_on` is the last
+// Friday handled, sent or skipped, so it goes at most once a week.
+//
+// Where a person is: their app's time zone, or `DIGEST_DEFAULT_TIME_ZONE` when it reported none
+// or one Postgres does not know (the same guard as `digestsDue`), so one odd zone can never fail
+// the query for everyone. A merge is the thread notice `ti_pr-<n>-merged`, which Ponzu writes
+// once, when it first sees the merge; its `created_at` stands in for the merge time. The week is
+// `[last Friday 15:00, this Friday 15:00)` in the person's zone, computed in Postgres, so it
+// follows daylight saving.
+
+/** The local hour on Fridays from which a person's recap may go. */
+export const RECAP_HOUR = 15;
+
+/** A person whose recap is due, the Friday it is for (`YYYY-MM-DD`), and the zone it is timed in. */
+export interface RecapDue {
+  userId: string;
+  friday: string;
+  /** The zone the week was computed in: the person's own, or the default. */
+  timeZone: string;
+}
+
+/** A merge notice on a thread, the thread notice id's pattern, for `like … escape '\'`. */
+const MERGED_NOTICE = "ti\\_pr-%-merged";
+
+/**
+ * The people whose recap is due at `now`, each with the Friday and zone, and whether a merge
+ * from a canvas they own landed in that Friday's week. Shared by the two statements below, which
+ * must agree exactly on who is due.
+ */
+function recapsDueSql(now: Date) {
+  const at = sql`${timeParam(now)}::timestamptz`;
+  return sql`
+    zones as (select name from pg_timezone_names),
+    placed as (
+      select u.id, u.created_at, u.recap_sent_on,
+             coalesce(z.name, ${DIGEST_DEFAULT_TIME_ZONE}) as zone,
+             (${at} at time zone coalesce(z.name, ${DIGEST_DEFAULT_TIME_ZONE})) as local
+        from users u
+        left join zones z on z.name = u.time_zone
+       where u.email_recap and u.email is not null
+    ),
+    due as (
+      select id, created_at, zone, local::date as friday,
+             ((local::date - 7) + time '15:00') at time zone zone as week_from,
+             (local::date + time '15:00') at time zone zone as week_until
+        from placed
+       where extract(isodow from local) = 5
+         and extract(hour from local) >= ${RECAP_HOUR}
+         and (recap_sent_on is null or recap_sent_on < local::date)
+    ),
+    marked as (
+      select due.*, exists (
+               select 1
+                 from canvases c
+                 join thread_items t on t.canvas_id = c.id
+                where c.owner_id = due.id
+                  and t.kind = 'notice'
+                  and t.id like ${MERGED_NOTICE} escape '\\'
+                  and t.created_at >= due.week_from
+                  and t.created_at < due.week_until
+             ) as merged
+        from due
+    )`;
+}
+
+/**
+ * Stamp, in one statement, every person whose recap is due at `now` and who has nothing to be
+ * sent: no canvas they own had a merge in their week. Most people in most weeks are these, so
+ * they never take a place in the batch of real sends. Answers how many were stamped.
+ */
+export async function stampQuietRecaps(db: Db, { now }: { now: Date }): Promise<number> {
+  const result = await queryJson<{ count: number }>(
+    db,
+    sql`
+      with ${recapsDueSql(now)},
+      stamped as (
+        update users u
+           set recap_sent_on = greatest(u.recap_sent_on, marked.friday), updated_at = now()
+          from marked
+         where u.id = marked.id and not marked.merged
+        returning u.id
+      )
+      select json_build_object('count', count(*)) as result from stamped
+    `,
+  );
+  return Number(result?.count ?? 0);
+}
+
+/**
+ * Up to `limit` people whose recap is due at `now` and who have a merge in their week, oldest
+ * accounts first. Someone whose recap job is already waiting (of kind `job.kind`, keyed
+ * `<job.keyPrefix>:<user>:<friday>`) is left to it, so a job Resend held back does not take a
+ * place in the next batch.
+ */
+export async function recapsDue(
+  db: Db,
+  { now, limit = 20, job }: { now: Date; limit?: number; job: { kind: string; keyPrefix: string } },
+): Promise<RecapDue[]> {
+  const result = await queryJson<RecapDue[]>(
+    db,
+    sql`
+      with ${recapsDueSql(now)}
+      select coalesce(json_agg(json_build_object(
+               'userId', id, 'friday', to_char(friday, 'YYYY-MM-DD'), 'timeZone', zone
+             ) order by created_at, id), '[]') as result
+        from (
+          select * from marked
+           where merged
+             and not exists (
+               select 1 from jobs j
+                where j.kind = ${job.kind}
+                  and j.key = ${job.keyPrefix} || ':' || marked.id || ':' || to_char(marked.friday, 'YYYY-MM-DD')
+                  and j.completed_at is null and j.failed_at is null
+             )
+           order by created_at, id
+           limit ${limit}
+        ) picked
+    `,
+  );
+  return result ?? [];
+}
+
+/** One merge in a person's week, from a canvas they own. */
+export interface RecapMerge {
+  canvasId: string;
+  canvasName: string;
+  workspaceId: string;
+  workspaceName: string;
+  /** The pull request's number. */
+  number: number;
+  /** When Ponzu first saw the merge. */
+  mergedAt: Date;
+}
+
+/**
+ * The merges in the week that ends on `friday` at 15:00 in `timeZone` (the default zone when
+ * Postgres does not know it), from canvases `userId` owns now, newest first. Numbers and names
+ * only: never the pull request's title, which the agent wrote.
+ */
+export async function recapMerges(
+  db: Db,
+  { userId, friday, timeZone }: { userId: string; friday: string; timeZone: string },
+): Promise<RecapMerge[]> {
+  const rows = await queryJson<
+    {
+      canvas_id: string;
+      canvas_name: string;
+      workspace_id: string;
+      workspace_name: string;
+      number: number;
+      merged_at: string;
+    }[]
+  >(
+    db,
+    sql`
+      with zone as (
+        select coalesce(
+                 (select name from pg_timezone_names where name = ${timeZone}),
+                 ${DIGEST_DEFAULT_TIME_ZONE}
+               ) as name
+      ),
+      week as (
+        select ((${friday}::date - 7) + time '15:00') at time zone zone.name as week_from,
+               (${friday}::date + time '15:00') at time zone zone.name as week_until
+          from zone
+      )
+      select coalesce(json_agg(json_build_object(
+               'canvas_id', c.id, 'canvas_name', c.name,
+               'workspace_id', w.id, 'workspace_name', w.name,
+               'number', (t.payload->>'number')::int, 'merged_at', t.created_at
+             ) order by t.created_at desc, c.id, t.id), '[]') as result
+        from canvases c
+        join workspaces w on w.id = c.workspace_id
+        join thread_items t on t.canvas_id = c.id
+        cross join week
+       where c.owner_id = ${userId}
+         and t.kind = 'notice'
+         and t.id like ${MERGED_NOTICE} escape '\\'
+         and t.payload->>'number' ~ '^[0-9]{1,9}$'
+         and t.created_at >= week.week_from
+         and t.created_at < week.week_until
+    `,
+  );
+  return (rows ?? []).map((row) => ({
+    canvasId: row.canvas_id,
+    canvasName: row.canvas_name,
+    workspaceId: row.workspace_id,
+    workspaceName: row.workspace_name,
+    number: Number(row.number),
+    mergedAt: new Date(row.merged_at),
+  }));
+}
+
+/** What the recap's job reads of its person, or null when there is no such person. */
+export interface RecapPerson {
+  /** The last Friday handled, `YYYY-MM-DD`. */
+  recapSentOn: string | null;
+  /** When the first real recap went; null until then. */
+  recapFirstSentAt: Date | null;
+}
+
+export async function recapPerson(db: Db, userId: string): Promise<RecapPerson | null> {
+  const [row] = await run(
+    db
+      .select({ recapSentOn: users.recapSentOn, recapFirstSentAt: users.recapFirstSentAt })
+      .from(users)
+      .where(eq(users.id, userId)),
+  );
+  return row ?? null;
+}
+
+/**
+ * Record that the recap for `friday` is handled: sent, or found to have nothing to say. An
+ * earlier Friday than the one kept changes nothing, so a late retry cannot send twice. `sent`
+ * also sets when the first recap went, once.
+ */
+export async function stampRecapSent(
+  db: Db,
+  { userId, friday, sent, now }: { userId: string; friday: string; sent: boolean; now: Date },
+): Promise<void> {
+  await run(
+    db
+      .update(users)
+      .set({
+        recapSentOn: sql`greatest(${users.recapSentOn}, ${friday}::date)`,
+        ...(sent
+          ? {
+              recapFirstSentAt: sql`coalesce(${users.recapFirstSentAt}, ${timeParam(now)}::timestamptz)`,
+            }
+          : {}),
+        updatedAt: sql`now()`,
+      })
+      .where(eq(users.id, userId)),
+  );
 }
