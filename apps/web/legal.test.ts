@@ -214,9 +214,11 @@ test("the privacy policy claims nothing production does not do", () => {
   expect(source("privacy")).toContain('<H2 id="analytics">');
 });
 
-test("the terms promise billing emails and legal notices can't be turned off, once email is sent", () => {
+test("the terms say legal notices, and billing emails once billing starts, can't be turned off", () => {
+  // Line 68 already promises a suspension's reason by email today, so the sentence is not made
+  // conditional on Ponzu sending email; only the billing emails wait, for billing itself.
   expect(source("terms")).toContain(
-    "Once Ponzu sends email, the billing emails it sends a workspace's admins, and the notices these terms promise by email, are part of the service and can't be turned off.",
+    "The notices these terms promise by email and, once billing starts, the billing emails Ponzu sends a workspace's admins are part of the service and can't be turned off.",
   );
 });
 
