@@ -111,8 +111,16 @@ export { openClaudeSignIn, setClaudeSignInSession } from "./queries/claude-sign-
 export {
   type EmailRecipient,
   emailRecipient,
+  type Joiner,
+  stampAllMembersAnnounced,
+  stampMembersAnnounced,
   stampNotificationEmailed,
+  type TeamEmailWorkspace,
+  teamEmailAdmins,
   teamEmailAvailable,
+  teamEmailWorkspace,
+  teamJoiners,
+  teamSize,
 } from "./queries/email.ts";
 export {
   addRepoSecret,

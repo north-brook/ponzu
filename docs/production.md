@@ -457,6 +457,10 @@ Off until the founder's email steps (docs/cloud.md, "Email"). When production ha
   person to confirm, since it reads names, not values.
 - The site's `/settings` page and `/email/` assets live on ponzu.design before any kind is
   released.
+- Just before `team` is first removed from `PONZU_EMAIL_PAUSED`, run
+  `DATABASE_URL=… bun apps/api/scripts/email-stamp-members.ts` against production's database
+  once, so only people who join from then on are announced. It only moves each workspace's
+  window start later, so running it twice is harmless.
 
 ### The GitHub repository
 

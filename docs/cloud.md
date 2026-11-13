@@ -2999,8 +2999,8 @@ answers but "off" stamps the date: sent, refused, held, paused or turned off sin
 
 Ponzu's emails are rendered by `@ponzu/email` (React Email) to an HTML and a text part, and sent
 through Resend with its official SDK, which only `apps/api/src/deps/mail.ts` imports. Today the
-daily digest is the only one sent; the billing notices, people joined, the Friday recap and the
-legal notices are built on the same door by later slices. Production has no `RESEND_API_KEY`, so
+daily digest and people joined are sent; the billing notices, the Friday recap and the legal
+notices are built on the same door by later slices. Production has no `RESEND_API_KEY`, so
 everything here is off there: nothing is sent, no email job is recorded, and no route answers
 differently.
 
@@ -3061,6 +3061,30 @@ digest's first tokens, `<user id>.pzv1.…`, still open as the digest's. Tokens 
 
 Only a POST changes anything, because mail filters and link scanners fetch every link in an
 email (RFC 8058, section 6). Only a POST is counted (`email unsubscribed`).
+
+**People joined** (`team`, `apps/api/src/email/members.ts`). When a person's own sign-in sync
+makes their membership of an organisation's workspace (`upsertMembership` answers `created`),
+they reach the organisation on GitHub as its owner or a member, and they did not install the
+App, the sync records an `email.members` job for the workspace, due at `until =
+greatest(now + 1 hour, members_announced_at + 24 hours)`: joins gather for an hour, and a
+workspace's admins hear at most once a day. Nothing is recorded while email is off or `team` is
+paused. The job's key is `members:<workspace>:<members_announced_at>`, so every join until the
+window moves folds into the one job. When it runs, it announces the memberships made in
+`(greatest(members_announced_at, until - 48 hours), until]` that still exist, by the same rule
+(owner or member, not the installer), oldest first. The 48-hour floor keeps the first email
+after the key is set to recent joins, since the column's default is the moment it was added.
+It sends one email to each admin of the workspace who reaches the organisation as its owner or
+a member (an outside collaborator made admin in Ponzu never gets it, since an organisation's
+members are not theirs to see), never to one of the people announced, with Resend's key
+`members/<workspace>/<until>/<admin>`. Once every admin is handled it moves
+`members_announced_at` to `until`. Then, if anyone joined after `until` while it ran (their join
+folded into it and was outside its window), it records the next job, due 24 hours after `until`.
+A job whose window start has moved since it was recorded sends nothing and only schedules
+whoever joined since. A person who loses access and later regains it has a new membership and is
+announced again. Before `team` is first released in an environment, `DATABASE_URL=… bun
+apps/api/scripts/email-stamp-members.ts` moves every workspace's window start to now (never
+back), so only people who join from then on are announced. The email names people by
+`users.name` and `@login` only, with no avatars and no button.
 
 **Environments.** Production sends to anyone the rules choose once its key exists, and starts
 with every kind in `PONZU_EMAIL_PAUSED` until the founder releases them. Dev, previews and a
