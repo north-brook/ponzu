@@ -271,7 +271,7 @@ export interface Attachment {
 /**
  * A picture of the area round a comment's pin as it was when the comment was made, at its size
  * as shown: its files in each theme (for the viewer's own, local copies), or, while the viewer's
- * own app is still making them, the scene they are made from (`renderDrawing`).
+ * own app is still making them, what stands in for them meanwhile (`renderDrawing`).
  */
 export type CommentPicture = { width: number; height: number } & (
   | { kind: "image"; light: string; dark: string }
