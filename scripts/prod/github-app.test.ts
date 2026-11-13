@@ -57,7 +57,7 @@ function conversion(extra: Record<string, unknown> = {}) {
   };
 }
 
-/** A fake GitHub and a fake Vercel on one network: ponzu-api-prod after D2, no App yet. */
+/** A fake GitHub and a fake Vercel on one network: ponzu-api after D2, no App yet. */
 function world(
   options: {
     envs?: Record<string, unknown>[];
@@ -76,15 +76,15 @@ function world(
     ...(options.project === false
       ? {}
       : {
-          "GET /v9/projects/ponzu-api-prod": () => ({
+          "GET /v9/projects/ponzu-api": () => ({
             ...vercelProject,
-            name: "ponzu-api-prod",
+            name: "ponzu-api",
             id: "prj_prod",
             env: envs,
           }),
         }),
-    "GET /v10/projects/ponzu-api-prod/env": () => ({ envs }),
-    "POST /v10/projects/ponzu-api-prod/env":
+    "GET /v10/projects/ponzu-api/env": () => ({ envs }),
+    "POST /v10/projects/ponzu-api/env":
       options.vercelPost ??
       ((s: { body: Record<string, unknown>[] }) => {
         for (const e of s.body) {
@@ -336,7 +336,7 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
     const writes = net.writes();
     expect(writes.map((w) => `${w.method} ${w.url}`)).toEqual([
       `POST https://api.github.com/app-manifests/${CODE}/conversions`,
-      "POST https://api.vercel.com/v10/projects/ponzu-api-prod/env",
+      "POST https://api.vercel.com/v10/projects/ponzu-api/env",
     ]);
     expect(writes[1]?.body).toEqual([
       {
@@ -367,7 +367,7 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
       },
     ]);
     for (const seen of net.seen) {
-      if (seen.url.endsWith("/v10/projects/ponzu-api-prod/env") && seen.method === "POST") continue;
+      if (seen.url.endsWith("/v10/projects/ponzu-api/env") && seen.method === "POST") continue;
       const text = `${seen.url}${seen.query}${JSON.stringify(seen.body ?? null)}`;
       for (const secret of [CLIENT_SECRET, WEBHOOK_SECRET, ...PEM_BODY]) {
         expect(text).not.toContain(secret);
@@ -449,6 +449,16 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
     );
   });
 
+  test("refuses dev's App outright, since its secrets would land on production's target", async () => {
+    const net = fakeNetwork(world({}));
+    const out = io(net.fetch, { VERCEL_TOKEN: TOKEN }, founder());
+    const devArgs = ["create", "--env", "dev", "--workos-callback", "https://example.test/cb"];
+    expect(await main(devArgs, out, infra)).toBe(1);
+    expect(out.opened).toEqual([]);
+    expect(net.seen).toEqual([]);
+    expect(out.lines.at(-1)).toContain("writes only the Production target");
+  });
+
   test("refuses before GitHub when the App's secrets are already on the project", async () => {
     const net = fakeNetwork(
       world({
@@ -462,7 +472,7 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
     expect(out.opened).toEqual([]);
     expect(net.writes()).toEqual([]);
     expect(out.lines.at(-1)).toContain(
-      "fail    GITHUB_APP_PRIVATE_KEY is already set on ponzu-api-prod's Production target",
+      "fail    GITHUB_APP_PRIVATE_KEY is already set on ponzu-api's Production target",
     );
   });
 
@@ -480,7 +490,7 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
     expect(await main(ARGS, out2, infra)).toBe(1);
     expect(out2.opened).toEqual([]);
     expect(out2.lines.at(-1)).toBe(
-      "fail    ponzu-api-prod does not exist yet: run apply.ts vercel-project --env production --yes first",
+      "fail    ponzu-api does not exist yet: run apply.ts vercel-project --env production --yes first",
     );
     expect([...shown.writes(), ...missing.writes()]).toEqual([]);
   });
@@ -543,7 +553,7 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
     await Promise.all(out.visits);
     expect(out.lines).toContain("fail    Vercel answered 400 for storing the App's variables");
     expect(out.lines).toContain(
-      "The App ponzu exists, but its secrets are not all on ponzu-api-prod. To finish by hand:",
+      "The App ponzu exists, but its secrets are not all on ponzu-api. To finish by hand:",
     );
     const printed = out.lines.join("\n");
     for (const secret of SECRETS) expect(printed).not.toContain(secret);
@@ -572,7 +582,7 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
     await Promise.all(out.visits);
     expect(out.lines).toContain("fail    GITHUB_APP_PRIVATE_KEY is not on the Production target");
     expect(out.lines).toContain(
-      "The App ponzu exists, but its secrets are not all on ponzu-api-prod. To finish by hand:",
+      "The App ponzu exists, but its secrets are not all on ponzu-api. To finish by hand:",
     );
     const printed = out.lines.join("\n");
     for (const secret of SECRETS) expect(printed).not.toContain(secret);

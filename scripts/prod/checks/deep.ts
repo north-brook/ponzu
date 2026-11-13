@@ -9,6 +9,7 @@
 
 import currentImage from "../../../apps/runner/image/current.json" with { type: "json" };
 import {
+  CHECK_SCOPE,
   type Sandboxes,
   systemClock,
   testSandboxName,
@@ -45,7 +46,9 @@ export interface DeepObserved {
 export type MakeSandboxes = (credentials: VercelCredentials, ctx: CheckContext) => Sandboxes;
 
 const realSandboxes: MakeSandboxes = (credentials, ctx) =>
-  vercelSandboxes({ clock: systemClock, credentials, fetch: ctx.fetch });
+  // Its throwaway sandbox is a `pz-test-check-` name, so it runs in the check scope, which reaches
+  // only `pz-test-` names and never an environment's sandboxes.
+  vercelSandboxes({ clock: systemClock, credentials, fetch: ctx.fetch, scope: CHECK_SCOPE });
 
 export function deepDesired(ctx: Pick<CheckContext, "env" | "infra">): DeepDesired {
   return {

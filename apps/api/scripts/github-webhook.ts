@@ -2,21 +2,26 @@
 // sending again the ones that failed.
 //
 //   bun scripts/github-webhook.ts status                 where it points, and whether a secret is set
-//   bun scripts/github-webhook.ts configure [--url URL]  point it at the API, signed with GITHUB_WEBHOOK_SECRET
+//   bun scripts/github-webhook.ts configure --env <dev|production> | --url URL
+//                                                        point it at the API, signed with GITHUB_WEBHOOK_SECRET
 //   bun scripts/github-webhook.ts redeliver [--since T] [--dry-run]
 //                                                        send again every delivery that failed since T
 //
 // Needs GITHUB_APP_CLIENT_ID and GITHUB_APP_PRIVATE_KEY (or GITHUB_APP_PRIVATE_KEY_PATH).
 // `configure` also needs GITHUB_WEBHOOK_SECRET, the same value the API is deployed with; it is
-// sent to GitHub and never printed. `--url` defaults to https://api.ponzu.design/v1/github/webhook.
+// sent to GitHub and never printed. `--env` takes the address from that environment's `apiUrl` in
+// infra/environments.json (dev's is https://api-dev.ponzu.design); `--url` names one outright.
+// There is no default, so the App of one environment is never pointed at the other's API by
+// leaving a flag out.
 // `--since` is an ISO time and defaults to three days ago, about as far back as GitHub keeps them.
 //
 // After a deploy that fixes deliveries, run `redeliver`: GitHub does not retry a failed one.
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import githubAppJwt from "universal-github-app-jwt";
 
 const API = "https://api.github.com";
-const DEFAULT_URL = "https://api.ponzu.design/v1/github/webhook";
+const ENVIRONMENTS_FILE = join(import.meta.dir, "../../../infra/environments.json");
 const DAY_MS = 86_400_000;
 
 const { env } = process;
@@ -31,7 +36,7 @@ const privateKeyPem =
   (env.GITHUB_APP_PRIVATE_KEY_PATH && readFileSync(env.GITHUB_APP_PRIVATE_KEY_PATH, "utf8"));
 if (!env.GITHUB_APP_CLIENT_ID || !privateKeyPem || !command) {
   console.error(
-    "usage: GITHUB_APP_CLIENT_ID=… GITHUB_APP_PRIVATE_KEY_PATH=… bun scripts/github-webhook.ts status | configure [--url URL] | redeliver [--since ISO]",
+    "usage: GITHUB_APP_CLIENT_ID=… GITHUB_APP_PRIVATE_KEY_PATH=… bun scripts/github-webhook.ts status | configure --env <dev|production> | configure --url URL | redeliver [--since ISO]",
   );
   process.exit(2);
 }
@@ -74,12 +79,28 @@ async function status() {
   console.log(`secret:       ${"secret" in config ? "set" : "not set"}`);
 }
 
+/** Where `configure` points the webhook: `--url`, or `--env`'s API from environments.json. */
+function webhookUrl(): string {
+  const url = option("url");
+  const name = option("env");
+  if (url && name) throw new Error("Give --env or --url, not both.");
+  if (url) return url;
+  if (name !== "dev" && name !== "production") {
+    throw new Error("configure needs --env dev, --env production or --url URL.");
+  }
+  const apiUrl = JSON.parse(readFileSync(ENVIRONMENTS_FILE, "utf8")).environments[name]?.apiUrl;
+  if (typeof apiUrl !== "string") {
+    throw new Error(`infra/environments.json has no apiUrl for ${name} yet.`);
+  }
+  return `${apiUrl}/v1/github/webhook`;
+}
+
 async function configure() {
+  const url = webhookUrl();
   const secret = env.GITHUB_WEBHOOK_SECRET;
   if (!secret || secret.length < 32) {
     throw new Error("GITHUB_WEBHOOK_SECRET must be set, at least 32 characters.");
   }
-  const url = option("url") ?? DEFAULT_URL;
   await asApp("PATCH", "/app/hook/config", {
     url,
     content_type: "json",

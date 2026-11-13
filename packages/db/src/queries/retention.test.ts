@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { seedUser } from "../fixtures.ts";
 import { authStates, jobs, webhookDeliveries } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { onceId } from "./jobs.ts";
+import { onceId, readHeartbeat, recordHeartbeat } from "./jobs.ts";
 import {
   AUTH_STATE_RETENTION_MS,
   JOB_RETENTION_DAYS,
@@ -100,6 +100,15 @@ test("finished jobs go 30 days after they finished; waiting and running ones sta
     "job_running",
     "job_waiting",
   ]);
+});
+
+test("a heartbeat is kept however old it is, so a cron quiet for months reads as quiet, not as never", async () => {
+  await recordHeartbeat(db, "cron.minute", ago(90 * DAY));
+
+  const swept = await sweepOldRows(db, now);
+
+  expect(swept.jobs).toBe(0);
+  expect(await readHeartbeat(db, "cron.minute")).toEqual(ago(90 * DAY));
 });
 
 test("webhook records go 30 days after they arrived", async () => {

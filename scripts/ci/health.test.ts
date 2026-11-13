@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   apiUrlOf,
+  BYPASS_HEADER,
+  bypassHeaders,
   differences,
   type Expected,
   expectedFromCheckout,
@@ -113,5 +115,84 @@ describe("the health assert", () => {
     expect(apiUrlOf("production")).toBe("https://api.ponzu.design");
     expect(apiUrlOf("dev")).toBe("https://api-dev.ponzu.design");
     expect(() => apiUrlOf("staging")).toThrow("no apiUrl for staging");
+  });
+});
+
+describe("the protection bypass for a staged deployment", () => {
+  const STAGED = "https://ponzu-abc123-northbrook.vercel.app";
+
+  test("sends the secret only to a generated vercel.app address", () => {
+    expect(bypassHeaders(STAGED, "s3cret")).toEqual({ headers: { [BYPASS_HEADER]: "s3cret" } });
+    expect(BYPASS_HEADER).toBe("x-vercel-protection-bypass");
+    for (const url of [
+      "https://api.ponzu.design",
+      "https://api-dev.ponzu.design",
+      "http://ponzu-abc123-northbrook.vercel.app",
+      "https://evil.example/ponzu-abc123-northbrook.vercel.app",
+      "https://ponzu-abc123-northbrook.vercel.app.evil.example",
+      "not a url",
+    ])
+      expect(bypassHeaders(url, "s3cret")).toHaveProperty("error");
+  });
+
+  test("refuses to run without the secret, rather than reading a login page", () => {
+    for (const secret of [undefined, ""]) {
+      const result = bypassHeaders(STAGED, secret);
+      expect(result).toEqual({
+        error:
+          "VERCEL_AUTOMATION_BYPASS_SECRET is empty: the production environment must hold it to check a staged deployment.",
+      });
+    }
+  });
+
+  test("the poll sends the headers it is given", async () => {
+    const seen: (string | null)[] = [];
+    const redirects: (RequestRedirect | undefined)[] = [];
+    const result = await waitForHealth(STAGED, EXPECTED, {
+      headers: { [BYPASS_HEADER]: "s3cret" },
+      fetch: (async (_url: string, init?: RequestInit) => {
+        seen.push(new Headers(init?.headers).get(BYPASS_HEADER));
+        redirects.push(init?.redirect);
+        return Response.json(HEALTHY);
+      }) as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual(["s3cret"]);
+    // Never follows a redirect with the secret on it.
+    expect(redirects).toEqual(["manual"]);
+  });
+
+  test("a redirect with the bypass on is a failure, not followed", async () => {
+    const asked: string[] = [];
+    let clock = 0;
+    const result = await waitForHealth(STAGED, EXPECTED, {
+      headers: { [BYPASS_HEADER]: "s3cret" },
+      now: () => clock,
+      wait: async (ms) => {
+        clock += ms;
+      },
+      fetch: (async (url: string) => {
+        asked.push(url);
+        return new Response(null, {
+          status: 307,
+          headers: { location: "https://elsewhere.example/sso" },
+        });
+      }) as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(false);
+    expect(asked.every((u) => u === `${STAGED}/v1/health`)).toBe(true);
+  });
+
+  test("the command fails, naming the secret, when it is missing", () => {
+    const run = Bun.spawnSync(
+      ["bun", join(ROOT, "scripts/ci/health.ts"), "--env", "production", "--commit", "abc"].concat([
+        "--url",
+        STAGED,
+        "--bypass",
+      ]),
+      { env: { PATH: process.env.PATH ?? "", VERCEL_AUTOMATION_BYPASS_SECRET: "" } },
+    );
+    expect(run.exitCode).toBe(1);
+    expect(run.stdout.toString()).toContain("VERCEL_AUTOMATION_BYPASS_SECRET is empty");
   });
 });

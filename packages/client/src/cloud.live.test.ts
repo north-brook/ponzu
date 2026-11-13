@@ -3,10 +3,10 @@ import { createApi } from "./api.ts";
 import { CloudSource } from "./canvas/cloud-source.ts";
 import { createLive } from "./live/live.ts";
 import { createSession } from "./session.ts";
-import { sessionFile } from "./testing/session-file.ts";
+import { liveApiUrl, sessionFile } from "./testing/session-file.ts";
 
 /*
- * The real thing, opt in: Ponzu Cloud at PONZU_API_URL (https://api.ponzu.design unless set),
+ * The real thing, opt in: Ponzu Cloud at PONZU_API_URL (dev's, https://api-dev.ponzu.design, unless set),
  * signed in as the developer whose session `bun run dev:signin` saved (apps/api/scripts). It
  * makes a Scratch canvas, opens it twice as two devices would, edits it on one and waits for
  * the edit to reach the other through Neon Realtime, then deletes it.
@@ -30,7 +30,7 @@ const until = async (done: () => boolean, ms: number, what: string) => {
 
 describe.skipIf(!file || !workosClientId)("Ponzu Cloud, for real", () => {
   test("an edit on one device reaches another through Realtime", async () => {
-    const apiUrl = process.env.PONZU_API_URL ?? "https://api.ponzu.design";
+    const apiUrl = liveApiUrl();
     const session = createSession({
       apiUrl,
       workosClientId: workosClientId!,

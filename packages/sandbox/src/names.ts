@@ -1,6 +1,9 @@
 /*
  * Sandbox names. A name is unique per Vercel project and is the only identifier we keep: the
- * API's database scope keeps environments sharing one project apart.
+ * API's database scope keeps environments sharing one project apart. Dev and production share
+ * the ponzu-api project, and Vercel gives dev's functions a token that can reach every sandbox
+ * in it, so the scope is the wall: `scopedSandboxes` (scope.ts) refuses every call on a name
+ * outside the caller's own prefix.
  *
  *   pz-<scope>-<canvasId>             a canvas
  *   pz-<scope>-signin-<authStateId>   a Claude sign-in
@@ -28,6 +31,32 @@ function checkScope(scope: string): void {
 export function scopePrefix(scope: string): string {
   checkScope(scope);
   return `pz-${scope}-`;
+}
+
+/**
+ * The scope of the live suites' and image checks' names (`testSandboxName`, `pz-test-…`). It is
+ * not hex, so no database's scope can ever be it, and a module made with it can touch only
+ * `pz-test-` names.
+ */
+export const CHECK_SCOPE = "test";
+
+/**
+ * The names a module made for `scope` may touch: `pz-<scope>-` for a database's 12 hex, or
+ * `pz-test-` for CHECK_SCOPE. Anything else throws. The trailing dash is part of it, so one
+ * scope's prefix is never the start of another's.
+ */
+export function ownedPrefix(scope: string): string {
+  return scope === CHECK_SCOPE ? `pz-${CHECK_SCOPE}-` : scopePrefix(scope);
+}
+
+/** Whether `name` is a valid sandbox name under `prefix` (from ownedPrefix), with something after it. */
+export function isOwnedName(prefix: string, name: string): boolean {
+  return (
+    name.length > prefix.length &&
+    name.length <= MAX_NAME &&
+    name.startsWith(prefix) &&
+    PART.test(name)
+  );
 }
 
 /** `pz-${scope}-${canvasId}`. */

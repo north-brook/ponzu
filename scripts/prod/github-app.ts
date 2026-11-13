@@ -41,7 +41,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { redactText } from "../../packages/core/src/redact.ts";
 import type { ApplyContext } from "./apply/area.ts";
-import { type LiveEnv, readEnv, write } from "./apply/vercel.ts";
+import { type LiveEnv, productionTargetOnly, readEnv, write } from "./apply/vercel.ts";
 import { type Io, readCredentials } from "./check.ts";
 import { type CheckContext, describeError } from "./checks/finding.ts";
 import { appManifest, githubClient, githubStatus, readApp } from "./checks/github.ts";
@@ -431,6 +431,13 @@ export async function main(
     args: [],
     secret: hold,
   };
+  // It stores the App's secrets on the Production target, so in one project it makes only
+  // production's App: dev's would put dev's secrets on production.
+  const sharedProject = productionTargetOnly(ctx);
+  if (sharedProject) {
+    print(`fail    ${sharedProject}`);
+    return 1;
+  }
   const project = vercelDesired(ctx).project;
   if (!project) {
     print(`fail    infra names no Vercel project for ${env} yet`);

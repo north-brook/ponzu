@@ -169,8 +169,10 @@ export function createDeps(env: Env): Deps {
       clock,
     }),
     // Makes no call yet: under OIDC the first one must come from inside a request.
+    // Only this database's names (`pz-<scope>-`): every other sandbox in the project is refused.
     sandboxes: vercelSandboxes({
       clock,
+      scope: env.sandbox.scope,
       ...(env.sandbox.vercel ? { credentials: env.sandbox.vercel } : {}),
     }),
     runnerBundle,

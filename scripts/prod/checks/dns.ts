@@ -58,11 +58,12 @@ export function dnsDesired(ctx: Pick<CheckContext, "env" | "infra">): DnsDesired
     host,
     role: "api",
     path: "/v1/health",
-    // Both list it until founder step D11 moves dev off; until then it is dev's, not production's.
+    // A name infra still lists for dev too is dev's, not production's, until infra says otherwise.
+    // In one project (docs/production.md › One project, two environments) none is.
     ...(env === "production" && other.apiDomains.includes(host)
-      ? { notYet: `${host} still serves dev until founder step D11 moves it` }
+      ? { notYet: `${host} is still listed as dev's in infra/environments.json` }
       : {}),
-    createdBy: "founder step D11",
+    createdBy: "the domain on ponzu-api (docs/production.md › Vercel `ponzu-api`)",
   }));
   hosts.push({
     host: assets.host,

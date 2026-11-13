@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   authStates,
   enqueueJob,
@@ -8,6 +9,7 @@ import {
   webhookDeliveries,
   workspaces,
 } from "@ponzu/db";
+import { lastCronRun } from "../cron/heartbeat.ts";
 import { jobsStep } from "../cron/steps/jobs.ts";
 import { CRON_STEPS, type CronStep, runCronSteps, slotOf } from "../cron/steps.ts";
 import { syncGithub } from "../github/sync.ts";
@@ -17,6 +19,7 @@ import {
   TEST_CRON_SECRET,
   type TestApp,
 } from "../testing/index.ts";
+import { runTimeOf, SCHEDULED_AT_WINDOW_MS } from "./cron.ts";
 
 let t: TestApp;
 beforeAll(async () => {
@@ -327,6 +330,174 @@ test("which slot a step is in, by the minute", () => {
   expect(
     slotOf({ name: "m", everyMinutes: 1, run: async () => ({}) }, at("2026-11-12T10:24:00Z")),
   ).toBeNull();
+});
+
+// The minute on Vercel Schedules (docs/cloud.md, "Known constraints").
+
+test("vercel.json declares the minute as one schedule, a GET on the route, beside production's legacy cron", () => {
+  // Production's minute runs on the legacy cron today, which Vercel runs only on the Production
+  // target. The schedule is added beside it so production never goes a minute without a run
+  // while it moves. Both run the route for each occurrence
+  // (https://vercel.com/docs/schedules/migrate-from-cron-jobs), which the steps allow
+  // (runCronSteps: overlapping and repeated runs take only what nobody else holds). Once the
+  // schedule has fired in production, the orchestrator turns the cron off with the project's
+  // Disable Cron Jobs switch (docs/production.md, "The minute"), and a later change removes
+  // `crons`.
+  const config = JSON.parse(
+    readFileSync(new URL("../../vercel.json", import.meta.url), "utf8"),
+  ) as Record<string, unknown>;
+  expect(config.crons).toEqual([{ path: "/v1/cron/minute", schedule: "* * * * *" }]);
+  expect(config.schedules).toEqual({
+    minute: {
+      schedule: "* * * * *",
+      path: "/v1/cron/minute",
+      // A path target sends POST unless told otherwise, and this route answers only GET.
+      requestMethod: "GET",
+      jitter: 1,
+    },
+  });
+});
+
+test("the scheduler's time is the run's time only when it is a full ISO time within two minutes of the clock", () => {
+  const clock = Date.parse("2026-11-12T10:01:30.000Z");
+  const scheduled = (header: string | undefined) => runTimeOf(header, clock);
+
+  // Within the window, either side of the clock.
+  expect(scheduled("2026-11-12T10:01:00.000Z")).toEqual({
+    now: new Date("2026-11-12T10:01:00.000Z"),
+    from: "schedule",
+  });
+  expect(scheduled("2026-11-12T10:00:00Z").from).toBe("schedule");
+  expect(scheduled("2026-11-12T10:02:00+00:00").from).toBe("schedule");
+  // Exactly two minutes is in; a millisecond more is out.
+  expect(scheduled("2026-11-12T09:59:30.000Z").from).toBe("schedule");
+  expect(scheduled("2026-11-12T09:59:29.999Z")).toEqual({ now: new Date(clock), from: "clock" });
+  expect(scheduled("2026-11-12T10:03:30.001Z").from).toBe("clock");
+  // A run caught up after an outage is a run now.
+  expect(scheduled("2026-11-12T09:52:00.000Z").from).toBe("clock");
+  // Missing, or anything but a full ISO time with its zone, is the clock.
+  for (const header of [
+    undefined,
+    "",
+    "garbage",
+    "2026-11-12",
+    "2026-11-12T10:01:00",
+    "Thu, 12 Nov 2026 10:01:00 GMT",
+    String(clock),
+    "2026-13-12T10:01:00Z",
+  ]) {
+    expect(scheduled(header)).toEqual({ now: new Date(clock), from: "clock" });
+  }
+  expect(SCHEDULED_AT_WINDOW_MS).toBe(2 * MINUTE);
+});
+
+const scheduledRun = async (scheduledAt: string) => {
+  const response = await t.app.request("/v1/cron/minute", {
+    headers: { authorization: `Bearer ${TEST_CRON_SECRET}`, "ce-vssscheduledat": scheduledAt },
+  });
+  expect(response.status).toBe(200);
+  return (await response.json()) as { steps: Record<string, Record<string, number>> };
+};
+
+test("a run is for the minute the scheduler meant, when that is close to the clock", async () => {
+  // 20 seconds before the hour, for the hour: the scheduler's minute is the hour, so the hourly
+  // retention step runs in the hour's slot. By the clock alone it would be last hour's, long past.
+  nextHour(59);
+  t.clock.advance(40_000);
+  const hour = new Date(t.clock.now() + 20_000).toISOString();
+  expect((await scheduledRun(hour)).steps.retention).toBeDefined();
+  expect(t.logs.findLast((line) => line.event === "cron_ran")).toMatchObject({ time: "schedule" });
+  // And once in that slot, as ever.
+  expect((await scheduledRun(hour)).steps.retention).toBeUndefined();
+
+  // Five and a half minutes past a later hour (the one above has its slot taken), for four
+  // past: inside the window, so it is the hour's slot, within its five minutes of catching up.
+  nextHour(0);
+  nextHour(5);
+  t.clock.advance(30_000);
+  const fourPast = new Date(t.clock.now() - 90_000).toISOString();
+  expect((await scheduledRun(fourPast)).steps.retention).toBeDefined();
+});
+
+test("a run whose scheduled minute is far from the clock goes by the clock", async () => {
+  // Five and a half minutes past, for three past: outside the window, so the clock says the
+  // hour's catch-up is over and the hourly step waits for the next hour.
+  nextHour(5);
+  t.clock.advance(30_000);
+  const threePast = new Date(t.clock.now() - 150_000).toISOString();
+  expect((await scheduledRun(threePast)).steps.retention).toBeUndefined();
+  expect(t.logs.findLast((line) => line.event === "cron_ran")).toMatchObject({ time: "clock" });
+});
+
+test("every run records when it ran, by the clock, and a refused run records nothing", async () => {
+  nextHour(1);
+  await ran();
+  expect(await lastCronRun(t.db)).toEqual(new Date(t.clock.now()));
+  const at = t.clock.now();
+
+  // A later run with an earlier scheduled time still records the clock it ran at.
+  t.clock.advance(70_000);
+  await scheduledRun(new Date(at).toISOString());
+  expect(await lastCronRun(t.db)).toEqual(new Date(t.clock.now()));
+
+  t.clock.advance(MINUTE);
+  expect((await run("Bearer wrong")).status).toBe(401);
+  expect(await lastCronRun(t.db)).toEqual(new Date(t.clock.now() - MINUTE));
+});
+
+test("a heartbeat that cannot be written is logged and holds no step up", async () => {
+  const broken = await createTestApp();
+  try {
+    await broken.db.execute(`
+      create function refuse_heartbeat() returns trigger language plpgsql as $$
+      begin
+        if new.kind = 'heartbeat' then raise exception 'no heartbeat'; end if;
+        return new;
+      end $$`);
+    await broken.db.execute(`
+      create trigger refuse_heartbeat before insert or update on jobs
+        for each row execute function refuse_heartbeat()`);
+    const response = await broken.app.request("/v1/cron/minute", {
+      headers: { authorization: `Bearer ${TEST_CRON_SECRET}` },
+    });
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { steps: Record<string, unknown> }).steps.jobs).toEqual({
+      ran: 0,
+      abandoned: 0,
+    });
+    expect(broken.logs.map((line) => line.event)).toContain("cron_heartbeat_failed");
+    expect(await lastCronRun(broken.db)).toBeNull();
+  } finally {
+    await broken.close();
+  }
+});
+
+test("a preview never runs the minute: it answers no steps, records nothing, and still needs the bearer", async () => {
+  const preview = await createTestApp({ environment: "preview" });
+  try {
+    const due = await enqueueJob(preview.db, { kind: "test.preview" });
+    const minute = (authorization?: string) =>
+      preview.app.request("/v1/cron/minute", {
+        headers: authorization ? { authorization } : {},
+      });
+
+    expect((await minute()).status).toBe(401);
+    const response = await minute(`Bearer ${TEST_CRON_SECRET}`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ steps: {} });
+    expect(preview.logs.find((line) => line.event === "cron_skipped")).toMatchObject({
+      level: "info",
+      reason: "preview",
+    });
+    expect(preview.logs.some((line) => line.event === "cron_ran")).toBe(false);
+    // Nothing was taken or written: the due job is untouched, and no run was recorded, so a
+    // preview on dev's database never makes dev's minute look alive.
+    const rows = await preview.db.select().from(jobs);
+    expect(rows).toEqual([expect.objectContaining({ id: due!.id, attempts: 0, lockedAt: null })]);
+    expect(await lastCronRun(preview.db)).toBeNull();
+  } finally {
+    await preview.close();
+  }
 });
 
 test("every step has its own name, jobs comes first, and each schedule is one the cron can keep", () => {

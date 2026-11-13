@@ -3,8 +3,8 @@
   "url": "https://ponzu.design",
   "description": "",
   "public": true,
-  "hook_attributes": { "url": "https://api.ponzu.design/v1/github/webhook", "active": true },
-  "setup_url": "https://api.ponzu.design/v1/github/setup",
+  "hook_attributes": { "url": "https://api-dev.ponzu.design/v1/github/webhook", "active": true },
+  "setup_url": "https://api-dev.ponzu.design/v1/github/setup",
   "setup_on_update": true,
   "request_oauth_on_install": false,
   "default_permissions": {

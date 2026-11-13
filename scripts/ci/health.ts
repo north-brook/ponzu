@@ -10,10 +10,17 @@
  * - `image` is apps/runner/image/current.json's;
  * - `migrations.applied` equals `migrations.expected`, which equals this checkout's journal.
  *
- *   bun scripts/ci/health.ts --env <dev|production> --commit <sha> [--url <origin>]
+ *   bun scripts/ci/health.ts --env <dev|production> --commit <sha> [--url <origin>] [--bypass]
  *
  * The origin defaults to the environment's `apiUrl` in infra/environments.json. Health answers
  * hold no secret, so the last answer is printed.
+ *
+ * `--bypass` is for a deployment's own generated address (`https://<name>.vercel.app`), which
+ * Vercel Authentication protects: production's staged deploy checks its new deployment there
+ * before promoting it. It sends the `x-vercel-protection-bypass` header with the value of
+ * VERCEL_AUTOMATION_BYPASS_SECRET, a Protection Bypass for Automation secret the founder makes
+ * on purpose (docs/production.md, "The production deploy, staged"). It refuses to run without
+ * that secret, and refuses to send it anywhere but a `.vercel.app` address.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -62,8 +69,37 @@ export function apiUrlOf(environment: string, root = ROOT): string {
   return url;
 }
 
+/** The header Vercel reads a Protection Bypass for Automation secret from. */
+export const BYPASS_HEADER = "x-vercel-protection-bypass";
+
+/**
+ * The headers `--bypass` sends, or why it cannot: the secret must be set, and the address must
+ * be a deployment's generated one, so the secret never goes to a custom domain.
+ */
+export function bypassHeaders(
+  url: string,
+  secret: string | undefined,
+): { headers: Record<string, string> } | { error: string } {
+  if (!secret)
+    return {
+      error:
+        "VERCEL_AUTOMATION_BYPASS_SECRET is empty: the production environment must hold it to check a staged deployment.",
+    };
+  let host: string;
+  try {
+    host = new URL(url).host;
+  } catch {
+    return { error: `${url} is not an address.` };
+  }
+  if (!url.startsWith("https://") || !/^[a-z0-9-]+\.vercel\.app$/.test(host))
+    return { error: `${url} is not a deployment's generated https address on vercel.app.` };
+  return { headers: { [BYPASS_HEADER]: secret } };
+}
+
 export interface Poll {
   fetch?: typeof fetch;
+  /** Sent with every request (the protection bypass, for a staged deployment). */
+  headers?: Record<string, string>;
   now?: () => number;
   wait?: (ms: number) => Promise<void>;
   intervalMs?: number;
@@ -76,6 +112,7 @@ export async function waitForHealth(
   expected: Expected,
   {
     fetch: fetcher = fetch,
+    headers = {},
     now = Date.now,
     wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     intervalMs = 10_000,
@@ -88,6 +125,10 @@ export async function waitForHealth(
     let problems: string[];
     try {
       const response = await fetcher(`${url.replace(/\/$/, "")}/v1/health`, {
+        headers,
+        // A fetch that follows a redirect to another origin keeps custom headers, so with the
+        // bypass a redirect (a login wall, a moved alias) is an answer to report, not to follow.
+        redirect: Object.keys(headers).length ? "manual" : "follow",
         signal: AbortSignal.timeout(20_000),
       });
       body = await response.json().catch(() => null);
@@ -112,12 +153,21 @@ if (import.meta.main) {
   const commit = arg(argv, "--commit");
   if (!environment || !commit) {
     console.error(
-      "usage: bun scripts/ci/health.ts --env <dev|production> --commit <sha> [--url <origin>]",
+      "usage: bun scripts/ci/health.ts --env <dev|production> --commit <sha> [--url <origin>] [--bypass]",
     );
     process.exit(2);
   }
   const url = arg(argv, "--url") ?? apiUrlOf(environment);
-  const result = await waitForHealth(url, expectedFromCheckout(environment, commit));
+  let headers: Record<string, string> = {};
+  if (argv.includes("--bypass")) {
+    const bypass = bypassHeaders(url, process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
+    if ("error" in bypass) {
+      console.log(`::error title=No protection bypass::${bypass.error}`);
+      process.exit(1);
+    }
+    headers = bypass.headers;
+  }
+  const result = await waitForHealth(url, expectedFromCheckout(environment, commit), { headers });
   console.log(JSON.stringify(result.body));
   if (!result.ok) {
     console.log(`::error title=${url} is not what was deployed::${result.problems.join("; ")}`);

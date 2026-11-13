@@ -1,7 +1,7 @@
 import { type Db, listUsageOptOuts } from "@ponzu/db";
 import { createTestDb } from "@ponzu/db/testing";
 import type { RunnerBundle } from "@ponzu/runner/bundle";
-import { FakeClock, FakeSandboxes } from "@ponzu/sandbox";
+import { FakeClock, FakeSandboxes, scopedSandboxes } from "@ponzu/sandbox";
 import { cachedOptOuts, createAnalytics } from "../analytics/analytics.ts";
 import type { PosthogConfig } from "../analytics/posthog.ts";
 import { createPosthogAdmin } from "../analytics/posthog-admin.ts";
@@ -219,7 +219,9 @@ export async function createTestApp(
       clock,
     }),
     github: createGithub({ ...github.credentials, fetch: github.fetch, clock }),
-    sandboxes,
+    // `sandboxes` is Vercel's whole project; the app holds only its own scope's names of it,
+    // as a deployment's vercelSandboxes does.
+    sandboxes: scopedSandboxes(sandboxes, options.sandbox?.scope ?? TEST_SCOPE),
     runnerBundle: () => TEST_BUNDLE,
     anthropic,
     storage: options.storage ?? storage,

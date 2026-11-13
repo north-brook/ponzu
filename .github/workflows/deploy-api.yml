@@ -1,28 +1,64 @@
 name: Deploy API
 
-# The only thing that deploys apps/api, to two Vercel projects (docs/production.md):
+# The only thing that deploys apps/api. It is one Vercel project, ponzu-api, with two
+# environments (docs/production.md, "One project, two environments"):
 #
-# - `dev`: a push to `cloud` (or a dispatch on `cloud`) applies the pending migrations to the
-#   Neon `dev` branch, deploys to the ponzu-api project's Production target and checks its
-#   health. Off until the repository variable API_DEPLOY is "true"; until then whoever merges
-#   into `cloud` runs these steps by hand.
+# Both jobs run from `main` and nothing else: `main` is the branch everything merges into, and no
+# job runs for a pull request, another branch or a tag. With neither variable set, a push to
+# `main` deploys nothing (both are unset today; the orchestrator deploys by hand meanwhile,
+# apps/api/README.md, "Deploying").
+#
+# - `dev`: a push to `main` (or a dispatch on `main`) applies the pending migrations to the
+#   Neon `dev` branch, deploys to the project's custom environment `dev` (api-dev.ponzu.design)
+#   with `--environment dev`, never `--prod`, and checks its health there. It runs in the GitHub
+#   Environment `dev`, which only `main` may use; dev's VERCEL_TOKEN lives there, or, until the
+#   environment holds one, is the repository's. Off until the repository variable API_DEPLOY is
+#   "true".
 # - `production`: a push to `main`, and nothing else, under the GitHub Environment `production`,
 #   which only `main` may use and whose reviewer (the founder) approves each run. It snapshots
-#   the Neon default branch, copies the sandbox image dev checked into production's registry by
-#   digest, migrates the default branch, deploys ponzu-api-prod and checks its health. Off until
-#   the repository variable API_DEPLOY_PRODUCTION is "true".
+#   the Neon default branch, migrates it, and deploys to the project's Production target in
+#   stages: `deploy --prod --skip-domain` builds a production deployment that api.ponzu.design
+#   does not serve yet, that deployment's own /v1/health is checked, and only then does
+#   `vercel promote` give it the domain. Then api.ponzu.design's health and the `minute`
+#   schedule are checked. Off until the repository variable API_DEPLOY_PRODUCTION is "true".
+#
+# Production's Vercel token is a secret with its own name, VERCEL_TOKEN_PRODUCTION, held only by
+# the `production` environment. An environment secret only overrides a repository secret of the
+# same name, so with one project a `production` environment that lacked its own VERCEL_TOKEN would
+# silently have used the repository's, which reaches the same project. A missing
+# VERCEL_TOKEN_PRODUCTION is empty instead, and the job stops before it touches the database.
+#
+# The staged check reads the new deployment's generated *.vercel.app address, which Vercel
+# Authentication protects (the project's setting protects every deployment URL that is not the
+# current production one). It gets through with a Protection Bypass for Automation secret that
+# the founder makes on purpose and stores as VERCEL_AUTOMATION_BYPASS_SECRET in the `production`
+# environment. It does not use `vercel curl`: that command "automatically handles deployment
+# protection bypass tokens" (https://vercel.com/docs/cli/curl), and the CLI 65.14.0's own code
+# shows that, given no secret, it creates one on a project that has none (as do `vercel httpstat`
+# and `deploy --verify`); this has not been tried live. A bypass secret opens every deployment of
+# the project, dev's and previews' included, until it is revoked
+# (https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation),
+# so it is made and kept deliberately, never as a side effect. health.ts sends it only to a
+# *.vercel.app address.
+#
+# `vercel promote`, `vercel rollback` and `vercel alias set` appear only in the production job and
+# the production runbook. Promoting a deployment that is not a production build "will result in a
+# new production deployment" (https://vercel.com/docs/cli/promote), so none of them is a dev tool:
+# dev is taken back by deploying an older commit with `--environment dev`.
 #
 # Nobody deploys a branch with `--prod`, so the API the apps are built against never becomes
 # whichever branch deployed last, and a migration reaches a shared database only once it has
 # merged. Migrations are expand-only (scripts/ci/migrations.ts), so the new schema runs under
-# the old code between the migration and the deploy. See apps/api/README.md, "Deploying".
+# the old code between the migration and the deploy. One project has one Container Registry, so
+# production runs the very image dev checked (apps/runner/image/current.json), with no copy.
 #
-# The repository is deliberately not connected to either Vercel project; this deploys with the
-# CLI and a token. scripts/ci/workflows.test.ts holds the shape of this file: which event runs
-# which job, and that only the production job can reach the default branch.
+# The repository is deliberately not connected to the Vercel project; this deploys with the CLI
+# and a token. scripts/ci/workflows.test.ts holds the shape of this file: which event runs which
+# job, that only the production job uses `--prod`, `promote` and the production token, and that
+# only the production job can reach the default branch.
 on:
   push:
-    branches: [cloud, main]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -32,10 +68,13 @@ jobs:
   dev:
     name: Migrate and deploy dev
     if: >-
-      ${{ vars.API_DEPLOY == 'true' && github.ref == 'refs/heads/cloud'
+      ${{ vars.API_DEPLOY == 'true' && github.ref == 'refs/heads/main'
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
+    # Only `main` may use it (infra/github/repo.json). It holds dev's own VERCEL_TOKEN once the
+    # founder puts one there; until then `secrets.VERCEL_TOKEN` is the repository's.
+    environment: dev
     concurrency:
       # One at a time and in order: a deploy is never cancelled halfway through its migration.
       group: deploy-api-dev
@@ -64,18 +103,20 @@ jobs:
           url="$(bun apps/api/scripts/neon.ts dev --direct)"
           echo "::add-mask::$url"
           cd packages/db && DATABASE_URL="$url" bun run db:migrate
-      - name: Deploy ponzu-api
+      - name: Deploy to ponzu-api's dev environment
         # The project's Root Directory is apps/api, so this runs at the repository root. The
-        # CLI is pinned: it runs with a token that can deploy.
+        # CLI is pinned: it runs with a token that can deploy. `--environment dev` is the custom
+        # environment, with its own variables and api-dev.ponzu.design. Never `--prod`.
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: bunx vercel@65.14.0 deploy --prod --yes --env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA"
+        run: bunx vercel@65.14.0 deploy --environment dev --yes --env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA"
       - name: Dev answers with this commit, its image and every migration
+        # At dev's apiUrl in infra/environments.json, https://api-dev.ponzu.design.
         run: bun scripts/ci/health.ts --env dev --commit "$GITHUB_SHA"
 
   production:
     name: Migrate and deploy production
-    # A push to main only: never cloud, never a dispatch, never a pull request. The environment
+    # A push to main only: never a dispatch, another branch or a pull request. The environment
     # adds the founder's approval and refuses any branch but main on its own.
     if: >-
       ${{ vars.API_DEPLOY_PRODUCTION == 'true' && github.event_name == 'push'
@@ -86,13 +127,10 @@ jobs:
     concurrency:
       group: deploy-api-production
       cancel-in-progress: false
-    permissions:
-      contents: read
-      # The registry's OIDC login (vercel/vcr-action), for the image copy.
-      id-token: write
     env:
       VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
-      VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROD_PROJECT_ID }}
+      # The same project as dev: its Production target is production.
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -106,51 +144,14 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: The image dev checked, and where production keeps it
-        id: image
-        # current.json names the image by digest in dev's registry (ponzu-api). Production's
-        # project (infra/environments.json) gets the same digest under the same tag.
-        run: |
-          current=apps/runner/image/current.json
-          repository="$(jq -r .repository "$current")"
-          digest="$(jq -r .digest "$current")"
-          tag="$(jq -r .tag "$current")"
-          project="$(jq -r .environments.production.vercelProject infra/environments.json)"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::current.json has no digest."; exit 1; }
-          [[ "$repository" =~ ^[a-z0-9-]+/[a-z0-9-]+/ponzu-runner$ ]] || { echo "::error::current.json's repository is $repository."; exit 1; }
-          team="${repository%%/*}"
-          {
-            echo "digest=$digest"
-            echo "source=vcr.vercel.com/$repository@$digest"
-            echo "target=vcr.vercel.com/$team/$project/ponzu-runner:$tag"
-          } >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - name: Log in to VCR
-        # One team, so one login reaches both projects' registries. The team's OIDC policy must
-        # let this repository's `production` environment write to ponzu-api-prod.
-        uses: vercel/vcr-action/login@6888f841cb0d2255ef9dab40f068cba07234ef47 # v1.1.0
-        with:
-          team: ${{ vars.VERCEL_TEAM_ID }}
-      - name: Copy the image into production's registry by digest
-        # Before anything touches the database: a copy that fails leaves production as it was.
-        # imagetools copies the manifest as it is, so the digest is the one dev checked.
+      - name: The production environment holds its own token and the bypass
+        # Before anything touches the database. A secret the environment lacks reads as empty.
         env:
-          SOURCE: ${{ steps.image.outputs.source }}
-          TARGET: ${{ steps.image.outputs.target }}
-        run: docker buildx imagetools create --tag "$TARGET" "$SOURCE"
-      - name: Production's registry has it ready
-        id: ready
-        uses: vercel/vcr-action/wait-for-optimized-image@6888f841cb0d2255ef9dab40f068cba07234ef47 # v1.1.0
-        timeout-minutes: 11
-        with:
-          image: ${{ steps.image.outputs.target }}
-          timeout-seconds: 600
-      - name: The ready image is the digest dev checked
-        env:
-          WANT: ${{ steps.image.outputs.digest }}
-          GOT: ${{ steps.ready.outputs.digest }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          [ "$GOT" = "$WANT" ] || { echo "::error::Production's registry holds $GOT, not $WANT."; exit 1; }
+          [ -n "$VERCEL_TOKEN" ] || { echo "::error::The production environment has no VERCEL_TOKEN_PRODUCTION."; exit 1; }
+          [ -n "$BYPASS" ] || { echo "::error::The production environment has no VERCEL_AUTOMATION_BYPASS_SECRET."; exit 1; }
       - name: Snapshot the Neon default branch
         # pre-<first 12 of the commit>, kept 14 days: the restore point if this migration goes
         # wrong (docs/production.md, "Backups and restore").
@@ -170,10 +171,37 @@ jobs:
           url="$(bun apps/api/scripts/neon.ts --default --direct)"
           echo "::add-mask::$url"
           cd packages/db && DATABASE_URL="$url" bun run db:migrate
-      - name: Deploy ponzu-api-prod
-        # The environment's VERCEL_TOKEN, one that can deploy only ponzu-api-prod.
+      - name: Deploy to the Production target, without its domain
+        id: deploy
+        # --skip-domain builds a production deployment but leaves api.ponzu.design on the one
+        # before it (https://vercel.com/docs/cli/deploy). The CLI writes only the new
+        # deployment's URL to stdout.
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: bunx vercel@65.14.0 deploy --prod --yes --env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA"
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
+        run: |
+          bunx vercel@65.14.0 deploy --prod --skip-domain --yes --env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA" > "$RUNNER_TEMP/deployment-url"
+          url="$(tail -n 1 "$RUNNER_TEMP/deployment-url")"
+          [[ "$url" =~ ^https://[a-z0-9-]+\.vercel\.app$ ]] || { echo "::error::The deploy printed no deployment URL."; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: The new deployment answers with this commit, its image and every migration
+        # Its generated address, through Vercel Authentication with the bypass secret.
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bun scripts/ci/health.ts --env production --commit "$GITHUB_SHA" --url "$URL" --bypass
+      - name: Promote it to api.ponzu.design
+        # No --yes: promoting a deployment that is not a production build would build a new one
+        # with production's variables, and with --json and no --yes the CLI refuses that and
+        # exits 1 (read from the CLI 65.14.0's own promote code).
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
+        run: bunx vercel@65.14.0 promote "$URL" --json --timeout 5m
       - name: Production answers with this commit, its image and every migration
         run: bun scripts/ci/health.ts --env production --commit "$GITHUB_SHA"
+      - name: The minute is active in production
+        # "Promote a staged production build: synced from the promoted deployment"
+        # (https://vercel.com/docs/schedules/concepts), so this polls for up to two minutes.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
+        run: bun scripts/ci/schedules.ts --environment production --name minute --path /v1/cron/minute

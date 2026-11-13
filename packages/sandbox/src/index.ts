@@ -2,7 +2,10 @@ export { type Clock, FakeClock, systemClock } from "./clock.ts";
 export { SandboxError, type SandboxErrorCode } from "./errors.ts";
 export { type FakeOptions, FakeSandboxes } from "./fake.ts";
 export {
+  CHECK_SCOPE,
   canvasSandboxName,
+  isOwnedName,
+  ownedPrefix,
   type ParsedSandboxName,
   parseSandboxName,
   scopePrefix,
@@ -21,4 +24,5 @@ export type {
   VercelCredentials,
   VercelStatus,
 } from "./sandboxes.ts";
+export { scopedSandboxes } from "./scope.ts";
 export { vercelSandboxes } from "./vercel.ts";

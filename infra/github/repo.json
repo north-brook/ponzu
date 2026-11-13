@@ -22,10 +22,15 @@
         "APPLE_CERTIFICATE_PASSWORD"
       ]
     },
+    "dev": {
+      "branches": ["main"],
+      "requiredReviewers": false,
+      "secrets": ["VERCEL_TOKEN"]
+    },
     "production": {
       "branches": ["main"],
       "requiredReviewers": true,
-      "secrets": ["NEON_API_KEY", "VERCEL_TOKEN"]
+      "secrets": ["NEON_API_KEY", "VERCEL_AUTOMATION_BYPASS_SECRET", "VERCEL_TOKEN_PRODUCTION"]
     }
   },
   "variables": [
@@ -38,7 +43,6 @@
     "PONZU_APP_POSTHOG_KEY",
     "PONZU_APP_POSTHOG_REPLAY",
     "RELEASES_HELD",
-    "VERCEL_API_PROD_PROJECT_ID",
     "VERCEL_API_PROJECT_ID",
     "VERCEL_TEAM_ID"
   ],

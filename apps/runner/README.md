@@ -98,7 +98,7 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 
 | Variable | |
 |---|---|
-| `PONZU_API_URL` | `https://api.ponzu.design` |
+| `PONZU_API_URL` | The API that started this sandbox: `https://api-dev.ponzu.design` for dev's, `https://api.ponzu.design` for production's. |
 | `PONZU_CANVAS_ID` | The canvas this sandbox works on. |
 | `PONZU_RUNNER_TOKEN` | The runner token: the bearer on every call, good for this canvas only. |
 | `PONZU_PORT_TOKEN` | The bearer every request to the runner's port must carry. New at every start. |

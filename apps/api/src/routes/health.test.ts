@@ -2,7 +2,13 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { EXPECTED_MIGRATIONS } from "@ponzu/db";
 import current from "@ponzu/runner/image/current.json" with { type: "json" };
-import { createTestApp, TEST_BUNDLE, TEST_IMAGE, type TestApp } from "../testing/index.ts";
+import {
+  createTestApp,
+  TEST_BUNDLE,
+  TEST_CRON_SECRET,
+  TEST_IMAGE,
+  type TestApp,
+} from "../testing/index.ts";
 
 let t: TestApp;
 beforeAll(async () => {
@@ -33,7 +39,25 @@ test("anyone can ask, and hears what is deployed, where, and that the database i
     runnerBundle: TEST_BUNDLE.sha256.slice(0, 12),
     migrations: { applied: journalEntries, expected: journalEntries },
     database: true,
+    // The minute has never run on this database.
+    cron: { lastRanAt: null },
   });
+});
+
+test("it says when the minute last ran, without making a stale minute degraded", async () => {
+  const minute = () =>
+    t.app.request("/v1/cron/minute", { headers: { authorization: `Bearer ${TEST_CRON_SECRET}` } });
+  expect((await minute()).status).toBe(200);
+  const ranAt = new Date(t.clock.now()).toISOString();
+
+  const body = await (await t.app.request("/v1/health")).json();
+  expect(body).toMatchObject({ status: "ok", cron: { lastRanAt: ranAt } });
+
+  // An hour without a run: still ok here. Whether that is an outage is the uptime check's call.
+  t.clock.advance(3_600_000);
+  const later = await t.app.request("/v1/health");
+  expect(later.status).toBe(200);
+  expect(await later.json()).toMatchObject({ status: "ok", cron: { lastRanAt: ranAt } });
 });
 
 test("expected is the journal's entry count, built in", () => {

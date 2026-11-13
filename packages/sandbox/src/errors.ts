@@ -14,7 +14,13 @@ export type SandboxErrorCode =
   /** The network failed, or Vercel answered 5xx after the SDK's retries. Whether the call took effect is unknown. */
   | "unavailable"
   /** Any other 4xx: Vercel refused the request as sent. Sending it again will not help. */
-  | "rejected";
+  | "rejected"
+  /**
+   * The call named a sandbox outside the caller's own scope (`pz-<scope>-`), or a listing
+   * answered one. Refused before anything reached Vercel; nothing was read, changed or woken.
+   * This is a bug in the caller, never a condition to retry.
+   */
+  | "out_of_scope";
 
 /** Every failure the sandbox module reports. Branch on `code`; `message` is for logs. */
 export class SandboxError extends Error {

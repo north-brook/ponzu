@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { CRON_FRESH_MS } from "../../apps/api/src/cron/heartbeat.ts";
 import {
+  CRON_STALE_MS,
   check,
+  cronProblemOf,
   type Gh,
   type GitHub,
   ghGitHub,
@@ -12,7 +15,16 @@ import {
 } from "./uptime";
 
 const URL = "https://api.example.test";
-const UP = { status: "ok", database: true, environment: "production", commit: "abc" };
+/** The clock every answer below is judged by. */
+const NOW = Date.parse("2026-11-12T16:00:00.000Z");
+/** Up: the minute ran 30 seconds before `NOW`. */
+const UP = {
+  status: "ok",
+  database: true,
+  environment: "production",
+  commit: "abc",
+  cron: { lastRanAt: new Date(NOW - 30_000).toISOString() },
+};
 
 /** A fake fetch answering `answers` in turn (the last one again once they run out). */
 function fakeFetch(answers: (readonly [number, unknown] | Error)[]) {
@@ -30,8 +42,8 @@ function fakeFetch(answers: (readonly [number, unknown] | Error)[]) {
 
 describe("one health answer", () => {
   test("is up only as a 200 from production with its database", () => {
-    expect(problemOf(200, UP)).toBeNull();
-    expect(problemOf(200, { ...UP, status: "degraded" })).toBe('status is "degraded"');
+    expect(problemOf(200, UP, NOW)).toBeNull();
+    expect(problemOf(200, { ...UP, status: "degraded" }, NOW)).toBe('status is "degraded"');
     expect(problemOf(503, { ...UP, status: "degraded", database: false })).toBe(
       'HTTP 503; status is "degraded"; the database cannot be reached',
     );
@@ -44,6 +56,70 @@ describe("one health answer", () => {
   });
 });
 
+describe("the minute, from health's cron.lastRanAt", () => {
+  const ago = (ms: number) => ({ ...UP, cron: { lastRanAt: new Date(NOW - ms).toISOString() } });
+
+  test("is stale at the API's own five minutes", () => {
+    expect(CRON_STALE_MS).toBe(CRON_FRESH_MS);
+    expect(CRON_STALE_MS).toBe(5 * 60_000);
+  });
+
+  test("is up under five minutes old, and down at five", () => {
+    expect(problemOf(200, ago(0), NOW)).toBeNull();
+    expect(problemOf(200, ago(CRON_STALE_MS - 1), NOW)).toBeNull();
+    expect(problemOf(200, ago(CRON_STALE_MS), NOW)).toBe(
+      "the minute last ran 5 minutes ago (2026-11-12T15:55:00.000Z)",
+    );
+    // A schedule turned off a day ago, or a scheduler that stopped: down, though every
+    // request answers.
+    expect(problemOf(200, ago(24 * 3_600_000), NOW)).toBe(
+      "the minute last ran 1440 minutes ago (2026-11-11T16:00:00.000Z)",
+    );
+    // A time a little ahead of the runner's clock is fresh.
+    expect(problemOf(200, ago(-30_000), NOW)).toBeNull();
+  });
+
+  test("null, an empty cron and an unreadable one are all down", () => {
+    // Null: the minute has never run on production's database. Right after the first deploy
+    // that lasts a minute or two, and one failing run opens no issue (`check`), so that is the
+    // grace; past it, a schedule whose every run is refused would otherwise pass for ever.
+    expect(problemOf(200, { ...UP, cron: { lastRanAt: null } }, NOW)).toBe(
+      "cron.lastRanAt is null: the minute has never run on production's database",
+    );
+    expect(problemOf(200, { ...UP, cron: {} }, NOW)).toBe("the answer has no cron.lastRanAt");
+    expect(problemOf(200, { ...UP, cron: { lastRanAt: "soon" } }, NOW)).toBe(
+      'cron.lastRanAt is "soon"',
+    );
+    expect(cronProblemOf({ cron: { lastRanAt: 12 } }, NOW)).toBe("cron.lastRanAt is 12");
+  });
+
+  test("an answer with no cron at all is up: the API deployed before the field existed", () => {
+    // uptime.yml runs from main as soon as this merges, while production still serves an API
+    // built before `cron` was in its health. Counting that as down would open a false
+    // production-down issue within ten minutes. Once production serves the field, a minute that
+    // stops is judged by the rules above.
+    const { cron: _, ...without } = UP;
+    expect(problemOf(200, without, NOW)).toBeNull();
+    expect(cronProblemOf(without, NOW)).toBeNull();
+  });
+
+  test("is judged only on an answer that is otherwise production's", () => {
+    expect(problemOf(200, { ...ago(3_600_000), environment: "dev" }, NOW)).toBe(
+      'environment is "dev", not production',
+    );
+  });
+
+  test("the probe judges it by its own clock, and a stale minute fails every attempt", async () => {
+    const { fetcher, asked } = fakeFetch([[200, ago(10 * 60_000)]]);
+    const result = await probe(URL, { fetch: fetcher, wait: async () => {}, now: () => NOW });
+    expect(result).toEqual({
+      up: false,
+      problem: "the minute last ran 10 minutes ago (2026-11-12T15:50:00.000Z)",
+    });
+    expect(asked.length).toBe(3);
+  });
+});
+
 describe("the probe", () => {
   test("retries, and is up when a later attempt is", async () => {
     const waits: number[] = [];
@@ -51,6 +127,7 @@ describe("the probe", () => {
     const result = await probe(`${URL}/`, {
       fetch: fetcher,
       wait: async (ms) => void waits.push(ms),
+      now: () => NOW,
     });
     expect(result).toEqual({ up: true, problem: null });
     expect(asked).toEqual([`${URL}/v1/health`, `${URL}/v1/health`]);

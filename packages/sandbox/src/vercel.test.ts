@@ -41,6 +41,7 @@ import { join } from "node:path";
 import { FakeClock, systemClock } from "./clock.ts";
 import { SandboxError } from "./errors.ts";
 import { FakeSandboxes } from "./fake.ts";
+import { CHECK_SCOPE } from "./names.ts";
 import type { At, Sandboxes, SandboxSpec } from "./sandboxes.ts";
 import { vercelSandboxes } from "./vercel.ts";
 
@@ -184,8 +185,9 @@ function server(...rules: Rule[]) {
 }
 
 const credentials = { token: "test-token", teamId: "team_test", projectId: "prj_test" };
+// The recording's names are the live suite's `pz-test-live-…`, which CHECK_SCOPE owns.
 const make = (fetch: typeof globalThis.fetch): Sandboxes =>
-  vercelSandboxes({ clock: systemClock, credentials, fetch });
+  vercelSandboxes({ clock: systemClock, scope: CHECK_SCOPE, credentials, fetch });
 
 const SANDBOX = new RegExp(`^/api/v2/sandboxes/${NAME}$`);
 const CREATE = /^\/api\/v3\/sandboxes$/;
@@ -727,10 +729,11 @@ test("credentials are all three or none", () => {
   expect(() =>
     vercelSandboxes({
       clock: systemClock,
+      scope: CHECK_SCOPE,
       credentials: { token: "t", teamId: "", projectId: "p" },
     }),
   ).toThrow();
-  expect(() => vercelSandboxes({ clock: systemClock })).not.toThrow();
+  expect(() => vercelSandboxes({ clock: systemClock, scope: CHECK_SCOPE })).not.toThrow();
 });
 
 /*

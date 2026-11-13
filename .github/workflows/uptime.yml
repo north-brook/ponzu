@@ -1,14 +1,14 @@
 name: Uptime
 
 # Production's uptime check (docs/production.md, "Uptime"): every five minutes,
-# scripts/ci/uptime.ts asks production's /v1/health, and after two failing runs
-# in a row opens one issue labelled `production-down`, updates it while
-# production stays down and closes it when production answers again. A run
-# that finds production down fails, and the next run reads that back.
+# scripts/ci/uptime.ts asks production's /v1/health (including how long ago
+# the minute's cron last ran), and after two failing runs in a row opens one
+# issue labelled `production-down`, updates it while production stays down and
+# closes it when production answers again. A run that finds production down
+# fails, and the next run reads that back.
 #
-# GitHub runs a schedule only from the default branch, so this starts working
-# when it reaches main at the cutover. The job runs only on main, so a dispatch
-# from `cloud`, where production does not exist yet, checks nothing.
+# GitHub runs a schedule only from the default branch, `main`. The job runs
+# only on main, so a dispatch from any other branch checks nothing.
 # scripts/ci/workflows.test.ts holds the shape of this file.
 on:
   schedule:

@@ -9,34 +9,168 @@ runbook behind its "Environments" section.
 reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested, as are
 the scripts that check and apply that state (`scripts/prod/check.ts`, `apply.ts`,
 `restore-drill.ts`) and create the GitHub App (`github-app.ts`), the API's
-`/v1/cron/selfcheck`, its `PONZU_ENVIRONMENT` variable, the environment, image, bundle and
-migration counts in `/v1/health`, and the production deploy job in
-[`deploy-api.yml`](../.github/workflows/deploy-api.yml), which is off until
-`API_DEPLOY_PRODUCTION` is set. The scripts are tested against fakes and answers recorded from
-dev; `apply.ts` has never sent a write to a vendor, and `github-app.ts` has never created an App.
-Nothing in production exists until the founder's steps below create it.
+`/v1/cron/selfcheck`, its `PONZU_ENVIRONMENT` variable and boot guard, the environment, image,
+bundle and migration counts in `/v1/health`, the `dev` environment at `api-dev.ponzu.design`,
+and the deploy jobs in [`deploy-api.yml`](../.github/workflows/deploy-api.yml), each off until
+its own variable is set (neither is today). The scripts are tested against fakes and answers
+recorded from dev; `apply.ts` has never sent a write to a vendor, and `github-app.ts` has never
+created an App. The check and apply scripts were written for two Vercel projects: they read the
+project's name from `environments.json` (now `ponzu-api` for both environments) but look only at
+its Production target, so they do not yet check dev's custom environment the way "Checking
+production" below describes. That part is marked *(not built yet)*.
 
-## Two environments
+**Production is live.** It went live on 12 Nov 2026: `api.ponzu.design` is the Production
+target of `ponzu-api`, on the Neon default branch, and serves the released apps (Mac 2.0.0 and
+iPhone 1.0.0, which cannot be recalled, so every API change must keep working for them). The
+orchestrator deploys it by hand from `main` until `API_DEPLOY_PRODUCTION` is set ("Turning on
+the deploy workflow"). Its minute still runs on the legacy cron while the schedule takes over
+("The minute").
+
+## One project, two environments
 
 | | Dev | Production |
 |---|---|---|
-| Vercel project | `ponzu-api` (exists) | `ponzu-api-prod` (to be created) |
-| API | `api.ponzu.design` until three days before cutover, then `api-dev.ponzu.design` | `api.ponzu.design` from two days before cutover |
-| Database | Neon branch `dev` | the Neon project's default branch, starting empty |
+| Vercel | `ponzu-api`, its custom environment `dev` | `ponzu-api`, its Production target |
+| API | `api-dev.ponzu.design` | `api.ponzu.design` |
+| Database | Neon branch `dev` | the Neon project's default branch |
 | Auth | WorkOS staging | WorkOS production |
 | GitHub App | `ponzu-dev` | `ponzu` |
 | Files | `assets-dev.ponzu.cloud` | `assets.ponzu.cloud` (bucket `ponzu-assets`), plus `ponzu-private` for checkpoints |
-| Analytics | PostHog "Ponzu Dev" (728454) | PostHog "Ponzu" (to be created) |
-| Deploys | from `cloud`, by the deploy workflow or the orchestrator | from `main` only, through the GitHub Environment `production`, which the founder approves |
+| Analytics | PostHog "Ponzu Dev" (728454) | PostHog "Ponzu" (731171) |
+| The minute | dev's copy of the `minute` schedule, turned on once by hand | the legacy cron, then production's copy of the schedule ("The minute") |
+| Deploys | from `main`, with `vercel deploy --environment dev`, by the deploy workflow's `dev` job or the orchestrator | from `main` only: by the orchestrator by hand today; staged and promoted by the `production` job, which the founder approves, once it is turned on |
+| Vercel token | dev's `VERCEL_TOKEN`, in the GitHub Environment `dev` (the repository's until that exists) | `VERCEL_TOKEN_PRODUCTION`, in the GitHub Environment `production` |
 
-Production gets a Vercel project of its own because Vercel runs crons only on a project's
-Production target, and the sandbox sweep and the job retries run on the minute cron. Dev kept as
-a Preview of one shared project would never sleep a sandbox or retry a wake. Two projects also
-keep the environments apart by more than a name: separate OIDC tokens, env, registry, spend and
-firewall. Each still names its sandboxes by its database's scope, as a second wall.
+The project's third environment, **Preview**, is for throwaway builds of a branch: behind Vercel
+Authentication, on dev's database with dev's values, with `PONZU_ENVIRONMENT=preview`, and it
+never runs the minute.
 
-The sandbox image is built once, into dev's registry, and the production deploy copies it by
-digest (`docker buildx imagetools create`), so production runs exactly the bytes dev checked.
+**Why one project.** Production once needed a project of its own because Vercel ran crons only
+on a project's Production target, and the sandbox sweep and the job retries run on the minute.
+Vercel's Schedules removed that reason: "Vercel keeps a separate set of schedules for
+production, each custom environment, each Preview branch, and CLI deployments by each user"
+([Schedules concepts](https://vercel.com/docs/schedules/concepts)), so dev's minute runs in its
+own environment ("The minute", below). A custom environment gives dev its own variables, its own
+domain and its own name: Vercel sets `VERCEL_TARGET_ENV=dev` there, where `VERCEL_ENV` reads
+`preview` ([System environment variables](https://vercel.com/docs/environment-variables/system-environment-variables)).
+Dev is a custom environment and not Preview because a Preview branch's variables, domain and
+schedules belong to a branch of a connected Git repository, and this project is deliberately not
+connected; Preview stays for throwaway builds. One project means one registry with no image
+copy between two, one set of project settings, and one place to look.
+
+**What keeps the environments apart now.** Each wall is a setting or a check, not a second
+project:
+
+- **Separate variable entries.** Every variable is an entry naming the environments it covers,
+  and one entry is one value. No entry may cover the Production target and anything else
+  (Preview, Development or `dev`), so no secret is shared. Production's secrets are typed by the
+  founder, or written by the founder's scripts, into the Production target only. Once the
+  Production target holds no dev value, the founder turns on the team policy **Separate
+  Production Secret Values**, after which "each Secret must use a different value in Production
+  than in Preview, Development, and custom environments"
+  ([Config and Secret variables](https://vercel.com/docs/environment-variables/sensitive-environment-variables)).
+  The orchestrator took Production off every dev entry on 12 Nov 2026 before production's own
+  values went in, so the Production target holds production's values only. Whether the team
+  policy is on yet is the founder's to confirm.
+- **The boot guard.** A deployment whose `PONZU_ENVIRONMENT` disagrees with the Vercel
+  environment it runs in (`VERCEL_TARGET_ENV`) never starts (`apps/api/src/env.ts`). So dev's
+  values deployed with `--prod`, or production's in `dev`, stop at boot. An unset
+  `VERCEL_TARGET_ENV` is logged and allowed, even for production, until the `environment_pair`
+  line from a real deployment shows Vercel sets it.
+- **The sandbox scope guard.** Our code, not Vercel, keeps dev's functions out of production's
+  sandboxes (below).
+- **Separate tokens.** The deploy workflow's dev job holds dev's `VERCEL_TOKEN` and its
+  production job holds `VERCEL_TOKEN_PRODUCTION`, so each is revoked alone and Vercel's
+  Activity Log names which deployed ("The production deploy, staged").
+- **Public domains, protected everything else.** The project keeps Vercel Authentication under
+  its current setting, the legacy Standard Protection (`prod_deployment_urls_and_all_previews`).
+  That setting puts a custom environment's domain behind the login too: the first deploy to
+  `dev` found `api-dev.ponzu.design` asking for one. So `api-dev.ponzu.design` is public through
+  a **Deployment Protection Exception** for that one domain
+  ([Deployment Protection Exceptions](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/deployment-protection-exceptions):
+  "When you add a domain to Deployment Protection Exceptions, it becomes publicly accessible").
+  The project's setting is unchanged, and every generated deployment URL and every preview stays
+  protected. Do not switch the project to `all_except_custom_domains` to make `api-dev` public:
+  the exception already does, and nothing about the switch has been tried.
+- **Separate databases.** Dev is the Neon `dev` branch and production the default branch, and
+  `apps/api/scripts/neon.ts` refuses the default branch except in the production deploy job.
+
+**What is weaker than two projects, said plainly.**
+
+- **OIDC is per project.** A deployment's OIDC token names its environment (its `sub` ends in
+  `environment:<the custom environment's slug>`, [OIDC reference](https://vercel.com/docs/oidc/reference)),
+  but Vercel Sandbox authenticates the project, not the environment. With two projects, dev's
+  token could not reach production's sandboxes; with one it can, and only the scope guard below
+  stops our code from doing so.
+- **Any token for the project can deploy production.** Tokens have a project scope but no
+  environment scope. The deploy workflow's own jobs are kept apart by name and by test, and the
+  repository-wide `VERCEL_TOKEN` is to come from a member with the Developer role; whether that
+  role really refuses `deploy --prod`, `promote` and `alias set` is not verified (experiment
+  E13, "The production deploy, staged").
+- **One variable list holds both environments' secrets,** so one ticked box can give a dev value
+  to production or the reverse. The rule above, the team policy and the check (not built yet)
+  contain it.
+- **One firewall config.** The WAF is the project's, and Vercel's WAF pages say "Publish to
+  apply the changes to your production deployment". Whether custom rules and rate limits apply
+  to the `dev` environment's deployment, and whether dev and production share the per-IP
+  counters, is not settled (experiment E14). Four rules count by IP alone (the sign-in exchange,
+  `/v1/github/setup`, Claude sign-ins and the general per-IP limit), so if the counters are
+  shared, dev's traffic counts against production's limits for the same address. Try a new rule
+  scoped to `host eq api-dev.ponzu.design` first, then widen it. The `@vercel/firewall`
+  rate-limit SDK needs Protection Bypass for Automation in a preview deployment
+  ([Rate limiting SDK](https://vercel.com/docs/vercel-firewall/vercel-waf/rate-limiting-sdk)), and
+  to Vercel a `dev` deployment is a preview (`VERCEL_ENV=preview`), so set
+  `PONZU_RATE_LIMITS=vercel` on `dev` only after dev's logs show no `rate_limit_unavailable`.
+- **A spend pause hits production, not dev.** Spend Management's pause "only affects production
+  deployments", so it takes `api.ponzu.design` down and leaves `api-dev` serving ("Spend",
+  below). Never pause the project to stop dev.
+- **One registry.** A clean-up of old images in dev could delete what production runs. Never
+  delete a digest that `main`'s `apps/runner/image/current.json` names.
+- **Both environments' schedules live in one project.** Every `vercel schedules` command reads
+  production unless told otherwise, so every dev command spells out `--environment dev`.
+
+The sandbox image is built once, into the project's one Container Registry, and production pulls
+the same digest dev checked (`apps/runner/image/current.json`), so production runs exactly the
+bytes dev checked with no copy between registries.
+
+### Sandboxes: our code check is the wall, not Vercel
+
+With one project, Vercel does not keep dev out of production's sandboxes. Vercel Sandbox
+authenticates per project ([Sandbox authentication](https://vercel.com/docs/vercel-sandbox/concepts/authentication):
+"Each Vercel OIDC token belongs to one Vercel project"), its docs describe no limit by
+environment, and Sandbox accepts the `dev` environment's token. So dev's functions, which run
+the newest and least proven code on purpose, hold a token that could list, stop, delete and run
+commands in production's sandboxes, which hold people's repositories and work in progress.
+
+What keeps them apart is a check in `packages/sandbox` (`scope.ts`):
+
+- Every deployment's sandbox module is made for one scope, and `vercelSandboxes` cannot be made
+  without one. It refuses any call on a name outside its own `pz-<scope>-` prefix, and any
+  listing not inside it, with `out_of_scope`, before anything is sent to Vercel. A listing that
+  answers a name outside it is refused too, not filtered.
+- A scope is the database's (`sandboxScope` in `apps/api/src/env.ts`: a hash of the Neon host
+  without `-pooler` and the path, and nothing else). Production's database is Neon's default
+  branch and dev's is the `dev` branch, with different hosts, so their scopes differ. The rule
+  must never change: production's live sandboxes are named by it, and a new value for the same
+  database would orphan them. `env.test.ts` pins the value for fixed URLs. What keeps a dev
+  deployment from holding production's `DATABASE_URL` is that the value sits only on the
+  Production target, and the boot check refuses a deployment whose `PONZU_ENVIRONMENT` and
+  `VERCEL_TARGET_ENV` disagree.
+- The minute's reconcile checks each listed name's scope again and never stops or removes one of
+  another scope; it logs `sandbox_out_of_scope` instead.
+- `scope.test.ts` tries every call of the module with other scopes' names, including names that
+  merely begin with this scope's prefix, against the real module (no request may leave) and the
+  fake (nothing may change). Removing the check fails it.
+
+This guards against a mistake in our code, not against code written to get round it, so a
+review of any change to `packages/sandbox/src/scope.ts`, `names.ts` or `sandboxScope` is a
+production review.
+
+Not verified: whether Vercel Sandbox's concurrency limit (10,000 running sandboxes on Pro,
+[Sandbox pricing](https://vercel.com/docs/vercel-sandbox/pricing)) counts per team or per
+project. The page says only that it "is limited by plan"; it speaks of a team for the vCPU and
+deletion quotas, which suggests the team but does not say so. If it is per project, dev's load
+now competes with production's for it.
 
 ## The desired state: `infra/`
 
@@ -61,8 +195,7 @@ The rules of `environments.json`:
 - `false` means **absent on purpose**: dev has no private bucket (its checkpoints sit in the
   assets bucket) and no minimum client versions.
 - `neonBranch: "@default"` is the Neon project's default branch, whatever it is called.
-- `release` stays `"dev"` until the cutover PR flips it to `"production"`, so every PR's
-  packaged build keeps working until then.
+- `release` is `"production"` since the cutover: a release desktop build talks to production.
 
 Two commands read it:
 
@@ -71,12 +204,14 @@ bun scripts/prod/desired.ts status production          # every field: ok, none o
 bun scripts/prod/desired.ts assert-release production  # exit 1 unless release is production and nothing is pending
 ```
 
-`assert-release production` exits 1 today, naming `release`, the three production fields the
-founder's steps fill (WorkOS's client id, the Realtime URL, the PostHog project id), and
-`api.ponzu.design`, which both environments still name. It also fails when any production value
-that says where to connect (the API, WorkOS, Realtime, assets, the GitHub App, the Vercel
-project, the Neon branch, a bucket, the PostHog project) is the same as dev's, so dev's `apiUrl`
-and `apiDomains` must move to `api-dev.ponzu.design` (founder step D11) before it can pass.
+`assert-release production` exits 0 now that `release` is production and the founder's steps
+filled the production fields (WorkOS's client id, the Realtime URL, the PostHog project id). It
+fails when any production value that says where to connect (the API, WorkOS, Realtime, assets,
+the GitHub App, the Neon branch, a bucket, the PostHog project) is the same as dev's, or when
+both environments name the same Vercel project and the same Vercel environment
+(`vercelProject` and `vercelEnvironment`: both are `ponzu-api`, production on `production`, dev
+on `dev`). Dev's `apiUrl` and `apiDomains` are `api-dev.ponzu.design`, so the API is no longer
+one of the reasons.
 Production's `r2.private` may be `null` until the bucket exists, but never `false`. The release
 workflow runs it, from the tag being released, before it publishes ("The release talks to
 production" in release.yml), so no release can ship pointing at dev. A dry run publishes
@@ -88,29 +223,36 @@ uses (`apiUrl`, `workosClientId`, `realtimeUrl`, `assetsUrl`) fails the build.
 
 ## Every resource, and what is right
 
-### Vercel `ponzu-api-prod`
+### Vercel `ponzu-api`
 
-Created by `bun scripts/prod/apply.ts vercel-project --env production --yes` (see
-[Applying the desired state](#applying-the-desired-state)).
+The one project, for both environments. It exists, so `bun scripts/prod/apply.ts vercel-project
+--env production` (see [Applying the desired state](#applying-the-desired-state)) finds it and
+only shows, and with `--yes` sets, the settings and Production variables that differ; it never
+needs to create it.
 
 | Setting | Value |
 |---|---|
 | Project | root `apps/api`, framework `hono`, function region `iad1`, Node as `engines.node` says |
 | Git | not connected |
 | OIDC | issuer mode team |
-| Protection | Standard Deployment Protection on |
-| Env, Production target | the list under [Env and secrets](#env-and-secrets) |
-| Env, Preview target | **empty**, so a preview of the production project fails at boot |
-| Forbidden env names | `VERCEL_TOKEN`, `BOAT_API_KEY`, `PONZU_SANDBOX_SNAPSHOT` |
-| Domain | `api.ponzu.design` |
+| Protection | Vercel Authentication under the legacy Standard Protection (`prod_deployment_urls_and_all_previews`), plus a Deployment Protection Exception for `api-dev.ponzu.design` and no other |
+| Custom environments | one, `dev`, with no branch matcher (Pro includes one per project) |
+| Legacy Cron Jobs | `vercel.json` still carries the minute's cron, which runs only on the Production target; **Disable Cron Jobs** is turned on once production's schedule has fired ("The minute"), and a later change removes the entry |
+| Forbidden env names, in every environment | `VERCEL_TOKEN`, `BOAT_API_KEY`, `PONZU_SANDBOX_SNAPSHOT` |
+| Variable entries | none covers the Production target and any other environment |
 | Container Registry | `ponzu-runner`, holding `apps/runner/image/current.json`'s digest |
-| Firewall | `infra/vercel-firewall.json` |
-| Spend Management | an alert, then a pause; the amounts are the founder's |
+| Firewall | `infra/vercel-firewall.json`, one config for the project |
+| Spend Management | team-wide: an alert, then a pause; the amounts are the founder's |
 
-### Vercel `ponzu-api` (dev)
+Per environment:
 
-As now, plus `PONZU_ENVIRONMENT=dev`, an explicit `PONZU_API_URL`, the domain
-`api-dev.ponzu.design`, and `BOAT_API_KEY` removed after cutover.
+| | Production target | `dev` environment | Preview |
+|---|---|---|---|
+| Env | production's list under [Env and secrets](#env-and-secrets), in Production-only entries | dev's 27 names, including its own `PONZU_ENVIRONMENT=dev` and `PONZU_API_URL=https://api-dev.ponzu.design` | dev's values, with `PONZU_ENVIRONMENT=preview` and `PONZU_API_URL=https://api-dev.ponzu.design` |
+| Domain | `api.ponzu.design`; **Auto-assign Custom Production Domains** off, so only a promotion moves it | `api-dev.ponzu.design`, public through the exception | none: generated URLs only, all protected |
+| Schedule `minute` | active, created when the first production deployment that carries it becomes current (beside the legacy cron until that is disabled) | turned on once with `vercel schedules enable minute --environment dev` | runs no steps: the route answers none on `preview`, whatever the schedule's state (a CLI preview's copy belongs to the user who deployed, and its initial state is not documented) |
+| Deploys | `deploy --prod --skip-domain` from `main`, then `vercel promote` (the workflow); `deploy --prod` from `main` by the orchestrator until then | `deploy --environment dev` from `main` | `deploy` by hand, throwaway |
+| Going back | `vercel promote` or `vercel rollback`, in this runbook only | deploy the older commit with `--environment dev` | nothing to go back to |
 
 ### Neon
 
@@ -232,11 +374,13 @@ production --workos-callback <url>`, which the founder runs and confirms on GitH
 - Webhook `https://api.ponzu.design/v1/github/webhook`, JSON, SSL verification on.
 - Setup URL `https://api.ponzu.design/v1/github/setup`, with `setup_on_update`.
 - Callback URL: WorkOS production's GitHub callback. `request_oauth_on_install` off.
+- Its client secret, private key and webhook secret go straight into ponzu-api's Production
+  target only, as Secrets; the script prints only the slug, the App id and the client id.
 
 What the script does, in order:
 
 1. It reads first, and stops before anyone is sent to GitHub if anything is in the way:
-   ponzu-api-prod must exist (D2); none of `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`,
+   ponzu-api must exist; none of `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`,
    `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` and `GITHUB_APP_BOT_USER_ID` may be set on
    its Production target (it makes a new App and never replaces an App's secrets);
    `GITHUB_APP_SLUG` may be set only to the slug infra names; and GitHub must show no public
@@ -252,7 +396,7 @@ What the script does, in order:
    `POST /app-manifests/{code}/conversions`; every secret in the answer is handed to the
    redactor before anything else reads it. An App that is not north-brook's is not stored.
 4. It looks up the bot user (`GET /users/ponzu%5Bbot%5D`), then stores, in one request to
-   ponzu-api-prod's Production target, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`
+   ponzu-api's Production target, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`
    and `GITHUB_WEBHOOK_SECRET` as sensitive, and `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_SLUG` and
    `GITHUB_APP_BOT_USER_ID` as plain (they are public). Then it reads the names and types back.
 5. It prints only the slug, the App id and the client id. WorkOS also needs the client secret
@@ -266,7 +410,9 @@ refusal, only Vercel's status) and how to finish by hand; the App then needs a n
 and client secret from its settings page, because the script never writes them anywhere else.
 
 `bun scripts/prod/github-app.ts create --env dev --dry-run` prints the form for an environment's
-manifest and makes no request at all. It is what an agent may run.
+manifest and makes no request at all. It is what an agent may run. Without `--dry-run`, `--env
+dev` is refused before any request: its secrets would land on ponzu-api's Production target, and
+`ponzu-dev` exists already.
 
 `api.github.com/apps/ponzu` answered 404 when this was written, so the slug is free or held by a
 private App. If GitHub refuses the name, the App takes another slug, and `environments.json`
@@ -304,97 +450,146 @@ A workspace "Ponzu production" with a monthly spend limit, and a key used only a
   and it has no bypass. Once it is applied nothing reaches `cloud` by a direct push, a revert
   included: a revert goes through a pull request like any other change.
 - The environment `production`: the founder is the required reviewer, only `main` may deploy,
-  and it holds `VERCEL_TOKEN` (for ponzu-api-prod) and `NEON_API_KEY`.
+  and it holds `VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET` and `NEON_API_KEY`
+  (see "The production deploy, staged").
+- The environment `dev`: no reviewer, only `main` may deploy, and it holds dev's own
+  `VERCEL_TOKEN`. The deploy workflow's dev job runs in it. It does not exist yet ("Turning on
+  the deploy workflow").
 - The environment `release-signing`, as now.
 - `infra/github/repo.json` names every variable and secret the workflows read; a test fails
   when a workflow reads one it does not name.
 
 ## The founder's steps
 
+Production went live on 12 Nov 2026, so most of these are done; they stay here as the record of
+how production was built and the order to rebuild it in. What is still open for the deploy
+workflow is in "Turning on the deploy workflow" below. The steps refer to a frozen deployment at
+`api.ponzu.design` and to D15 as the first production deploy: both are history now.
+
 These are section D of the program's founder list, in order. Each turns on something already
-built and tested, and none blocks a merge. Paste secrets only into the vendor's dashboard or
-Vercel's env, marked sensitive, never into chat or a file in the repository.
+built and tested, and none blocks a merge. Paste secrets only into the vendor's dashboard or into
+ponzu-api's variables as a Secret, never into chat or a file in the repository. Every production
+secret goes into the **Production target only**: never tick Preview, Development or `dev`
+beside it.
 
-Two dev steps come first, whenever convenient:
+Two dev steps:
 
-- **B1. The dev domain, early.** Vercel › ponzu-api › Settings › Domains: add
-  `api-dev.ponzu.design`, with the CNAME Vercel shows. Change no env yet. Tell the orchestrator
-  when `https://api-dev.ponzu.design/v1/health` answers.
+- **B1. The dev environment and domain.** Done by the orchestrator on 12 Nov 2026: the custom
+  environment `dev` exists, `api-dev.ponzu.design` is attached to it and serves, and the domain
+  is public through a Deployment Protection Exception. Nothing for you, unless Vercel asks a team
+  owner to approve something; if it does, approve it.
 - **B6. The dev bucket.** R2 › the dev assets bucket › Lifecycle: delete objects under
   `staging/` after a day, and abort incomplete multipart uploads after a day. Add no rule on
   `private/`. Optionally, the header rule on `assets-dev.ponzu.cloud`.
 
 Then production, when the program reports it is ready:
 
-1. **D1. Plans.** Vercel Pro. A Neon plan that allows scale-to-zero off and backup schedules
-   (Launch or Scale). R2 billing on.
-2. **D2. Vercel.** Create a team token able to manage ponzu-api-prod, then run
-   `bun scripts/prod/apply.ts vercel-project --env production --yes`. Confirm Standard
-   Protection and OIDC (team issuer) are on. Set Spend Management: an alert amount, then a pause
-   amount.
+1. **D1. Plans.** Vercel Pro (already: the `dev` environment uses the one custom environment Pro
+   includes, so no pack is needed). A Neon plan that allows scale-to-zero off and backup
+   schedules (Launch or Scale). R2 billing on.
+2. **D2. Vercel.** No new project.
+   - Vercel › ponzu-api › Settings › Deployment Protection: confirm Vercel Authentication is on
+     with the setting it has, and that `api-dev.ponzu.design` is the only Deployment Protection
+     Exception. Open `https://api.ponzu.design/v1/health` and
+     `https://api-dev.ponzu.design/v1/health` in a private window: both must answer JSON.
+   - Settings › Security › OIDC Federation: confirm the **Team** issuer mode.
+   - Settings › Environments › Production: turn off **Auto-assign Custom Production
+     Domains**, so a production deployment takes `api.ponzu.design` only when promoted.
+   - Team › Settings › Billing › Spend Management: an alert amount, then a pause amount (your
+     numbers), and the webhook pointed at an alert to the orchestrator ("Spend"). It is
+     team-wide, so it counts dev's spend too, but its pause stops only production.
+   - Create `VERCEL_TOKEN_PRODUCTION`: a token scoped to the ponzu-api project, from an account
+     with full production rights, used by nothing but the production deploy job. Keep it for
+     D12.
+   - Make sure the repository's and the `dev` environment's `VERCEL_TOKEN` come from a member
+     with the Developer role and without Full Production Deployment, and that experiment E13
+     has been run ("The production deploy, staged").
+   - Run `bun scripts/prod/apply.ts vercel-project --env production` *(not built yet)*: it
+     shows the difference between the project's settings and what this page says, and `--yes`
+     applies it.
 3. **D3. Neon.** Enable Realtime on the default branch. Run
    `bun scripts/prod/apply.ts neon --env production --yes`. Send the orchestrator the Realtime
    URL; it is public and goes in `environments.json`.
 4. **D4. Cloudflare.** Create buckets `ponzu-assets` and `ponzu-private` (ENAM). Attach
    `assets.ponzu.cloud` to ponzu-assets and turn r2.dev off. Create an R2 token scoped to those
-   two buckets (Object Read and Write) as an Account API token, so the check can see its scope,
-   and a read-only Cloudflare token for the check (permissions under "Checking production"). Run
-   `bun scripts/prod/apply.ts r2 --env production --yes` and
+   two buckets (Object Read and Write; a secret, for D10) as an Account API token, so the check
+   can see its scope, and a read-only Cloudflare token for the check (permissions under
+   "Checking production"). Run `bun scripts/prod/apply.ts r2 --env production --yes` and
    `bun scripts/prod/apply.ts cloudflare-headers --env production --yes`.
 5. **D5. WorkOS production.** Activate it, and copy the GitHub OAuth callback URL from
    Authentication › GitHub.
 6. **D6. The GitHub App.** Run `bun scripts/prod/github-app.ts create --env production
-   --workos-callback <the URL from D5>` with the `VERCEL_TOKEN` from D2, in a browser signed
-   in to GitHub as a north-brook owner, and click Create on GitHub's page. It stores the App's
-   secrets in ponzu-api-prod and prints the slug, the App id and the client id. Upload the logo.
-   Install the App on north-brook/ponzu-test for the end-to-end run.
+   --workos-callback <the URL from D5>` with a `VERCEL_TOKEN` of your own that may write the
+   Production target's variables (not the dev or repository token), in a browser signed in to GitHub as a north-brook owner, and click Create on
+   GitHub's page. It writes the App's client secret, private key and webhook secret straight
+   into ponzu-api's Production target and prints only the slug, the App id and the client id.
+   Upload the logo. **Install it on north-brook/ponzu-test only after D15**: until then
+   `api.ponzu.design` still serves dev's frozen deployment, which would receive the new App's
+   setup redirects and webhooks for an App it does not know.
 7. **D7. WorkOS production, continued.** Give GitHub OAuth the App's client id (printed by D6)
    and client secret (in the temporary file D6 names; press Enter afterwards to delete it). Add
    the redirect URIs `http://127.0.0.1/auth/callback` and `ponzu://auth/callback`; if the custom
    scheme is refused, tell the orchestrator. Turn off every method but GitHub, and default
-   emails. Create an API key and add it to ponzu-api-prod as sensitive `WORKOS_API_KEY`. Send
-   the orchestrator the client id.
+   emails. Create an API key and add it to ponzu-api as the Secret `WORKOS_API_KEY`, Production
+   only. Send the orchestrator the client id.
 8. **D8. PostHog.** Free one project slot in the organisation (it is at its limit of six) and
    create the project "Ponzu". Run `bun scripts/prod/apply.ts posthog --env production --yes`
-   and turn on cookieless tracking. Create a personal key with `person:write` for it, and a
-   source-map key. Send the orchestrator the project id.
+   and turn on cookieless tracking. Create a personal key with `person:write` and add it as the
+   Secret `PONZU_POSTHOG_PERSONAL_API_KEY`, Production only. Create a source-map key, for D12.
+   Send the orchestrator the project id.
 9. **D9. Anthropic.** Create the workspace "Ponzu production" with a spend limit, and a key. Add
-   it to ponzu-api-prod as sensitive `PONZU_ANTHROPIC_API_KEY`.
-10. **D10. Secrets and env.** Run `bun scripts/prod/apply.ts secrets generate --names
-    PONZU_VAULT_KEY,CRON_SECRET --env production --yes`, which writes 32 random bytes each
-    straight to Vercel and prints nothing. Add as sensitive: `DATABASE_URL` (the default
-    branch's pooled URL), `NEON_REALTIME_SECRET`, the R2 keys from D4, `EXPO_ACCESS_TOKEN` (a
-    production token), `PONZU_POSTHOG_PERSONAL_API_KEY`, and `RESEND_API_KEY` if email is used.
-    Run `bun scripts/prod/apply.ts vercel-env --env production --yes` for the public values.
-    Leave the Preview target empty.
-11. **D11. Domains.** Three days before cutover, tell the orchestrator: it sets dev's
-    `PONZU_API_URL=https://api-dev.ponzu.design`, redeploys dev, rebuilds Ponzu Dev and moves
-    dev's `apiUrl` in `environments.json`; then point the ponzu-dev App's webhook and setup URLs
-    at api-dev. Two days before, move `api.ponzu.design` from ponzu-api to ponzu-api-prod. A dev
-    sandbox awake across the switch keeps the old address only until its session ends, at most
-    a day, hence three days.
+   it to ponzu-api as the Secret `PONZU_ANTHROPIC_API_KEY`, Production only.
+10. **D10. Secrets and env.** First, wait for the orchestrator to report that the Production
+    target holds no dev value any more: every entry that gave Production dev's value now covers
+    only `dev` or Preview, and the old production entries of `PONZU_ENVIRONMENT`,
+    `PONZU_API_URL` and `BOAT_API_KEY` are deleted. The frozen deployment at `api.ponzu.design`
+    keeps working, since a deployment's values are fixed when it is built. Then, as team owner,
+    turn on **Separate Production Secret Values** (Team › Settings › Security, the switch
+    **Require Separate Values**). It covers Secrets only; the rule that no entry spans Production
+    and another environment covers every entry. Then:
+    - Run `bun scripts/prod/apply.ts secrets generate --names PONZU_VAULT_KEY,CRON_SECRET --env
+      production --yes`, which writes 32 random bytes each to the Production target only and
+      prints nothing.
+    - Type in, as Secrets, Production only: `DATABASE_URL` (the default branch's pooled URL),
+      `NEON_REALTIME_SECRET`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (from D4),
+      `EXPO_ACCESS_TOKEN` (a production token), and `RESEND_API_KEY` if email is used.
+    - Run `bun scripts/prod/apply.ts vercel-env --env production --yes` for the public values,
+      `PONZU_ENVIRONMENT=production` and `PONZU_API_URL=https://api.ponzu.design` among them.
+    - Leave Preview and `dev` alone.
+    - Check: `bun scripts/prod/check.ts --env production` shows every `env.*` line ok,
+      including that no entry covers Production and another environment.
+11. **D11. Domains.** Nothing moves: `api.ponzu.design` is already the Production target's
+    domain, and dev has been on `api-dev.ponzu.design` since it moved. Confirm with the
+    orchestrator that `infra/environments.json` names api-dev for dev, that
+    `api.ponzu.design`'s logs have shown no app or runner traffic for a day, and that the rule
+    denying every request to `api.ponzu.design` will be removed just before D15.
 12. **D12. The GitHub repository.** Create the environment `production` with yourself as
-    required reviewer, holding the secrets `VERCEL_TOKEN` (for ponzu-api-prod) and
-    `NEON_API_KEY`. Add the variables `VERCEL_API_PROD_PROJECT_ID` and
-    `API_DEPLOY_PRODUCTION=true`, repoint the `PONZU_APP_POSTHOG_*` variables and the secret
-    `PONZU_APP_POSTHOG_CLI_API_KEY` to the new project, and add a Container Registry OIDC policy
-    giving north-brook/ponzu's `production` environment read-write on ponzu-api-prod and read on
-    ponzu-api (the deploy copies the image from one to the other). Create the environment, with
-    its reviewer and `main` as its only branch, before you set `API_DEPLOY_PRODUCTION`: GitHub
+    required reviewer and `main` as its only branch, holding the secrets
+    `VERCEL_TOKEN_PRODUCTION` (from D2), `VERCEL_AUTOMATION_BYPASS_SECRET` (made in Vercel ›
+    ponzu-api › Settings › Deployment Protection › Protection Bypass for Automation, named
+    `deploy-production`; read "The production deploy, staged" first) and `NEON_API_KEY`.
+    Create it, with its reviewer and its branch, before you set `API_DEPLOY_PRODUCTION`: GitHub
     creates an environment a job names that does not exist yet, with no reviewer, so the first
-    deploy would run without your approval. Run `bun scripts/prod/apply.ts github-rulesets
-    --yes`. Check that `RELEASE_TOKEN` expires after the cutover.
+    deploy would run without your approval. Then add the variable `API_DEPLOY_PRODUCTION=true`.
+    There is no second project id and no Container Registry policy to add: one project, one
+    registry. Repoint the `PONZU_APP_POSTHOG_*` variables and the secret
+    `PONZU_APP_POSTHOG_CLI_API_KEY` (the source-map key from D8) to the new PostHog project.
+    Run `bun scripts/prod/apply.ts github-rulesets --yes`. Check that `RELEASE_TOKEN` expires
+    after the cutover.
 13. **D13. Releases and stores.** Set the repository variable `RELEASES_HELD=ponzu,mobile`.
-    Check the Developer ID certificate's expiry. Set the EAS production env (the production API
-    URL, WorkOS production's client id, the production PostHog key).
-14. **D14. Stripe live.** Activate live mode, repeat the test-mode setup with live keys and a
-    webhook on `https://api.ponzu.design/v1/stripe/webhook` onto ponzu-api-prod, and set
-    `PONZU_BILLING=on` there only after counsel and tax are settled.
+    Check the Developer ID certificate's expiry. In the EAS environment `production`, set
+    `EXPO_PUBLIC_PONZU_API_URL=https://api.ponzu.design`, WorkOS production's client id and the
+    production PostHog key, all public.
+14. **D14. Stripe live.** Activate live mode, repeat the test-mode setup with live keys (Secrets,
+    Production only on ponzu-api) and a webhook on `https://api.ponzu.design/v1/stripe/webhook`,
+    and set `PONZU_BILLING=on`, Production only, only after counsel and tax are settled.
 15. **D15. The first production deploy.** Approve it in Actions: it snapshots, migrates the empty
-    database, copies the image and deploys. Then run
+    database, deploys without the domain, checks the new deployment, promotes it to
+    `api.ponzu.design`, and checks that the `minute` schedule is active. Then run
     `bun scripts/prod/check.ts --env production --deep` until every line is `ok` or `manual`, and
     confirm each manual spend line. Sign in once against production on an account whose Claude
     is the dev key, and give the orchestrator the session file's path for the end-to-end run.
+    Then install the `ponzu` App on north-brook/ponzu-test (moved here from D6).
 
 After D3, D7 and D8, the orchestrator fills `environments.json`'s production nulls in one PR;
 the cutover PR flips `release` to `"production"`, and `assert-release production` must then
@@ -402,6 +597,181 @@ exit 0. Cutover day itself, and how to go back, are in docs/cutover.md, written 
 work.
 
 Monthly, after cutover: `bun scripts/prod/restore-drill.ts --env production`.
+
+## The production deploy, staged
+
+Dev and production are one Vercel project, so any token for it can deploy production. The
+deploy workflow (`.github/workflows/deploy-api.yml`) contains that in four ways, and
+`scripts/ci/workflows.test.ts` pins each:
+
+- **Dev never deploys production.** The dev job deploys with `--environment dev` and never
+  `--prod`, `--skip-domain`, `promote`, `rollback` or `alias`. It runs in the GitHub
+  environment `dev`, which only `main` may use.
+- **Production has its own token, by name.** The production job reads
+  `VERCEL_TOKEN_PRODUCTION`, which only the `production` environment holds. A GitHub
+  environment secret only overrides a repository secret of the same name, so had it been called
+  `VERCEL_TOKEN`, a `production` environment without one would have used the repository's
+  token, which reaches the same project. A missing `VERCEL_TOKEN_PRODUCTION` reads as empty,
+  and the job's first step fails before the database is touched.
+- **A production deploy never takes the domain by itself.** The job deploys with
+  `deploy --prod --skip-domain`, which builds a production deployment but leaves
+  `api.ponzu.design` on the one before it
+  ([vercel deploy](https://vercel.com/docs/cli/deploy)). It checks that deployment's own
+  `/v1/health` (this commit, the image, every migration, `environment: production`), and only
+  then runs `vercel promote <its URL>`. Promotion syncs the deployment's static schedules
+  ([Schedules concepts](https://vercel.com/docs/schedules/concepts): "Promote a staged
+  production build: synced from the promoted deployment"), so the job then checks
+  `api.ponzu.design`'s health and that the `minute` schedule is active, not inactive and not
+  enabled only for a while (`scripts/ci/schedules.ts`, which reads
+  `vercel schedules list --json`, against `schedules.minute` in `apps/api/vercel.json`).
+  Turning off **Auto-assign Custom Production Domains** on the Production environment as well
+  makes a stray `--prod` from anywhere else unable to take the domain. That is a dashboard
+  setting, required before D15 (founder step D2), and not checked by anything until the check
+  per environment is built ("Checking production").
+- **`vercel promote`, `vercel rollback` and `vercel alias set` belong to production only:**
+  to this job and to this runbook. Promoting a deployment that is not a production build
+  "will result in a new production deployment" ([vercel promote](https://vercel.com/docs/cli/promote)),
+  built from that code with production's variables, so promoting a dev deployment would put
+  a build nobody approved for production on `api.ponzu.design`. The job's promote passes no `--yes`, and with
+  `--json` the CLI 65.14.0 then refuses such a promotion and exits 1 rather than rebuilding
+  (read from the CLI's own code). Dev is taken back by deploying an older commit with
+  `--environment dev`, never by promoting, rolling back or aliasing.
+
+**What the staged check uses, and what you must know about it.** The new deployment is reached
+at its generated `https://<name>.vercel.app` address, which Vercel Authentication protects: the
+project's setting protects every deployment URL that is not the current production one. The
+check gets through with a **Protection Bypass for Automation** secret, sent as the
+`x-vercel-protection-bypass` header
+([Protection Bypass for Automation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)).
+You make that secret on purpose in D12 and store it only in the `production` GitHub environment
+as `VERCEL_AUTOMATION_BYPASS_SECRET`; the job fails at its first step without it.
+`scripts/ci/health.ts --bypass` sends it only to a `*.vercel.app` address, never to a custom
+domain. Know three things about it:
+
+- **It opens every deployment of the project,** dev's and previews' included, not only
+  production's: "You can use each available secret to bypass Deployment Protection on all
+  deployments in a project until the secret is revoked." With one project there is no way to
+  limit it to production's. Treat it like a production secret, and revoke it at once if it
+  may have leaked.
+- **Vercel also puts it in every deployment** as the system variable
+  `VERCEL_AUTOMATION_BYPASS_SECRET` (the page above), so dev's and previews' code can read it.
+  Nothing in the API reads it. It gets a request past Vercel's login wall, and also past the
+  firewall's system mitigations and bot protection outside an attack, but never past the API's
+  own checks (sign-in, the cron bearer). Whether it skips the firewall's custom rules that page
+  does not say.
+- **The job does not use `vercel curl`.** That command "automatically handles deployment
+  protection bypass tokens" ([vercel curl](https://vercel.com/docs/cli/curl)). The docs do not
+  say how, but the CLI 65.14.0's own code does: given no `--protection-bypass` and no
+  `VERCEL_AUTOMATION_BYPASS_SECRET` in its environment, `vercel curl` on a protected project
+  that has no bypass secret creates one for the whole project and prints "Added a Protection
+  Bypass for Automation secret to project …". `vercel httpstat` and `vercel deploy --verify` do
+  the same. That was read from the code and not tried. ponzu-api had no bypass secret when the
+  plan was checked, so the first of these run against it, by anyone, would make one as a side
+  effect. `scripts/ci/workflows.test.ts` fails if any workflow runs them. If you or the
+  orchestrator ever run one against ponzu-api by hand, look under Settings › Deployment
+  Protection afterwards for a bypass you did not make, and revoke it.
+
+**What the workflow does not contain.** The four rules above keep the deploy workflow's own
+jobs apart. They do nothing about the repository-wide secret `VERCEL_TOKEN`, which `image.yml`
+and `claude-code.yml` also read. `claude-code.yml` runs daily from `main`, and
+its "e2e.ts scratch" step runs a newly published Claude Code and Agent SDK from npm with that
+token in its environment. With one project, a token from a team member with full rights can
+deploy `--prod`, promote, set aliases and change the Production target's variables, so that
+token is a path to production. The containment is to mint the repository's and the `dev`
+environment's `VERCEL_TOKEN` from a member with the Developer role and without the Full
+Production Deployment extension ([Access roles](https://vercel.com/docs/rbac/access-roles)),
+and to keep `VERCEL_TOKEN_PRODUCTION` from someone who has it. Whether that role really
+refuses `deploy --prod`, `promote` and `alias set` is not verified: try each with such a token
+on a throwaway project and expect a 403. Production is live, so this is owed now.
+
+The alternative, not taken: leave production's generated URLs unprotected and check them with
+no secret. That needs a change to the project's protection setting, which also covers dev's and
+previews' generated URLs, and nothing about it has been tried.
+
+## Turning on the deploy workflow
+
+`deploy-api.yml` runs only for a push to `main` (and, for dev alone, a dispatch on `main`); no
+job runs for a pull request, another branch or a tag. Each job is off until its own variable is
+`true`, and the two are independent: `API_DEPLOY` never deploys production, and
+`API_DEPLOY_PRODUCTION` never deploys dev. `scripts/ci/workflows.test.ts` evaluates both jobs'
+conditions for every event, branch and combination of the two variables and pins the answer.
+
+What each job reads, and what existed when this was written (13 Nov 2026, from `gh variable
+list`, `gh secret list` and the repository's environments, names only):
+
+| Job | Reads | Exists |
+|---|---|---|
+| `dev` | variable `API_DEPLOY` | no |
+| `dev` | variables `VERCEL_TEAM_ID`, `VERCEL_API_PROJECT_ID` | yes |
+| `dev` | variable `NEON_PROJECT_ID` | no |
+| `dev` | secret `VERCEL_TOKEN` (the `dev` environment's, else the repository's) | the repository's only; no `dev` environment |
+| `dev` | secret `NEON_API_KEY` (the repository's) | no |
+| `production` | variable `API_DEPLOY_PRODUCTION` | no |
+| `production` | variables `VERCEL_TEAM_ID`, `VERCEL_API_PROJECT_ID` | yes |
+| `production` | variable `NEON_PROJECT_ID` | no |
+| `production` | secrets `VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `NEON_API_KEY`, all from the `production` environment | no; no `production` environment |
+
+So to turn on dev: add the repository variable `NEON_PROJECT_ID` and the repository secret
+`NEON_API_KEY`, create the environment `dev` limited to `main` with dev's own `VERCEL_TOKEN`
+(optional but intended: until then the repository's token deploys dev), then set
+`API_DEPLOY=true`. To turn on production: create the environment `production` with the founder as
+required reviewer, limited to `main`, holding the three secrets, **before** setting
+`API_DEPLOY_PRODUCTION=true` (GitHub creates a missing environment with no reviewer). Both are
+the founder's (D12). `bun scripts/prod/check.ts --env production` lists each one still missing as
+`pending`.
+
+## The minute
+
+The API's minute (`GET /v1/cron/minute`: job retries, the sandbox sweep, and the hourly steps)
+is moving from the legacy Cron Jobs to a Vercel Schedule, `minute` in `apps/api/vercel.json`.
+Vercel keeps one copy of a static schedule for production and one for each custom environment
+([Schedules concepts](https://vercel.com/docs/schedules/concepts)), while a legacy cron runs only
+on the Production target. So today dev has no minute at all, and production runs on the cron.
+
+`vercel.json` carries both: the legacy `crons` entry and the `minute` schedule. That is on
+purpose, so production never goes a minute without a run while it moves. While both are on,
+production runs the route twice for each minute, which the steps allow: `runCronSteps` takes only
+what nobody else holds, and a slotted step records its slot once (`recordOnce`).
+
+- **Production's** schedule is created active when the first production deployment that carries
+  it becomes current ("Vercel applies a deployment's static schedules when that deployment
+  becomes the current deployment of its environment"). Once `vercel schedules executions list
+  minute` shows it firing with 2xx answers, the orchestrator turns on **Disable Cron Jobs**
+  (Vercel › ponzu-api › Settings › Cron Jobs). That needs no deploy, and turning it off again
+  brings the cron back at once, so it is the way back if the schedule ever stops. A later change
+  removes `crons` from `vercel.json` once the schedule has run cleanly for a while; until then
+  the check's `vercel.crons` line fails, saying both run.
+- **Dev's** is created inactive by dev's first deploy that carries it and is turned on once with
+  `vercel schedules enable minute --environment dev`. It stays as it was set across later deploys
+  ([Managing Schedules](https://vercel.com/docs/schedules/manage)). apps/api/README.md,
+  "Schedules", has the commands. Dev never ran the legacy cron.
+- **Preview** never runs it: the route answers no steps on `PONZU_ENVIRONMENT=preview`. That
+  refusal is the wall, not the schedule's state. This project is not connected to Git, so a
+  preview is a CLI deployment, and Vercel keeps a copy per user for those; the docs give Preview
+  branches' copies an inactive start but say nothing of a CLI user's (not verified: list them
+  with `vercel schedules ls --user <user id>` after a preview deploy).
+
+Each run records when it ran in the database. `/v1/health` reports it as `cron.lastRanAt`, the
+selfcheck's `cron_fresh` fails when it is five minutes old, and the uptime check counts that as
+production down. Schedules are in beta, start within a one-minute jitter, and are not retried
+(docs/cloud.md, "Known constraints").
+
+**Going back to the cron alone.** Turn **Disable Cron Jobs** off (the setting "persists across
+deployment promotions and Instant Rollbacks… they remain disabled until you explicitly re-enable
+them", [Managing Cron Jobs](https://vercel.com/docs/cron-jobs/manage-cron-jobs)), confirm the
+project's `crons.disabledAt` is null, then run `vercel schedules disable minute` for production
+once; that state sticks across deploys. This works only while `vercel.json` still carries
+`crons`; after the later change removes it, putting the entry back and deploying production
+comes first. A rollback to a deployment without the schedule deletes production's copy, and the
+next deploy recreates it active, so after one, disable it again if the cron is meant to be the
+only run.
+
+**Rolling production back once Disable Cron Jobs is on.** Every production deployment before
+this change carries the cron and no schedule. Rolling back to one of them deletes production's
+schedule, and the cron does not come back by itself, because Disable Cron Jobs survives a
+rollback. Production would then have no minute at all: no job retries, and no sandbox put to
+sleep. So turn **Disable Cron Jobs** off first, confirm `crons.disabledAt` is null, and only then
+run `vercel rollback`. Before Disable Cron Jobs is turned on, a rollback needs nothing extra.
 
 ## Checking production
 
@@ -433,13 +803,13 @@ What each section checks:
 
 | Section | Lines |
 |---|---|
-| `vercel` | The project exists (on production, `pending` until D2); root `apps/api`, the API's Node version, region `iad1`, no Git connection; OIDC with the team issuer; Standard Deployment Protection; the Production target holds every name `REQUIRED_ENV` lists and only names the API reads; no `FORBIDDEN_ENV` name on any target; on production, the Preview and Development targets are empty and every secret is stored as sensitive; the environment's API domains are verified on the project (on production, `pending` while dev still lists the domain, before D11); the live firewall equals `infra/vercel-firewall.json` (enabled, OWASP categories, managed rules, and each rule's conditions, action and limits); the latest production deployment is ready and carries `vercel.json`'s cron. |
+| `vercel` | The project exists (on production, `pending` until D2); root `apps/api`, the API's Node version, region `iad1`, no Git connection; OIDC with the team issuer; Standard Deployment Protection; the Production target holds every name `REQUIRED_ENV` lists and only names the API reads; no `FORBIDDEN_ENV` name on any target; on production, no entry on the Production target also covers another target (Preview may hold dev's values in entries of its own) and every secret is stored as sensitive; the environment's API domains are verified on the project; the live firewall equals `infra/vercel-firewall.json` (enabled, OWASP categories, managed rules, and each rule's conditions, action and limits); the latest production deployment is ready; no legacy cron is on; and the `minute` schedule `vercel.json` declares is a `manual` line, because the check does not read Vercel's Schedules API yet (the deploy job's `scripts/ci/schedules.ts` does). |
 | `neon` | The environment's branch exists (dev's is not the default branch); Realtime is on at `environments.json`'s `realtimeUrl` (on production, `pending`, whether on or off, until D3 sends it). Where `infra/neon.json` asks (production): the read-write compute never sleeps (`-1`) and scales 0.5 to 2 CU; point-in-time history keeps at least 7 days; the backup schedule is daily at 07:00 UTC kept 35 days, and the latest scheduled snapshot is under 26 hours old (a deploy's own snapshot does not count; no schedule is `pending`, never a pass); the branch is protected. |
 | `cloudflare` | The assets bucket exists (production's in ENAM), is served at the environment's assets host with an active certificate and at no other custom domain, has r2.dev off, has `infra/r2/cors.json`'s CORS exactly, and has `infra/r2/lifecycle.json`'s rules (none of them live is `pending`). A live lifecycle rule that would delete under `private/` fails, whatever the file says. Production's private bucket exists in ENAM with no domain, r2.dev off and no delete rule. An account API token reaches exactly the environment's buckets and no other (on dev, a token the account listing cannot show is `manual`). The transform rule on the assets host sets the headers `infra/cloudflare/assets-headers.json` names (dev may go without). |
 | `github` | The environment's App, from GitHub's public answer: it exists and is `north-brook`'s (on production, `pending` until D6), and its permissions, events and homepage are its own manifest's exactly (`infra/github-app/<slug>.json`), so a permission the manifest does not grant fails. With a token: the merge settings are `github/repo.json`'s; each ruleset matches its file (enforcement, branches, no bypass, the same rules with at least the file's settings; `cloud`'s is `pending` until D12); each environment deploys only from its branches, has a required reviewer where the file says so, and holds its secrets (`production` is `pending` until D12); every variable and secret the workflows read is set (`pending` while any is not). A token that cannot read all of that is one `fail` line, and the App's lines are still judged. With `RELEASE_TOKEN`: GitHub accepts it and it expires more than 30 days from now. |
 | `workos` | The client's JWKS has a signing key. For the Mac's loopback and the phone's `ponzu://` redirect URI, an authorize request built with `@workos-inc/node` redirects to GitHub with the environment's App's client id (any other client id, an error page or AuthKit's invalid-redirect page fails). Production is `pending` until D7 puts its client id in `environments.json`. The sign-in methods and default emails are `manual`. |
 | `posthog` | The project `environments.json` names exists (production `pending` until D8), has `infra/posthog.json`'s settings, and has the group type `workspace` once it has had an event (before one, `pending`). |
-| `api` | `/v1/health` answers as this environment, `ok`, with its database; applied migrations equal the build's; the image is current.json's; on production the commit is `main`'s head. Then each `/v1/cron/selfcheck` id is `ok`. The cron secret is sent only after health has said it is this environment, so dev's secret never reaches production. While `api.ponzu.design` is in both environments' `apiDomains` (before D11), production's line is `pending`. |
+| `api` | `/v1/health` answers as this environment, `ok`, with its database; applied migrations equal the build's; the image is current.json's; on production the commit is `main`'s head. Then each `/v1/cron/selfcheck` id is `ok`. The cron secret is sent only after health has said it is this environment, so dev's secret never reaches production. Until the cutover sets `release` to production in `environments.json`, production's address answering as dev (the frozen deployment) is `pending`, not `fail`; so is `cron_fresh` answering `never_ran` on production. |
 | `dns` | Each of the environment's API domains, the assets host and `ponzu.design`: resolves over DNS-over-HTTPS, presents a valid certificate with at least 14 days left, and answers as it should (the API and the site from Vercel; the assets host with the header rule, which dev may go without). A production name not set up yet is `pending` with its founder step. |
 | `spend` | The five spend alerts, each `manual`. |
 | `deep` | With `--deep` only: the throwaway sandbox is made from current.json's image and removed. |
@@ -449,6 +819,41 @@ project answer (it requires a `traffic_sources` field the API does not send), so
 back to the answer the SDK hands over with its validation error. The tests run that path on the
 recorded answers (trimmed to the fields the check reads, which the SDK refuses too); the full
 answer went through it once when it was recorded.
+
+**Per environment, in one project** *(not built yet)*. The table above is what the check does
+today. It was written for two projects and only adjusted for one: its `vercel` lines read the
+Production target of the project `environments.json` names, which is now `ponzu-api` for both
+environments, so run with `--env dev` they judge the Production target's names, the project's
+domains and the latest production deployment, not dev's own. Entries scoped only to the `dev`
+custom environment are not read at all. Until the work below lands, read `--env dev`'s `vercel`
+lines with that in mind. Then `--env` names a Vercel environment of ponzu-api
+(`vercelEnvironment` in `environments.json`), not a project, and its Vercel lines will check:
+
+- **Variables.** An environment's entries are read by `target` for production and by
+  `customEnvironmentIds` containing dev's id for dev. `REQUIRED_ENV`, the forbidden names and
+  the unknown-name rule apply to each environment on its own.
+- **Separation, without reading a value.** Any entry that covers the Production target and any
+  other environment fails, whichever environment is being checked: one entry is one value, so a
+  shared entry is a shared secret. Preview may hold dev's values, never production's.
+- **Protection.** Vercel Authentication on with the project's setting, a Deployment Protection
+  Exception for `api-dev.ponzu.design` and no other, and both API domains answering
+  `/v1/health` without a login while a generated deployment URL asks for one.
+- **Domains,** read by `customEnvironmentId`: `api.ponzu.design` with none (the Production
+  target), `api-dev.ponzu.design` with dev's. For production, **Auto-assign Custom Production
+  Domains** is off.
+- **The minute.** That environment's `minute` schedule exists, is active (and not only for a
+  while), and is a GET on `/v1/cron/minute`, and the project runs no legacy cron. Vercel's
+  Schedules API answers 400 for a custom environment with no deployment yet, which reads as
+  `pending`, not `fail`. The selfcheck's `cron_fresh` is checked with the rest of the selfcheck,
+  and `never_ran` on production before its first run is `pending`.
+- **The latest deployment** is the newest READY one in that environment.
+- **The firewall** is one config for the project, so it is checked once, under either
+  environment.
+
+`apply.ts` will work the same way: `vercel-project` checks and sets ponzu-api's settings and
+creates nothing, and `vercel-env` and `secrets generate` take `--env` and write production's
+entries with the Production target only and dev's with dev's id only, refusing to write an entry
+that would cover both.
 
 ## Applying the desired state
 
@@ -469,8 +874,8 @@ environment what `infra/` says.
 | Area | What it does | Needs |
 |---|---|---|
 | `vercel-project` | Creates the project when it is missing (`apps/api`, `hono`, `iad1`, OIDC with the team issuer, Standard Protection, no Git, no variables), then sets the Node version. On an existing project it updates only the settings that differ. A connected Git repository is a note: disconnect it in the dashboard. | `VERCEL_TOKEN` |
-| `vercel-env` | Adds the public values `environments.json` holds to the Production target as `plain` variables: `PONZU_ENVIRONMENT`, `PONZU_API_URL`, `WORKOS_CLIENT_ID`, `GITHUB_APP_SLUG`, `NEON_REALTIME_URL`, `PONZU_ASSETS_URL`, `R2_BUCKET`, `R2_PRIVATE_BUCKET`, `PONZU_POSTHOG_HOST`, `PONZU_POSTHOG_AI_CONTENT`, `PONZU_MIN_CLIENT_VERSIONS`. A plain value that differs is changed. A value stored as sensitive or encrypted cannot be read back, so it is left alone and named, and the read after `--yes` reports it as `manual` rather than `ok`. A `null` in infra is skipped. It never writes the Preview target. | `VERCEL_TOKEN` |
-| `secrets generate --names PONZU_VAULT_KEY,CRON_SECRET` | Makes 32 random bytes (base64url) for each name that is not set yet and stores it on the Production target as `sensitive`. The value exists only in memory, is sent once, and is never printed or written to disk. A name that is already set is never replaced (rotation is below), and no other name is accepted. | `VERCEL_TOKEN` |
+| `vercel-env` | Adds the public values `environments.json` holds to the Production target as `plain` variables: `PONZU_ENVIRONMENT`, `PONZU_API_URL`, `WORKOS_CLIENT_ID`, `GITHUB_APP_SLUG`, `NEON_REALTIME_URL`, `PONZU_ASSETS_URL`, `R2_BUCKET`, `R2_PRIVATE_BUCKET`, `PONZU_POSTHOG_HOST`, `PONZU_POSTHOG_AI_CONTENT`, `PONZU_MIN_CLIENT_VERSIONS`. A plain value that differs is changed. A value stored as sensitive or encrypted cannot be read back, so it is left alone and named, and the read after `--yes` reports it as `manual` rather than `ok`. A `null` in infra is skipped. It never writes the Preview target, and it refuses `--env dev`: dev shares ponzu-api with production, and its values belong to the `dev` custom environment, which apply does not write yet, so they would land on the Production target. | `VERCEL_TOKEN` |
+| `secrets generate --names PONZU_VAULT_KEY,CRON_SECRET` | Makes 32 random bytes (base64url) for each name that is not set yet and stores it on the Production target as `sensitive`. The value exists only in memory, is sent once, and is never printed or written to disk. A name that is already set is never replaced (rotation is below), and no other name is accepted. It refuses `--env dev` for the same reason as `vercel-env`. | `VERCEL_TOKEN` |
 | `firewall` | When the live firewall differs from `infra/vercel-firewall.json`, one `PUT /v1/security/firewall/config` with the file as its body. A PUT replaces the whole configuration, so IP blocks someone set in the dashboard, which the file does not describe, are read and sent back unchanged. | `VERCEL_TOKEN` |
 | `neon` | Where `infra/neon.json` asks (production): the read-write compute (`suspend_timeout_seconds`, autoscaling), the project's history retention, the branch's backup schedule and its protection, each only when it differs. Realtime is a note: the founder turns it on (D3). | `NEON_API_KEY`, `NEON_PROJECT_ID` |
 | `r2` | The assets bucket's CORS and lifecycle, each replaced with its file when it differs. Replacing the lifecycle also removes any live rule that would delete under `private/`. Buckets, domains and r2.dev are the founder's (D4). | `CLOUDFLARE_API_TOKEN` (R2 write), `CLOUDFLARE_ACCOUNT_ID` |
@@ -505,11 +910,18 @@ Not proven yet:
 ## Uptime
 
 `.github/workflows/uptime.yml` runs `bun scripts/ci/uptime.ts` every five minutes. GitHub runs a
-schedule only from the default branch, so it starts with the cutover; until then it checks
-nothing, and a dispatch from any branch but `main` checks nothing either.
+schedule only from the default branch, `main`, and a dispatch from any other branch checks
+nothing.
 
 - Each run asks production's `/v1/health` up to three times, 15 seconds apart. Production is up
-  when one answer is a 200 with `status` ok, `database` true and `environment` production. The
+  when one answer is a 200 with `status` ok, `database` true, `environment` production and a
+  `cron.lastRanAt` under five minutes old: a minute that stopped is down, though every request
+  still answers. `lastRanAt` null (the minute has never run on production's database) is down
+  too: right after the first production deploy it lasts a minute or two, and the rule below
+  that one failing run opens nothing is the grace for it. Counted as up, it would hide for good a
+  schedule whose every run is refused, which records nothing. An answer with no `cron` at all
+  is not judged on the minute: it is an API deployed before health reported it, which is what
+  production serves until its first deploy after this rule reached `main`. The
   commit, image and migration count are the deploy's own check, not this one, because a merged
   commit waits for the founder's approval before it deploys.
 - A run that finds production down fails. The next run reads that conclusion back from the
@@ -550,13 +962,14 @@ last step turns off any auto-merge the release PR already had. To release a held
 |---|---|
 | `PONZU_VAULT_KEY` | Set the new key and move the old one to `PONZU_VAULT_OLD_KEYS`; deploy; once that deployment serves every request, run `bun apps/api/scripts/reseal.ts` with its `DATABASE_URL`, `PONZU_VAULT_KEY` and `PONZU_VAULT_OLD_KEYS` until it reports nothing left behind (the selfcheck's `vault_old_keys` reads 0); then drop the old key and deploy. |
 | `GITHUB_APP_PRIVATE_KEY` | Add a second key on GitHub, set it, deploy, delete the old one on GitHub. |
-| `GITHUB_WEBHOOK_SECRET` | Set the new value, then `bun scripts/github-webhook.ts configure`, then `redeliver` once the deploy is live (apps/api/README.md, "Deploying"). |
-| `CRON_SECRET` | Set and deploy; Vercel sends the new one at once. |
+| `GITHUB_WEBHOOK_SECRET` | Set the new value, then `bun apps/api/scripts/github-webhook.ts configure --env <dev\|production>`, then `redeliver` once the deploy is live (apps/api/README.md, "Deploying"). |
+| `CRON_SECRET` | Set it in that environment and deploy that environment. The schedule sends the value of the deployment that is current in its environment, so the new one is sent only once that deploy is current ([Handling scheduled runs](https://vercel.com/docs/schedules/handle-runs)). |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Create the new token, set, deploy, revoke the old. |
 | `DATABASE_URL` | Reset the role's password in Neon, set, deploy. |
 | `NEON_REALTIME_SECRET` | Rotate in Neon, set, deploy; renewals reseal within a minute. |
 | `WORKOS_API_KEY`, `PONZU_ANTHROPIC_API_KEY`, `EXPO_ACCESS_TOKEN` | Create the new one, set, deploy, revoke the old. |
-| `RELEASE_TOKEN`, `VERCEL_TOKEN`, the Apple certificate | Before they expire; the check warns 30 days ahead for `RELEASE_TOKEN`. |
+| `RELEASE_TOKEN`, `VERCEL_TOKEN`, `VERCEL_TOKEN_PRODUCTION`, the Apple certificate | Before they expire; the check warns 30 days ahead for `RELEASE_TOKEN`. |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | Add a new bypass in Vercel › ponzu-api › Settings › Deployment Protection, put it in the `production` environment, then revoke the old one. Revoke it at once if it may have leaked: it opens every deployment of the project. |
 
 ## Backups and restore
 
@@ -605,32 +1018,59 @@ all month costs about $280. So before launch either billing's cap is enforced, o
 accepts the caps plus Spend Management's pause plus the maintenance switch
 (`PONZU_MAINTENANCE`, built with the API's production work).
 
+**What a spend pause stops, with dev and production in one project.** Spend Management's pause
+is team-wide and "Pausing only affects production deployments"
+([Spend Management](https://vercel.com/docs/spend-management)). So a pause takes
+`api.ponzu.design` down and stops production's deployments, while `api-dev.ponzu.design` keeps
+serving and keeps waking sandboxes. "When a project is paused, Vercel skips its scheduled runs"
+([Managing Schedules](https://vercel.com/docs/schedules/manage)); production's minute certainly
+stops, and whether dev's does too is not documented. If it does, dev keeps waking sandboxes with
+nothing putting them to sleep but their session timeout. So:
+
+- Never pause the project by hand to stop dev's spend: that stops production and its minute.
+- Dev's brakes are its own: the per-workspace and per-owner sandbox caps in code, the sandbox
+  session timeout, and `PONZU_MAINTENANCE=wakes_paused` set on the `dev` environment followed by
+  a redeploy of dev.
+- Point the Spend Management webhook at an alert that tells the orchestrator to set that switch
+  on dev, rather than relying on the pause to cover dev.
+
 ## Env and secrets
 
-ponzu-api-prod, Production target:
+Every entry on ponzu-api names the environments it covers, and **no entry covers the Production
+target and any other environment** (Preview, Development or `dev`): one entry is one value, so a
+shared entry would be a shared secret. Once the Production target holds no dev value, the team
+policy Separate Production Secret Values makes Vercel refuse such an entry for a Secret (founder
+step D10; whether it is on is the founder's to confirm).
 
-- Sensitive: `DATABASE_URL` (the default branch, pooled), `WORKOS_API_KEY`,
+ponzu-api, Production target, typed or written there only:
+
+- Secrets: `DATABASE_URL` (the default branch, pooled), `WORKOS_API_KEY`,
   `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `CRON_SECRET`,
   `PONZU_VAULT_KEY` (new, never dev's), `NEON_REALTIME_SECRET`, `R2_ACCESS_KEY_ID`,
   `R2_SECRET_ACCESS_KEY`, `PONZU_ANTHROPIC_API_KEY`, and the keys later features add
   (`EXPO_ACCESS_TOKEN`, `PONZU_POSTHOG_PERSONAL_API_KEY`, Stripe's, `RESEND_API_KEY`).
 - Public: `PONZU_ENVIRONMENT=production`, `PONZU_API_URL=https://api.ponzu.design`,
-  `WORKOS_CLIENT_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_SLUG=ponzu`, `GITHUB_APP_BOT_USER_ID`,
+  `WORKOS_CLIENT_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_SLUG=ponzu-cloud`, `GITHUB_APP_BOT_USER_ID`,
   `NEON_REALTIME_URL`, `PONZU_ASSETS_URL=https://assets.ponzu.cloud`, `R2_ACCOUNT_ID`,
   `R2_BUCKET=ponzu-assets`, `R2_PRIVATE_BUCKET=ponzu-private`, `PONZU_POSTHOG_KEY`,
   `PONZU_POSTHOG_HOST`, `PONZU_POSTHOG_AI_CONTENT=0`,
   `PONZU_MIN_CLIENT_VERSIONS=macos=2.0.0,windows=2.0.0,linux=2.0.0`, and the sandbox limits at
   their defaults.
 
-ponzu-api-prod, Preview target: nothing. Forbidden on either target: `VERCEL_TOKEN`,
-`BOAT_API_KEY`, `PONZU_SANDBOX_SNAPSHOT`.
+ponzu-api, `dev` environment: 27 names, the 21 `REQUIRED_ENV` asks for and some optional ones
+(`EXPO_ACCESS_TOKEN` and PostHog's among them), with its own `PONZU_ENVIRONMENT=dev` and
+`PONZU_API_URL=https://api-dev.ponzu.design`. None of them covers the Production target any
+more: the orchestrator took Production off each on 12 Nov 2026 without re-entering a value.
 
-ponzu-api (dev) adds `PONZU_ENVIRONMENT=dev` and an explicit `PONZU_API_URL`, set before the API
-starts requiring them.
+ponzu-api, Preview target: dev's values, with `PONZU_ENVIRONMENT=preview` and
+`PONZU_API_URL=https://api-dev.ponzu.design`, and never a production value.
 
-The GitHub environment `production` holds `VERCEL_TOKEN` (scoped to ponzu-api-prod) and
-`NEON_API_KEY`. New repository variables: `VERCEL_API_PROD_PROJECT_ID`, `API_DEPLOY_PRODUCTION`
-and `RELEASES_HELD`.
+Forbidden in every environment: `VERCEL_TOKEN`, `BOAT_API_KEY`, `PONZU_SANDBOX_SNAPSHOT`.
+
+The GitHub environment `production` holds `VERCEL_TOKEN_PRODUCTION`,
+`VERCEL_AUTOMATION_BYPASS_SECRET` and `NEON_API_KEY`; the environment `dev` holds dev's
+`VERCEL_TOKEN`. Both deploy jobs name the one project with `VERCEL_API_PROJECT_ID`. New
+repository variables: `API_DEPLOY_PRODUCTION` and `RELEASES_HELD`.
 
 The check and apply scripts read their credentials from the environment of whoever runs them and
 never store them.

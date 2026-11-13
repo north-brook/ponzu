@@ -5,7 +5,7 @@ export const TIMEOUT_MS = 15_000;
 
 /** Where the API is and who is calling it. */
 export interface Endpoint {
-  /** `https://api.ponzu.design`. */
+  /** The API's origin, from PONZU_API_URL: `https://api-dev.ponzu.design` for dev's sandboxes. */
   baseUrl: string;
   /** The runner token. */
   token: string;

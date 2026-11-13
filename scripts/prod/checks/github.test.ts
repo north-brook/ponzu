@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { loadInfra } from "../desired.ts";
 import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import type { CheckContext, Finding } from "./finding.ts";
 import {
@@ -41,6 +42,13 @@ function afterD12(): GithubAnswers {
     environments: [
       ...answers.environments,
       {
+        name: "dev",
+        protection_rules: [{ type: "branch_policy", reviewers: [] }],
+        deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+        branch_policies: [{ name: "main", type: "branch" }],
+        secrets: ["VERCEL_TOKEN"],
+      },
+      {
         name: "production",
         protection_rules: [
           { type: "required_reviewers", reviewers: [{}] },
@@ -48,7 +56,7 @@ function afterD12(): GithubAnswers {
         ],
         deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
         branch_policies: [{ name: "main", type: "branch" }],
-        secrets: ["NEON_API_KEY", "VERCEL_TOKEN"],
+        secrets: ["NEON_API_KEY", "VERCEL_AUTOMATION_BYPASS_SECRET", "VERCEL_TOKEN_PRODUCTION"],
       },
     ],
     variables: [...repo.variables],
@@ -69,7 +77,8 @@ describe("the recorded ponzu-dev App and its manifest", () => {
 
   test("the manifest's webhook and setup URLs are on dev's API", () => {
     const manifest = infra["github-app/ponzu-dev.json"];
-    const api = infra["environments.json"].environments.dev.apiUrl;
+    // The manifest is what the App should be now, so it follows today's infra, not the recording's.
+    const api = loadInfra()["environments.json"].environments.dev.apiUrl;
     expect(manifest.hook_attributes.url).toBe(`${api}/v1/github/webhook`);
     expect(manifest.setup_url).toBe(`${api}/v1/github/setup`);
     expect(manifest.request_oauth_on_install).toBe(false);
@@ -78,12 +87,20 @@ describe("the recorded ponzu-dev App and its manifest", () => {
 });
 
 describe("production's App and its manifest", () => {
-  test("ponzu.json is ponzu-dev.json but for its name: the same permissions, events and URLs", () => {
-    const { name, ...prod } = infra["github-app/ponzu.json"];
-    const { name: devName, ...dev } = infra["github-app/ponzu-dev.json"];
+  test("ponzu.json is ponzu-dev.json but for its name and its API: the same permissions and events", () => {
+    const { name, hook_attributes, setup_url, ...prod } = infra["github-app/ponzu.json"];
+    const {
+      name: devName,
+      hook_attributes: devHook,
+      setup_url: devSetup,
+      ...dev
+    } = infra["github-app/ponzu-dev.json"];
     expect(name).toBe("Ponzu");
     expect(devName).toBe("Ponzu Dev");
     expect(prod).toEqual(dev);
+    // Each App's webhook and setup URL are on its own environment's API, never the other's.
+    expect(hook_attributes.url).not.toBe(devHook.url);
+    expect(setup_url).not.toBe(devSetup);
   });
 
   test("its webhook and setup URLs are on production's API", () => {
@@ -172,6 +189,13 @@ describe("evaluate on dev's recorded answers", () => {
         says: 'the environment "release-signing" deploys only from main and holds its 5 secrets',
       },
       {
+        id: "github.environment.dev",
+        area: "github",
+        status: "pending",
+        says: 'the environment "dev" does not exist yet',
+        fix: "GitHub › the repository › Settings › Environments › dev (make it, limited to main, before setting API_DEPLOY=true)",
+      },
+      {
         id: "github.environment.production",
         area: "github",
         status: "pending",
@@ -182,7 +206,7 @@ describe("evaluate on dev's recorded answers", () => {
         id: "github.variables",
         area: "github",
         status: "pending",
-        says: "9 of the 12 repository variables the workflows read are not set: API_DEPLOY, API_DEPLOY_PRODUCTION, NEON_PROJECT_ID, PONZU_APP_POSTHOG_CLI_PROJECT_ID, PONZU_APP_POSTHOG_HOST, PONZU_APP_POSTHOG_KEY, PONZU_APP_POSTHOG_REPLAY, RELEASES_HELD and VERCEL_API_PROD_PROJECT_ID (also set, not in infra/github/repo.json: PONZU_POSTHOG_KEY)",
+        says: "8 of the 11 repository variables the workflows read are not set: API_DEPLOY, API_DEPLOY_PRODUCTION, NEON_PROJECT_ID, PONZU_APP_POSTHOG_CLI_PROJECT_ID, PONZU_APP_POSTHOG_HOST, PONZU_APP_POSTHOG_KEY, PONZU_APP_POSTHOG_REPLAY and RELEASES_HELD (also set, not in infra/github/repo.json: PONZU_POSTHOG_KEY)",
         fix: "gh variable set <NAME> --repo north-brook/ponzu (docs/production.md › Env and secrets; production's are founder step D12)",
       },
       {
@@ -211,7 +235,7 @@ describe("evaluate on dev's recorded answers", () => {
     );
     expect(lines.filter((l) => l.status !== "ok")).toEqual([]);
     expect(byId(lines)["github.environment.production"]?.says).toBe(
-      'the environment "production" deploys only from main, with a required reviewer, and holds its 2 secrets',
+      'the environment "production" deploys only from main, with a required reviewer, and holds its 3 secrets',
     );
     expect(byId(lines)["github.release-token"]?.says).toBe(
       "RELEASE_TOKEN expires on 2027-03-01, in 108 days",
@@ -370,7 +394,7 @@ describe("the repository", () => {
       id: "github.environment.production",
       area: "github",
       status: "fail",
-      says: 'the environment "production": any branch may deploy to it, no one has to approve a run and it lacks the secret NEON_API_KEY',
+      says: 'the environment "production": any branch may deploy to it, no one has to approve a run and it lacks the secrets NEON_API_KEY, VERCEL_AUTOMATION_BYPASS_SECRET and VERCEL_TOKEN_PRODUCTION',
       fix: "GitHub › the repository › Settings › Environments › production",
     });
   });

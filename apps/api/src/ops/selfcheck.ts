@@ -6,6 +6,7 @@ import {
   QueryError,
 } from "@ponzu/db";
 import { SandboxError, scopePrefix } from "@ponzu/sandbox";
+import { isCronFresh, lastCronRun } from "../cron/heartbeat.ts";
 import type { Deps } from "../deps/index.ts";
 import { UpstreamError } from "../http/errors.ts";
 import { missingEvents, missingPermissions } from "./github-app.ts";
@@ -34,6 +35,7 @@ export const SELFCHECK_IDS = [
   "sandboxes",
   "vault_old_keys",
   "posthog",
+  "cron_fresh",
 ] as const;
 
 export type SelfcheckId = (typeof SELFCHECK_IDS)[number];
@@ -74,6 +76,10 @@ export const SELFCHECK_DETAILS = [
   "not_configured",
   /** No private bucket is set: archives go in the assets bucket, which `storage_assets` checks. */
   "same_bucket",
+  /** The minute's cron last ran on this database five or more minutes ago (`cron/heartbeat.ts`). */
+  "stale",
+  /** The minute's cron has never run on this database. */
+  "never_ran",
 ] as const;
 
 export type SelfcheckDetail = (typeof SELFCHECK_DETAILS)[number];
@@ -188,6 +194,22 @@ const CHECKS: Record<SelfcheckId, Check> = {
 
   async posthog(deps) {
     return { ok: true, detail: deps.config.posthog ? "configured" : "not_configured" };
+  },
+
+  /*
+   * Whether the minute's cron ran on this database in the last five minutes. It reads the
+   * database's record, not the deployment's, so it says whether anything is sweeping this
+   * database: a preview, which never runs the minute, answers for dev. A database no minute
+   * has reached yet (production between its first deploy and its first run, or a local one)
+   * is `never_ran`; one whose schedule was turned off, or whose scheduler stopped, goes
+   * `stale` five minutes after its last run. Both fail, because either way sandboxes are not
+   * put to sleep and failed jobs are not retried. In the hourly step it is always ok, since
+   * that step is itself a run.
+   */
+  async cron_fresh(deps) {
+    const last = await lastCronRun(deps.db);
+    if (!last) return fail("never_ran");
+    return isCronFresh(last, deps.clock.now()) ? OK : fail("stale");
   },
 };
 

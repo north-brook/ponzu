@@ -27,6 +27,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type At,
+  CHECK_SCOPE,
   type Sandboxes,
   type SandboxSpec,
   systemClock,
@@ -69,7 +70,12 @@ export function credentials(): VercelCredentials {
 
 let module: Sandboxes | null = null;
 export function sandboxes(): Sandboxes {
-  module ??= vercelSandboxes({ clock: systemClock, credentials: credentials() });
+  // CHECK_SCOPE: this module can touch only the `pz-test-` names it makes, never a canvas's.
+  module ??= vercelSandboxes({
+    clock: systemClock,
+    scope: CHECK_SCOPE,
+    credentials: credentials(),
+  });
   return module;
 }
 

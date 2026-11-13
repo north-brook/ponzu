@@ -34,7 +34,7 @@ backwards compatibility with the 1.x app.
 
 ```
 apps/
-  api/       HTTP API on Vercel (Hono, Node runtime, iad1). api.ponzu.design
+  api/       HTTP API on Vercel (Hono, Node runtime, iad1). api.ponzu.design, dev at api-dev
   runner/    the process inside each sandbox: Claude Code, the canvas tools, Chromium
   desktop/   Electron shell: windows, sign-in, token storage, updater
   studio/    the app UI the desktop shell loads (and a browser app later)
@@ -513,9 +513,29 @@ Vercel in memory with a clock the test controls. Nothing else imports the SDK
 
 - **One named sandbox per canvas.** A canvas's is `pz-<scope>-<canvas id>`, a Claude sign-in's
   `pz-<scope>-signin-<auth state id>`, and the live suites' and image checks' `pz-test-<tag>-<random>`.
-  `scope` is the first 12 hex of a hash of the database URL, so every deployment sharing the
-  Vercel project (dev, previews, production) acts only on its own names. Names are unique in the
-  project, so the name is the idempotency key and the only handle the API keeps.
+  `scope` is the first 12 hex of a hash of the database URL (its host without `-pooler`, and its
+  path), and nothing else: production's live sandboxes are named by that rule, so it never
+  changes (`env.test.ts` pins it). Production's database is not dev's, so its scope is not
+  dev's. Dev, previews and
+  a local API on dev's Neon branch share dev's scope on purpose: they are the same rows, and dev's
+  minute sleeps what a preview woke. Names are unique in the project, so the name is the
+  idempotency key and the only handle the API keeps.
+- **The scope is the wall between environments, and it is a check in our code.** Dev and
+  production are one Vercel project, and Vercel Sandbox authenticates per project: an OIDC token
+  belongs to one project ([Sandbox authentication](https://vercel.com/docs/vercel-sandbox/concepts/authentication)),
+  and Sandbox's docs describe no limit by environment (the orchestrator's first dev deploy found
+  Sandbox takes the `dev` environment's token), so dev's functions hold a token that could list,
+  stop, delete and run commands in production's sandboxes. Nothing at Vercel stops that. What
+  stops it is `packages/sandbox`: `vercelSandboxes` cannot be made without a scope, and it refuses any call (`up`, `status`, `list`, `start`, `exec`, `writeFile`, `readFile`,
+  `extend`, `stop`, `remove`) whose name is outside its own `pz-<scope>-` prefix, and any listing
+  that is not inside it or answers a name outside it, with the error `out_of_scope`, before a
+  request is sent (`scope.ts`, tested call by call in `scope.test.ts`). The trailing dash is
+  part of the prefix, so one scope's never begins another's. The live suites and image checks
+  use the scope `test`, which reaches only `pz-test-` names. Reconcile checks each listed name's
+  scope again, and logs `sandbox_out_of_scope` rather than act on one, so a listing someone
+  widens later still never stops or removes another deployment's sandbox. This guards against a
+  mistake in our own code; it does not stop code written to make a module for another scope,
+  which is why the SDK is reachable only through this package.
 - **Only `up()` resumes.** The SDK resumes a stopped sandbox on almost any call that needs a
   VM. So `up(name, spec)` is the one call that may, and every other call is pinned to one
   session (`At = { name, sessionId }`) and fails as `not_running` rather than wake anything:
@@ -529,10 +549,12 @@ Vercel in memory with a clock the test controls. Nothing else imports the SDK
   (`wasRunning`); otherwise it resumes, which also absorbs a snapshot that expired (a fresh
   create). It answers the session's id, start and deadline, the port's address, and `fresh`
   when the disk is empty.
-- **Errors** are five codes: `rate_limited` (a 429 the SDK did not wait out, with
+- **Errors** are six codes: `rate_limited` (a 429 the SDK did not wait out, with
   `Retry-After`), `busy` (from `up()` only: a create on a name a racing wake just took, or an
   image not ready), `not_running` (a pinned call on a session that is not the current one, or
-  has stopped), `unavailable` (the network, or a 5xx after the SDK's retries) and `rejected`.
+  has stopped), `unavailable` (the network, or a 5xx after the SDK's retries), `rejected`, and
+  `out_of_scope` (a name outside the module's scope: nothing was sent, and it is a bug, never
+  retried).
 - **Credentials.** On Vercel the API uses its function's OIDC token, and refuses a
   `VERCEL_TOKEN` there. Scripts, CI and the live suites use `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and
   `VERCEL_PROJECT_ID` (the ponzu-api project), all three or none. **The OIDC token is read from
@@ -717,7 +739,8 @@ name a window that is over well before then.
 - **Logs.** `sandbox_awake` (with `start`, `fresh` and how long), `sandbox_stopped` (why, the
   snapshot's size, how long), `wake_failed`, `wake_let_go`, `sandbox_expired`, `sandbox_repaired`,
   `sandbox_retired`, `sandbox_retire_skipped`, `sandbox_leak`, `sandbox_orphan_removed`,
-  `runner_dead`.
+  `sandbox_out_of_scope` (an error: a listing answered another scope's name, which reconcile
+  left alone), `runner_dead`.
 
 ### The runner
 
@@ -987,8 +1010,7 @@ image has reported. `CLAUDE_MODELS` in `apps/api/src/claude/models.ts` is only t
 offered before a report, and the names and order of the models it knows.
 
 **The bump pull request.** `.github/workflows/claude-code.yml` looks for an Agent SDK newer than
-the pin (`apps/runner/image/bump.ts`), daily once `cloud` is the default branch and until then
-on every push to `cloud`. When there is one, and the open pull request does not already propose
+the pin (`apps/runner/image/bump.ts`), daily, from `main`. When there is one, and the open pull request does not already propose
 it, it:
 
 1. takes the Claude Code that SDK names, and stops, saying so, if their patch numbers differ;
@@ -1036,8 +1058,11 @@ registry being down; the run cannot tell which) is a red run.
    `VERCEL_API_PROJECT_ID` (ponzu-api's `prj_…` id). `deploy-api.yml` reads the same two; on
    2026-11-11 neither was set on the repository.
 2. The repository secret `VERCEL_TOKEN`: a Vercel token for the team, able to use ponzu-api
-   (`deploy-api.yml` reads the same secret). It reads the registry, and makes and removes the
-   `pz-test-*` sandboxes of the checks and the turn.
+   (`deploy-api.yml`'s dev job reads the same name from the GitHub Environment `dev`; its
+   production job reads only `VERCEL_TOKEN_PRODUCTION`). It reads the registry, and makes and
+   removes the `pz-test-*` sandboxes of the checks and the turn. Dev and production are one
+   project, so mint it from a member with the Developer role and without Full Production
+   Deployment ([production.md](production.md), "The production deploy, staged").
 3. A Container Registry OIDC policy on ponzu-api giving `north-brook/ponzu` read-write, so
    `vercel/vcr-action/login` can push (Vercel's docs: container-registry/github-actions).
 4. The repository secret `ANTHROPIC_API_KEY`: the development key. Without it the checks only
@@ -1047,11 +1072,9 @@ registry being down; the run cannot tell which) is a red run.
    branch and says so). Their pull requests then get CI by a dispatch of `ci.yml` on the
    branch, with no token of a person's.
 
-Then dispatch the Claude Code workflow once on `cloud` with `pretend` set to an SDK version
-before the pinned one (`gh workflow run claude-code.yml --ref cloud -f pretend=0.3.<n-1>`): it
-runs every step and writes the body it would open into the run's summary. GitHub accepts a
-dispatch of a workflow that is not on the default branch only once it has run there, which the
-first push to `cloud` after it merges does.
+Then dispatch the Claude Code workflow once on `main` with `pretend` set to an SDK version
+before the pinned one (`gh workflow run claude-code.yml --ref main -f pretend=0.3.<n-1>`): it
+runs every step and writes the body it would open into the run's summary.
 
 ### Saving the sandbox
 
@@ -3327,54 +3350,73 @@ details and what is not built.
 
 ## Environments
 
-| | Vercel project | API | Database | Auth | GitHub App |
+| | Vercel | API | Database | Auth | GitHub App |
 |---|---|---|---|---|---|
-| Development and the `cloud` branch | `ponzu-api` | `api.ponzu.design` until just before cutover, then `api-dev.ponzu.design` | Neon branch `dev` | WorkOS staging | `ponzu-dev` |
-| Production, from cutover | `ponzu-api-prod` | `api.ponzu.design` | Neon default branch, starting empty | WorkOS production | `ponzu` |
+| Development, the head of `main` | `ponzu-api`, custom environment `dev` | `api-dev.ponzu.design` | Neon branch `dev` | WorkOS staging | `ponzu-dev` |
+| Production, live since 12 Nov 2026 | `ponzu-api`, Production target | `api.ponzu.design` | Neon default branch | WorkOS production | `ponzu-cloud` |
 
-There are two Vercel projects, one per environment. Vercel runs crons only on a project's
-Production target, and the sandbox sweep and the job retries run on the minute cron, so dev
-kept as a Preview of the production project would never sleep a sandbox or retry a wake. Two
-projects also keep the environments apart by more than a name: each has its own OIDC tokens,
-env, image registry, spend and firewall. The production project's Preview target holds no
-secrets and runs nothing. The values each environment uses (its addresses, client ids,
-buckets and analytics project) are public and live in
-[`infra/environments.json`](../infra/environments.json). The desktop app bakes one of them in
-when it is built: a release the one the file's `release` names, which stays dev until the
-cutover, and Ponzu Dev always dev's. A field the app reads that is still `null` fails the
-build, and the release workflow refuses to publish unless `release` is production with every
-field set. The resources, the founder's steps that create production, rotation, backups and
-spend are in [production.md](production.md).
-The founder adds `api-dev.ponzu.design` to the dev project early, so dev's webhooks and sign-in
-redirects never have to move at cutover.
+There is one Vercel project, `ponzu-api`, with two environments. Production is its Production
+target at `api.ponzu.design`; dev is its one custom environment, `dev`, at
+`api-dev.ponzu.design`; the Preview target is for throwaway builds on dev's database and never
+runs the minute. Vercel keeps a separate copy of the minute's schedule for production and for
+each custom environment, so dev runs its own sandbox sweep and job retries without a project of
+its own (production's minute still also runs on the legacy cron while the schedule takes over;
+production.md, "The minute"). What keeps the environments apart is a set of settings and checks,
+not a second project: no variable entry covers Production and another environment, a
+deployment whose `PONZU_ENVIRONMENT` disagrees with its Vercel environment never starts (below),
+the sandbox module refuses names outside its own scope ("The sandbox"), and each environment
+deploys with its own token. What is weaker than two projects (Vercel Sandbox accepts every
+environment's OIDC token for the project alike, one firewall config, a spend pause that stops
+only production) is written down in
+[production.md](production.md), "One project, two environments". The values each environment
+uses (its addresses, client ids, buckets and analytics project) are public and live in
+[`infra/environments.json`](../infra/environments.json), which names each environment's Vercel
+project and Vercel environment. The desktop app bakes one of them in when it is built: a
+release the one the file's `release` names, production since the cutover, and Ponzu Dev
+always dev's. A field the app reads that is still `null` fails the build, and the release
+workflow refuses to publish unless `release` is production with every field set. The
+resources, the founder's steps that create production, rotation, backups and spend are in
+[production.md](production.md).
 
 The API is deployed by a workflow, which applies the pending migrations to the database first;
-nobody deploys a branch to production or migrates a shared database by hand. Dev deploys from
-the head of `cloud`. Production deploys only from `main`, through the GitHub Environment
-`production`, which needs the founder's approval: `deploy-api.yml`'s production job, off until
-the repository variable `API_DEPLOY_PRODUCTION` is set.
-Every deployment holds its environment's secrets, so only each project's own domains are
-public: previews and the unique URL of each deployment open only for the team.
+nobody deploys a branch to production. Both environments deploy from `main`. Dev deploys with
+`vercel deploy --environment dev`, never `--prod`, by `deploy-api.yml`'s dev job once the
+repository variable `API_DEPLOY` is set. Production deploys through the GitHub Environment
+`production`, which needs the founder's approval: the workflow's production job, off until the
+repository variable `API_DEPLOY_PRODUCTION` is set, which builds the deployment without the domain, checks it, and
+only then promotes it to `api.ponzu.design`. `vercel promote`, `vercel rollback` and
+`vercel alias set` belong to that job and the production runbook alone; dev is taken back by
+deploying an older commit to `dev`. Until the variables are set, the orchestrator runs the same
+steps by hand from `main` (apps/api/README.md, "Deploying"). Every deployment holds its environment's secrets, so only
+the two API domains are public: previews and the unique URL of each deployment open only for
+the team. The project's Vercel Authentication would cover `api-dev.ponzu.design` too, so that
+one domain is public through a Deployment Protection Exception.
 
-The sandbox image is built once, into dev's registry, and the production deploy copies it by
-digest, so production runs exactly the bytes dev checked. Within a project, sandboxes sit
-beside the API's functions and the image's registry, kept apart by their names' scope ("The
-sandbox"): a deployment lists, stops and removes only the names its own database's scope
-begins. The scope is a second wall behind the project.
+The sandbox image is built once, into the project's one registry, and production pulls the
+digest dev checked, so production runs exactly the bytes dev checked. Sandboxes sit beside the
+API's functions and the image's registry in the one project, kept apart by their names' scope
+("The sandbox"): a deployment can read, run in, stop or remove only the names its own scope
+begins, and the sandbox module refuses any other with `out_of_scope`. Vercel does not keep one
+environment's functions out of another's sandboxes in the same project, so this check in our
+code is the wall.
 
 Every deployment says which environment it is and where its runners call back:
 `PONZU_ENVIRONMENT` (`production`, `dev`, `preview` or `local`) and `PONZU_API_URL`. On Vercel
 both are required, and a deployment missing either stops at boot with an error that names it,
-so no deployment falls back to production's address; one that says `local` stops too. Off Vercel they default to `local` and
-`https://api.ponzu.design`. `GET /v1/health`, public and given three seconds, reports what is
-deployed and where: `status`, `version`, `commit`, `environment`, `image` (the runner image,
+so no deployment falls back to production's address; one that says `local` stops too. It
+also stops when `PONZU_ENVIRONMENT` disagrees with `VERCEL_TARGET_ENV`, the Vercel environment it
+runs in (`production` only on the Production target, `preview` on Preview, `dev` on the `dev`
+environment); an unset name is logged and allowed; each boot logs both. Off Vercel they
+default to `local` and dev's `https://api-dev.ponzu.design`. `GET /v1/health`, public and
+given three seconds, reports what is deployed and where: `status`, `version`, `commit`, `environment`, `image` (the runner image,
 `ponzu-runner@sha256:…`), `runnerBundle` (the first 12 hex of the runner bundle's SHA-256),
-`migrations: { applied, expected }` and `database`. `expected` is the journal's entry count,
+`migrations: { applied, expected }`, `database` and `cron: { lastRanAt }` (when the minute last
+ran on this database, null if never; it never changes `status`). `expected` is the journal's entry count,
 built in; `applied` is the count of drizzle's record of applied migrations, the number the
 migrator compares. The answer is `degraded` at 200 when the two differ, and 503 only when the
 database cannot be reached. `apps/api/src/env.ts` exports the names a deployment must set
 (`REQUIRED_ENV`), may set (`OPTIONAL_ENV`) and must never set (`FORBIDDEN_ENV`), which the
-production check compares with each project.
+production check compares with each environment.
 
 A feature that waits on a vendor's key or on the founder's say-so has a switch, read once from
 the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING` (`off`,
@@ -3390,7 +3432,9 @@ database, the migrations applied against the ones the build has, Realtime sealin
 (a HEAD of a key that is never stored), WorkOS's key, the GitHub App (its slug, and the
 permissions and events the API uses), the App's webhook (its URL is `PONZU_API_URL` plus
 `/v1/github/webhook`, json, TLS checked), Ponzu's Anthropic key, the sandbox list, values still
-sealed under an old vault key, and whether PostHog is set. Each check has five seconds, and
+sealed under an old vault key, whether PostHog is set, and whether the minute ran on this
+database in the last five minutes (`cron_fresh`: `stale` after that, `never_ran` before its
+first run, both failures). Each check has five seconds, and
 all run at once. `detail` is a word from a fixed list and never quotes what a service said or
 a value from the environment. Two checks add a field: `github_app` names in `missing` the
 permissions or events from the API's own list that the App lacks, and `vault_old_keys` gives
@@ -3418,8 +3462,8 @@ After a deploy that changes the sandbox lifecycle, the image or the runner, on t
    for a restart in place were measured from a local API on real sandboxes. A resume's runner
    answers `/health` about a second after that (1.8 to 2.9 seconds from the message in the
    spike).
-7. Nothing at Vercel holds `VERCEL_TOKEN` for Preview or Production: the API refuses it there
-   and runs on OIDC.
+7. Nothing at Vercel holds `VERCEL_TOKEN` for Preview, `dev` or Production: the API refuses it
+   there and runs on OIDC.
 8. With a person's session against the deployed API, run the client's live suites:
    `packages/client/src/lifecycle.live.test.ts` (it prints `wake to answer`, the time from a
    message to the runner's first answer, the number the speed claim rests on) and
@@ -3514,6 +3558,21 @@ from `cloud` into `main`, released as the next major version.
   with a 549 MiB snapshot from a local API on a real sandbox; a runner mid-turn takes longer, up
   to `ponzu-stop`'s 30 seconds). A message that arrives meanwhile finds the row `stopping` and its wake waits for the
   sleep to land, up to 30 seconds, then resumes.
+- **The minute runs on Vercel Schedules, which are in beta**
+  ([Schedules](https://vercel.com/docs/schedules): "Behavior, APIs, and limits may change before
+  general availability"). It is the static schedule `minute` in `apps/api/vercel.json`, one copy
+  in production and one in the `dev` environment, each turned on there (production keeps the
+  legacy cron beside it until its schedule has fired, so it never lacks a run; production.md,
+  "The minute"). Every run starts at some
+  point in the minute after its time (Pro's one-minute jitter), so the route takes the
+  scheduler's own time for the run when it is within two minutes of the clock. A run that fails
+  or times out is not retried. A run Vercel could not deliver on time is delivered late, and
+  after an outage up to a dozen missed minutes (those of the last 11) arrive at once; duplicates are
+  possible but rare ([Concepts](https://vercel.com/docs/schedules/concepts)). The steps already
+  take only what nobody holds and record each slot once, so overlap, lateness and repeats are
+  safe. What is not safe is a scheduler that stops: each run records its time, `/v1/health`
+  answers it as `cron.lastRanAt`, the selfcheck's `cron_fresh` fails five minutes after it, and
+  production's uptime check counts a stale minute as down.
 - Neon Realtime is a public beta.
 - A commit can be authored by the person or verified, not both. Repos that require
   signed commits on the pushed branch need the API commit path.

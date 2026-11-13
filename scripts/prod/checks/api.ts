@@ -4,8 +4,10 @@
  * its own keys and settings work, in fixed words that never quote a secret.
  *
  * The bearer is sent only to an API whose health has just said it is the environment being
- * checked, so a dev cron secret never goes to production or the reverse. Before founder step D11
- * moves the domains, production's address still serves dev; the check reads that as pending.
+ * checked, so a dev cron secret never goes to production or the reverse. Until the first
+ * production deploy (founder step D15), production's address still serves dev's frozen deployment
+ * in the one project (docs/production.md › One project, two environments); the check reads that as
+ * pending.
  */
 import { z } from "zod";
 import currentImage from "../../../apps/runner/image/current.json" with { type: "json" };
@@ -34,6 +36,7 @@ export const SELFCHECK_IDS = [
   "sandboxes",
   "vault_old_keys",
   "posthog",
+  "cron_fresh",
 ] as const;
 
 const HEALTH_TIMEOUT_MS = 10_000;
@@ -44,8 +47,13 @@ export interface ApiDesired {
   env: EnvironmentName;
   /** `null`: the environment has no address yet. */
   apiUrl: string | null;
-  /** The address is still in both environments' apiDomains: the move (D11) has not happened. */
+  /** The address is still in both environments' apiDomains. */
   shared: boolean;
+  /**
+   * `release` in environments.json is still dev: the cutover has not happened, so production's
+   * address may still serve dev's frozen deployment.
+   */
+  beforeCutover: boolean;
   /** current.json's `ponzu-runner@sha256:…`. */
   image: string;
   /** For production, the repository whose `main` a deployment must be built from. */
@@ -61,6 +69,7 @@ export function apiDesired(ctx: Pick<CheckContext, "env" | "infra">): ApiDesired
     env: ctx.env,
     apiUrl: mine.apiUrl,
     shared: host !== null && other.apiDomains.includes(host),
+    beforeCutover: ctx.infra["environments.json"].release !== "production",
     image: currentImage.image,
     repository: ctx.infra["github/repo.json"].repository,
   };
@@ -185,7 +194,7 @@ async function mainHead(
 
 const f = findings("api");
 
-const STEP_DEPLOY = "docs/production.md › The founder's steps (D11 moves the domain, D15 deploys)";
+const STEP_DEPLOY = "docs/production.md › The founder's steps (D15 deploys production)";
 
 export function evaluateApi(desired: ApiDesired, observed: ApiObserved): Finding[] {
   const { env } = desired;
@@ -206,7 +215,12 @@ export function evaluateApi(desired: ApiDesired, observed: ApiObserved): Finding
   const body = health.body;
   if (body.environment !== env) {
     const says = `${url} answers as ${body.environment}, not ${env}`;
-    return desired.shared
+    // In one project, api.ponzu.design keeps serving dev's frozen deployment until production's
+    // first deploy is promoted onto it (D15), so production answering as dev waits on that step.
+    // After the cutover PR flips `release` to production, answering as another environment is a
+    // fault, even if infra still lists the address for both.
+    const frozen = env === "production" && body.environment === "dev";
+    return desired.beforeCutover && (desired.shared || frozen)
       ? [
           f.pending(
             "health",
@@ -218,7 +232,7 @@ export function evaluateApi(desired: ApiDesired, observed: ApiObserved): Finding
           f.fail(
             "health",
             says,
-            "move the domain to this environment's project (docs/production.md)",
+            "the domain is on another environment's deployment (docs/production.md › Vercel `ponzu-api`)",
           ),
         ];
   }
@@ -282,11 +296,11 @@ export function evaluateApi(desired: ApiDesired, observed: ApiObserved): Finding
       ),
     );
   }
-  out.push(...evaluateSelfcheck(observed.selfcheck));
+  out.push(...evaluateSelfcheck(observed.selfcheck, env));
   return out;
 }
 
-function evaluateSelfcheck(selfcheck: ApiObserved["selfcheck"]): Finding[] {
+function evaluateSelfcheck(selfcheck: ApiObserved["selfcheck"], env: EnvironmentName): Finding[] {
   if ("skipped" in selfcheck) return [f.skipped("selfcheck", `skipped (${selfcheck.skipped})`)];
   if ("withheld" in selfcheck) return [f.skipped("selfcheck", `not asked: ${selfcheck.withheld}`)];
   if (!selfcheck.ok) {
@@ -319,8 +333,15 @@ function evaluateSelfcheck(selfcheck: ApiObserved["selfcheck"]): Finding[] {
       check.missing?.length ? `missing ${list(check.missing)}` : null,
     ].filter(Boolean);
     const says = `${check.detail}${extra.length ? ` (${extra.join(", ")})` : ""}`;
+    // Production's minute has never reached its database before the first run after the first
+    // production deploy: that waits on the deploy, it is not a fault.
+    const waiting = id === "cron_fresh" && env === "production" && check.detail === "never_ran";
     out.push(
-      check.ok ? f.ok(`selfcheck.${id}`, says) : f.fail(`selfcheck.${id}`, says, SELFCHECK_FIX[id]),
+      check.ok
+        ? f.ok(`selfcheck.${id}`, says)
+        : waiting
+          ? f.pending(`selfcheck.${id}`, says, STEP_DEPLOY)
+          : f.fail(`selfcheck.${id}`, says, SELFCHECK_FIX[id]),
     );
   }
   for (const check of selfcheck.body.checks) {
@@ -338,7 +359,8 @@ function evaluateSelfcheck(selfcheck: ApiObserved["selfcheck"]): Finding[] {
 const SELFCHECK_FIX: Partial<Record<(typeof SELFCHECK_IDS)[number], string>> = {
   migrations: "run the deploy workflow, which migrates before it deploys",
   vault_old_keys: "bun apps/api/scripts/reseal.ts (docs/production.md › Rotating secrets)",
-  github_webhook: "bun scripts/github-webhook.ts configure",
+  github_webhook: "bun apps/api/scripts/github-webhook.ts configure --env <dev|production>",
+  cron_fresh: "docs/production.md › The minute",
 };
 
 export const apiSection: Section<ApiDesired, ApiObserved> = {

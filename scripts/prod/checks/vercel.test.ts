@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FORBIDDEN_ENV, OPTIONAL_ENV, REQUIRED_ENV } from "../../../apps/api/src/env.ts";
+import { loadInfra } from "../desired.ts";
 import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import type { CheckContext, Finding } from "./finding.ts";
 import {
@@ -27,18 +28,27 @@ const recorded = () =>
 const byId = (findings: Finding[]) => Object.fromEntries(findings.map((f) => [f.id, f]));
 const statuses = (findings: Finding[]) => findings.map((f) => `${f.status} ${f.id}`);
 
-/** Dev's recorded project, made as production should be: no leftovers, nothing on Preview, the firewall as the file says. */
+/**
+ * Dev's recorded project, made as production should be: no leftovers, every Production entry its
+ * own (Preview keeps dev's values in entries of its own), no legacy cron, the firewall as the file
+ * says.
+ */
 function goodProduction(): VercelObserved {
   const observed = recorded();
   const project = observed.project!;
+  const kept = project.env.filter((e) => e.key !== "ANTHROPIC_API_KEY" && e.key !== "BOAT_API_KEY");
   return {
     project: {
       ...project,
-      name: "ponzu-api-prod",
-      env: project.env
-        .filter((e) => e.key !== "ANTHROPIC_API_KEY" && e.key !== "BOAT_API_KEY")
-        .filter((e) => e.targets.includes("production"))
-        .map((e) => ({ ...e, targets: ["production"] })),
+      crons: { disabled: true, definitions: project.crons?.definitions ?? [] },
+      env: [
+        ...kept
+          .filter((e) => e.targets.includes("production"))
+          .map((e) => ({ ...e, targets: ["production"] })),
+        ...kept
+          .filter((e) => e.targets.includes("preview"))
+          .map((e) => ({ ...e, targets: ["preview"] })),
+      ],
     },
     domains: [{ name: "api.ponzu.design", verified: true, redirect: null }],
     firewall: normalizeFirewall(infra["vercel-firewall.json"]),
@@ -61,7 +71,9 @@ describe("evaluate on dev's recorded project", () => {
       "fail vercel.firewall.managed",
       "fail vercel.firewall.rules",
       "ok vercel.deployment",
-      "ok vercel.crons",
+      // Recorded while the legacy cron still ran dev's minute, before the schedule.
+      "fail vercel.crons",
+      "manual vercel.schedules",
     ]);
     const f = byId(findings);
     expect(f["vercel.settings"]?.says).toBe(
@@ -86,7 +98,10 @@ describe("evaluate on dev's recorded project", () => {
       "the latest production deployment is ready, built from 86864bf28503",
     );
     expect(f["vercel.crons"]?.says).toBe(
-      "the production deployment runs /v1/cron/minute (* * * * *)",
+      "a legacy cron is still on (/v1/cron/minute (* * * * *)), beside the minute schedule",
+    );
+    expect(f["vercel.schedules"]?.says).toBe(
+      "vercel.json declares minute: /v1/cron/minute (* * * * *); that it is active in dev is not read here",
     );
   });
 
@@ -103,7 +118,10 @@ describe("evaluate on dev's recorded project", () => {
 describe("evaluate on hand-made failures", () => {
   test("production built right passes every line", () => {
     const findings = evaluateVercel(desired("production"), goodProduction());
-    expect(findings.filter((f) => f.status !== "ok")).toEqual([]);
+    // The schedule's state is the one line a person confirms (or the deploy job's schedules.ts).
+    expect(statuses(findings.filter((f) => f.status !== "ok"))).toEqual([
+      "manual vercel.schedules",
+    ]);
     expect(statuses(findings)).toContain("ok vercel.env.preview");
     expect(statuses(findings)).toContain("ok vercel.env.sensitive");
   });
@@ -120,13 +138,21 @@ describe("evaluate on hand-made failures", () => {
     expect(f["vercel.env.unknown"]?.status).toBe("ok");
   });
 
-  test("a Preview target holding DATABASE_URL fails on production", () => {
+  test("one entry covering Production and Preview fails on production; Preview's own does not", () => {
     const observed = goodProduction();
-    observed.project!.env.push({ key: "DATABASE_URL", targets: ["preview"], type: "sensitive" });
+    expect(observed.project!.env.some((e) => e.targets.includes("preview"))).toBe(true);
+    expect(
+      byId(evaluateVercel(desired("production"), observed))["vercel.env.preview"]?.status,
+    ).toBe("ok");
+    observed.project!.env.push({
+      key: "CRON_SECRET",
+      targets: ["production", "preview"],
+      type: "sensitive",
+    });
     const f = byId(evaluateVercel(desired("production"), observed));
     expect(f["vercel.env.preview"]).toMatchObject({
       status: "fail",
-      says: "the preview target holds DATABASE_URL",
+      says: "CRON_SECRET (preview) is one entry shared by the Production target and another",
     });
   });
 
@@ -167,10 +193,13 @@ describe("evaluate on hand-made failures", () => {
     expect(f["vercel.env.sensitive"]?.says).toBe("CRON_SECRET is not stored as sensitive");
   });
 
-  test("a project with no cron, off protection, Git connected or the wrong issuer fails each line", () => {
+  test("a legacy cron left on, off protection, Git connected or the wrong issuer fails each line", () => {
     const observed = goodProduction();
     const project = observed.project!;
-    project.crons = { disabled: false, definitions: [] };
+    project.crons = {
+      disabled: false,
+      definitions: [{ path: "/v1/cron/minute", schedule: "* * * * *" }],
+    };
     project.protection = null;
     project.gitConnected = true;
     project.oidc = { enabled: true, issuerMode: "global" };
@@ -180,23 +209,29 @@ describe("evaluate on hand-made failures", () => {
       "deployment protection is off: every deployment holds the live secrets",
     );
     expect(f["vercel.settings"]?.says).toBe(
-      "ponzu-api-prod: a Git repository is connected, so a push would deploy outside the workflow",
+      "ponzu-api: a Git repository is connected, so a push would deploy outside the workflow",
     );
     expect(f["vercel.oidc"]?.says).toBe(
       "OIDC is on with issuer global; sandboxes need the team issuer",
     );
   });
 
-  test("production's domain still on dev before D11 is pending; once moved, missing fails", () => {
+  test("a domain infra still lists for dev too is pending; otherwise missing fails", () => {
     const observed = goodProduction();
     observed.domains = [];
+    // Before launch, infra listed api.ponzu.design for both.
+    expect(desired("production").notYetMoved).toEqual(["api.ponzu.design"]);
     expect(byId(evaluateVercel(desired("production"), observed))["vercel.domains"]).toMatchObject({
       status: "pending",
-      says: "api.ponzu.design is not a verified domain of ponzu-api-prod: dev still serves it until D11",
+      says: "api.ponzu.design is not a verified domain of ponzu-api: infra still lists it as dev's too",
     });
-    const moved = { ...desired("production"), notYetMoved: [] };
-    expect(byId(evaluateVercel(moved, observed))["vercel.domains"]?.status).toBe("fail");
-    expect(desired("dev").notYetMoved).toEqual([]);
+    // Today each environment has its own domain, so a missing one fails.
+    const today = (env: "dev" | "production") => vercelDesired({ env, infra: loadInfra() });
+    expect(today("production").notYetMoved).toEqual([]);
+    expect(today("dev").notYetMoved).toEqual([]);
+    expect(byId(evaluateVercel(today("production"), observed))["vercel.domains"]?.status).toBe(
+      "fail",
+    );
   });
 
   test("production's project not made yet is one pending line; dev's missing project fails", () => {
@@ -206,7 +241,7 @@ describe("evaluate on hand-made failures", () => {
         id: "vercel.project",
         area: "vercel",
         status: "pending",
-        says: "ponzu-api-prod does not exist yet",
+        says: "ponzu-api does not exist yet",
         fix: "bun scripts/prod/apply.ts vercel-project --env production --yes (founder step D2)",
       },
     ]);

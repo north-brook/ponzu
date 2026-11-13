@@ -61,7 +61,17 @@ export const EnvironmentSchema = z
     /** Where a canvas's files are served (PONZU_ASSETS_URL). */
     assetsUrl: httpsOrigin.nullable(),
     githubAppSlug: slug.nullable(),
+    /** The Vercel project the API deploys to: one, `ponzu-api`, for both environments. */
     vercelProject: slug.nullable(),
+    /**
+     * The environment inside that project: `production` (the Production target) or a custom
+     * environment's slug (`dev`). The deployment's VERCEL_TARGET_ENV reads the same name, and
+     * the API refuses to start where it disagrees with PONZU_ENVIRONMENT (apps/api/src/env.ts).
+     * Never `preview`: Preview is for throwaway builds, not an environment of its own here.
+     */
+    vercelEnvironment: z
+      .union([z.literal("production"), slug.max(32).refine((v) => v !== "preview", "not preview")])
+      .nullable(),
     /** A named child branch, or `@default` for the project's default branch. */
     neonBranch: z.union([z.literal("@default"), slug]).nullable(),
     r2: z.strictObject({
@@ -96,6 +106,16 @@ export const EnvironmentsSchema = z
   .refine((file) => file.environments.production.r2.private !== false, {
     message: "production must have a private bucket (r2.private may be null, never false)",
     path: ["environments", "production", "r2", "private"],
+  })
+  // Production deploys only to the Production target, and nothing else does: a `--prod` deploy
+  // or a promotion is production's alone (docs/production.md).
+  .refine((file) => [null, "production"].includes(file.environments.production.vercelEnvironment), {
+    message: "production's vercelEnvironment is the Production target, `production`",
+    path: ["environments", "production", "vercelEnvironment"],
+  })
+  .refine((file) => file.environments.dev.vercelEnvironment !== "production", {
+    message: "dev never deploys to the Production target",
+    path: ["environments", "dev", "vercelEnvironment"],
   });
 export type Environments = z.infer<typeof EnvironmentsSchema>;
 
@@ -151,6 +171,20 @@ export function releaseProblems(file: Environments, env: EnvironmentName): strin
       problems.push(`${env}.${path} is the same as ${other}'s, so a release would reach ${other}`);
     }
   }
+  // One Vercel project holds both environments, so what may not be shared is the pair: the
+  // same project and the same Vercel environment would be one deployment target for both.
+  const mine = file.environments[env];
+  const theirs = file.environments[other];
+  if (
+    mine.vercelProject !== null &&
+    mine.vercelEnvironment !== null &&
+    mine.vercelProject === theirs.vercelProject &&
+    mine.vercelEnvironment === theirs.vercelEnvironment
+  ) {
+    problems.push(
+      `${env} deploys to ${mine.vercelProject}'s ${mine.vercelEnvironment} environment, as ${other} does, so a release would reach ${other}`,
+    );
+  }
   for (const domain of file.environments[env].apiDomains) {
     if (file.environments[other].apiDomains.includes(domain)) {
       problems.push(`${domain} is in both environments' apiDomains; move ${other}'s first`);
@@ -162,8 +196,8 @@ export function releaseProblems(file: Environments, env: EnvironmentName): strin
 /**
  * Fields no two environments may share once a release points at one: sharing any of them would
  * put a production build on dev's API, sign-in, database, files or analytics, or the reverse.
- * The Vercel project is not among them: one project, ponzu-api, serves both, dev from its dev
- * environment and production from its Production target.
+ * `vercelProject` is not one of them: both environments live in the one project `ponzu-api`, and
+ * `releaseProblems` refuses the project and `vercelEnvironment` together instead.
  */
 export const SEPARATE_FIELDS = [
   "apiUrl",

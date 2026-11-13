@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createApi } from "./api.ts";
 import { createLive } from "./live/live.ts";
 import { createSession } from "./session.ts";
-import { sessionFile } from "./testing/session-file.ts";
+import { liveApiUrl, sessionFile } from "./testing/session-file.ts";
 
 /*
  * A canvas's whole life on the real services, opt in, observed through the API alone: a canvas
@@ -50,7 +50,8 @@ describe.skipIf(!ready)("a canvas's sandbox, for real", () => {
   test(
     "wakes on its first message, draws, sleeps when idle, wakes again in the same session, and goes",
     async () => {
-      const apiUrl = env.PONZU_API_URL ?? "https://api.ponzu.design";
+      // Dev's unless PONZU_API_URL names another: never production's by default.
+      const apiUrl = liveApiUrl(env);
       const session = createSession({
         apiUrl,
         workosClientId: env.WORKOS_CLIENT_ID!,

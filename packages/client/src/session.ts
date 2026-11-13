@@ -82,7 +82,7 @@ export interface SessionHost extends Session {
 }
 
 export interface SessionOptions {
-  /** `https://api.ponzu.design`. */
+  /** The API's origin: `https://api.ponzu.design` (production) or `https://api-dev.ponzu.design` (dev). */
   apiUrl: string;
   /** The WorkOS environment's client id. Public: the app ships it. */
   workosClientId: string;

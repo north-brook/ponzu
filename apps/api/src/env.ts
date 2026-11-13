@@ -15,13 +15,18 @@ import {
   RATE_LIMIT_MODES,
 } from "./features.ts";
 import { type MinimumVersions, parseMinimumVersions } from "./http/client-version.ts";
+import type { Logger } from "./http/log.ts";
 
 /** Where an API runs. Each has its own database, WorkOS environment, bucket and GitHub App. */
 export const ENVIRONMENTS = ["production", "dev", "preview", "local"] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
 
-/** Where a sandbox's runner reaches the API when PONZU_API_URL is unset, which only off Vercel is allowed. */
-export const DEFAULT_API_URL = "https://api.ponzu.design";
+/**
+ * Where a sandbox's runner reaches the API when PONZU_API_URL is unset, which only off Vercel is
+ * allowed. It is dev's address: off Vercel the API runs against dev's database (a laptop, a
+ * script), so its runners must call dev, never production.
+ */
+export const DEFAULT_API_URL = "https://api-dev.ponzu.design";
 
 /** What every Vercel deployment must set beyond the variables the API always needs. */
 const REQUIRED_ON_VERCEL = ["PONZU_ENVIRONMENT", "PONZU_API_URL"] as const;
@@ -30,7 +35,26 @@ const REQUIRED_ON_VERCEL = ["PONZU_ENVIRONMENT", "PONZU_API_URL"] as const;
  * Names Vercel sets itself on every deployment. A person never sets them, so they are in neither
  * REQUIRED_ENV nor OPTIONAL_ENV.
  */
-export const SYSTEM_ENV = ["VERCEL", "VERCEL_GIT_COMMIT_SHA"] as const;
+export const SYSTEM_ENV = ["VERCEL", "VERCEL_GIT_COMMIT_SHA", "VERCEL_TARGET_ENV"] as const;
+
+/**
+ * The Vercel environment a PONZU_ENVIRONMENT must be deployed to. Dev and production share one
+ * Vercel project (docs/production.md), so this is the wall that one project has instead of two:
+ * a deployment whose variables say one environment while Vercel says it runs in another never
+ * starts. Production's values belong on the Production target, preview's on Preview, and any
+ * other name on the custom environment of the same name (`dev` on `dev`).
+ *
+ * `VERCEL_TARGET_ENV` is "the system or custom environment that the app is deployed and running
+ * on. The value can be either production, preview, development, or the name of a custom
+ * environment", available "both build and runtime"
+ * (https://vercel.com/docs/environment-variables/system-environment-variables, fetched as
+ * markdown on 2026-11-12). The same docs say a custom environment's `VERCEL_ENV` is `preview`,
+ * which is why `VERCEL_ENV` cannot tell dev from a preview
+ * (https://vercel.com/docs/environment-variables, "A preview deployment reads the wrong values").
+ */
+export function vercelEnvironmentFor(environment: Environment): string {
+  return environment;
+}
 
 /**
  * Names that must never be set on a deployment. A token on Vercel is already refused at boot
@@ -112,6 +136,11 @@ const schema = z.object({
   PONZU_MIN_CLIENT_VERSIONS: z.string().optional(),
   /** Set by Vercel when a deployment is made from a git checkout. */
   VERCEL_GIT_COMMIT_SHA: z.string().optional(),
+  /**
+   * Set by Vercel: `production`, `preview`, `development`, or a custom environment's name
+   * (`dev`). On Vercel it must agree with PONZU_ENVIRONMENT (`vercelEnvironmentFor`).
+   */
+  VERCEL_TARGET_ENV: z.string().optional(),
   /**
    * The PostHog project this environment reports to: its project token, which is public.
    * Unset, the API captures nothing and loads nothing for it (docs/analytics.md).
@@ -211,9 +240,10 @@ export interface SandboxConfig {
   /** How many may be up at once. Until billing exists, this is what bounds the provider's bill. */
   limits: SandboxLimits;
   /**
-   * What this database's sandbox names begin with after `pz-` (`pz-<scope>-…`). Every
-   * deployment shares the Vercel project, and reconcile looks only at its own database's names,
-   * so it never takes another database's sandboxes for orphans.
+   * What this deployment's sandbox names begin with after `pz-` (`pz-<scope>-…`), from
+   * `sandboxScope`. Every deployment shares the Vercel project, and the sandbox module made with
+   * it refuses every name outside it (`out_of_scope`), so no deployment reads, stops, removes or
+   * runs anything in another's sandboxes, and reconcile never takes them for orphans.
    */
   scope: string;
   /** The token triple off Vercel; null for OIDC (on Vercel). */
@@ -221,8 +251,21 @@ export interface SandboxConfig {
 }
 
 /**
- * The database a connection string reaches, as a short hash: the same for every deployment on
- * one database, whichever of Neon's hosts for it they connect through.
+ * The scope of this deployment's sandbox names (`pz-<scope>-…`): the database a connection
+ * string reaches, as a short hash, the same for every deployment on one database whichever of
+ * Neon's hosts for it they connect through.
+ *
+ * One scope per database, and nothing else goes into it. With one Vercel project, this scope
+ * and the guard in packages/sandbox (scope.ts) are what keep dev's code out of production's
+ * sandboxes: production's database (Neon's default branch) and dev's (the `dev` branch) have
+ * different endpoint hosts, so their scopes differ. Dev, previews and a local API share one
+ * scope because they share one database on purpose: they are the same rows, and dev's minute
+ * sleeps what a preview woke.
+ *
+ * Never change what goes into the hash. Production's sandboxes are live and named by this rule
+ * (`pz-<scope>-…`); a different value for the same database would make every one of them look
+ * like another deployment's, so nothing would sleep, stop or remove them again. env.test.ts pins
+ * the value for a fixed URL.
  */
 export function sandboxScope(databaseUrl: string): string {
   const url = new URL(databaseUrl);
@@ -282,9 +325,21 @@ export interface Env {
  * Reads and checks the environment once. It throws an `EnvError` that names every variable
  * that is missing or malformed, and never quotes a value.
  */
-export function readEnv(source: Record<string, string | undefined>): Env {
+export function readEnv(
+  source: Record<string, string | undefined>,
+  options: { log?: Logger } = {},
+): Env {
   // An empty value is how a dashboard or a shell says "unset".
   const set = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== ""));
+  const pair = environmentPair(set);
+  // One line at every boot, whether it starts or not, so a deployment's logs always say which
+  // environment its variables claim and which Vercel ran it in.
+  options.log?.[pair.problem ? "error" : "info"]("environment_pair", {
+    environment: pair.environment,
+    vercelEnvironment: pair.vercelEnvironment,
+    onVercel: set.VERCEL === "1",
+    agrees: pair.problem === null,
+  });
   const parsed = schema.safeParse(set);
   // On Vercel these two have no fallback: a deployment that does not say where it is and where
   // its runners reach it never starts, rather than guessing production's address.
@@ -309,6 +364,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       "PONZU_ENVIRONMENT is local on Vercel, where it must be production, dev or preview.",
     ]);
   }
+  if (pair.problem) throw new EnvError([pair.problem]);
   const vercel = vercelCredentials(env);
 
   let minimumClientVersions: MinimumVersions;
@@ -371,6 +427,57 @@ export function readEnv(source: Record<string, string | undefined>): Env {
     features: featuresFrom(env),
     onVercel: env.VERCEL === "1",
   };
+}
+
+/** A name Vercel gives an environment: lowercase letters, digits and dashes, at most 32. */
+const VERCEL_ENVIRONMENT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/**
+ * Which environment the variables claim and which one Vercel says it runs in, each as a name
+ * that is safe to log (`malformed` for anything else, null when unset), and why the two may not
+ * start together, or null.
+ *
+ * Off Vercel nothing is refused: VERCEL_TARGET_ENV means nothing there. On Vercel:
+ * - set and different from `vercelEnvironmentFor(PONZU_ENVIRONMENT)`: refused, whatever pair it is;
+ * - unset: logged (with `vercelEnvironment: null`), and allowed, under every environment.
+ *
+ * Unset is allowed even for production on purpose. The docs say Vercel sets the name at build
+ * and run time on every deployment, but no deployment of ours has logged it yet (experiment E6
+ * in the one-project plan), and production serves people now: if the docs were wrong, refusing
+ * an unset name would take production down on its next deploy. The logged line answers E6 on
+ * the first dev and production deploys; refusing an unset name can follow once it has.
+ */
+export function environmentPair(set: Record<string, string | undefined>): {
+  environment: string | null;
+  vercelEnvironment: string | null;
+  problem: string | null;
+} {
+  const rawEnvironment = set.PONZU_ENVIRONMENT;
+  const rawTarget = set.VERCEL_TARGET_ENV;
+  const environment =
+    rawEnvironment === undefined
+      ? null
+      : (ENVIRONMENTS as readonly string[]).includes(rawEnvironment)
+        ? rawEnvironment
+        : "malformed";
+  const vercelEnvironment =
+    rawTarget === undefined
+      ? null
+      : VERCEL_ENVIRONMENT_NAME.test(rawTarget)
+        ? rawTarget
+        : "malformed";
+  const result = (problem: string | null) => ({ environment, vercelEnvironment, problem });
+  // Off Vercel, or a PONZU_ENVIRONMENT the schema refuses on its own: nothing to compare.
+  if (set.VERCEL !== "1" || environment === null || environment === "malformed") {
+    return result(null);
+  }
+  if (vercelEnvironment === "malformed") return result("VERCEL_TARGET_ENV is malformed.");
+  if (vercelEnvironment === null) return result(null);
+  const expected = vercelEnvironmentFor(environment as Environment);
+  if (vercelEnvironment === expected) return result(null);
+  return result(
+    `PONZU_ENVIRONMENT is ${environment}, which belongs on Vercel's "${expected}" environment, but VERCEL_TARGET_ENV says this deployment runs in "${vercelEnvironment}".`,
+  );
 }
 
 /** PostHog's private API: its personal key and project id together, or neither. */
