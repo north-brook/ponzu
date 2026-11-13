@@ -320,6 +320,31 @@ describe("who hears, and about whom", () => {
     }
   });
 
+  test("an owner who joins is announced to the other admins, not to themself", async () => {
+    const t = await app();
+    const [owner, boss] = await people(t, "owner", "boss");
+    const { workspaceId } = await org(t, { owners: [owner!, boss!] });
+    await join(t, owner!);
+    await before(t, workspaceId, t.clock.now() - 2 * DAY, owner!);
+    // An owner joins as an admin, so they are one of the admins the email could reach.
+    await join(t, boss!);
+    const [job] = await waitingMembersJobs(t);
+    await cronAt(t, job!.runAt.getTime());
+    expect(recipients(t)).toEqual(["owner"]);
+    expect(t.mail.sent[0]!.subject).toBe("Boss joined Northbrook on Ponzu");
+  });
+
+  test("a sign-in by someone already in the workspace records nothing", async () => {
+    const t = await app();
+    const [owner, ann] = await people(t, "owner", "ann");
+    const { workspaceId } = await org(t, { owners: [owner!], members: [ann!] });
+    await join(t, owner!, ann!);
+    await before(t, workspaceId, t.clock.now() - 2 * DAY, owner!, ann!);
+    // Their next sign-ins find their memberships there: no join, no job.
+    await join(t, owner!, ann!);
+    expect(await membersJobs(t)).toEqual([]);
+  });
+
   test("a personal workspace never announces anyone", async () => {
     const t = await app();
     const [maya, friend] = await people(t, "maya", "friend");
