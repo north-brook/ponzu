@@ -39,5 +39,5 @@
     "react-native-screens@4.30.0": "patches/react-native-screens@4.30.0.patch",
     "expo-router@58.0.25": "patches/expo-router@58.0.25.patch"
   },
-  "packageManager": "bun@1.4.2"
+  "packageManager": "bun@1.4.4"
 }
