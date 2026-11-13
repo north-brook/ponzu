@@ -1364,6 +1364,65 @@ export function Canvas({
   // Videos over pictures also hold while nobody can be watching the window, as boards' loops do.
   useEffect(() => playing.hold(crowd || still), [crowd, still]);
 
+  // The footer's controls: the tools (and a host's extra) and the zoom. Beside page tabs they
+  // share one bar at the bottom right; without them, as the Mac app's boards draw it, the tools
+  // take the bottom left and the zoom stands alone at the bottom right. The same elements until
+  // what they show changes: the canvas draws again with every board that goes live, every op and
+  // every change of a board's tier mid-zoom, and these are a dozen tooltips.
+  const acts = useRef({ zoomAt, viewportSize, fitPage });
+  acts.current = { zoomAt, viewportSize, fitPage };
+  const toolMode = panning ? "hand" : mode;
+  const tools = useMemo(
+    () => (
+      <>
+        {footerExtra}
+        <ToggleGroup
+          variant="raised"
+          value={toolMode}
+          onValueChange={setMode}
+          items={MODES.filter((m) => !readOnly || m.value !== "comment").map((m) => ({
+            value: m.value,
+            title: m.label,
+            keys: [m.key],
+            label: <Icon name={m.value} step="control" />,
+          }))}
+        />
+      </>
+    ),
+    [footerExtra, toolMode, readOnly],
+  );
+  const zoom = useMemo(() => {
+    const zoomBy = (by: number) => {
+      const { zoomAt, viewportSize } = acts.current;
+      const v = viewportSize();
+      zoomAt(by, v.w / 2, v.h / 2);
+    };
+    return (
+      <>
+        <Tip label="Zoom out" keys={["⌘", "−"]}>
+          <Button variant="ghost" size="icon" aria-label="Zoom out" onClick={() => zoomBy(0.8)}>
+            <Icon name="minus" step="control" />
+          </Button>
+        </Tip>
+        <Tip label="Zoom to fit" keys={["⇧", "1"]}>
+          <Button
+            variant="ghost"
+            className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:font-medium pz:text-[12px] pz:tabular-nums"
+            aria-label="Zoom to fit"
+            onClick={() => acts.current.fitPage()}
+          >
+            <ZoomPercent camera={camera} />
+          </Button>
+        </Tip>
+        <Tip label="Zoom in" keys={["⌘", "+"]}>
+          <Button variant="ghost" size="icon" aria-label="Zoom in" onClick={() => zoomBy(1.25)}>
+            <Icon name="plus" step="control" />
+          </Button>
+        </Tip>
+      </>
+    );
+  }, [camera]);
+
   if (!doc || !page) {
     const offline = state.status === "offline";
     const name = state.path
@@ -1400,60 +1459,6 @@ export function Canvas({
   const vpSize = drawnSize();
   const scale = detailScale(view.zoom, dpr);
   const arriving = arrivals.boardsArriving(boards);
-
-  // The footer's controls: the tools (and a host's extra) and the zoom. Beside page tabs they
-  // share one bar at the bottom right; without them, as the Mac app's boards draw it, the tools
-  // take the bottom left and the zoom stands alone at the bottom right.
-  const tools = (
-    <>
-      {footerExtra}
-      <ToggleGroup
-        variant="raised"
-        value={panning ? "hand" : mode}
-        onValueChange={setMode}
-        items={MODES.filter((m) => !readOnly || m.value !== "comment").map((m) => ({
-          value: m.value,
-          title: m.label,
-          keys: [m.key],
-          label: <Icon name={m.value} step="control" />,
-        }))}
-      />
-    </>
-  );
-  const zoom = (
-    <>
-      <Tip label="Zoom out" keys={["⌘", "−"]}>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Zoom out"
-          onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
-        >
-          <Icon name="minus" step="control" />
-        </Button>
-      </Tip>
-      <Tip label="Zoom to fit" keys={["⇧", "1"]}>
-        <Button
-          variant="ghost"
-          className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:font-medium pz:text-[12px] pz:tabular-nums"
-          aria-label="Zoom to fit"
-          onClick={fitPage}
-        >
-          <ZoomPercent camera={camera} />
-        </Button>
-      </Tip>
-      <Tip label="Zoom in" keys={["⌘", "+"]}>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Zoom in"
-          onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
-        >
-          <Icon name="plus" step="control" />
-        </Button>
-      </Tip>
-    </>
-  );
 
   return (
     <div
