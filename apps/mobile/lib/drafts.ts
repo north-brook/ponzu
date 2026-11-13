@@ -32,6 +32,8 @@ export const draftKey = {
   comment: (file: string, p: PendingPin) =>
     `${file}\0pin:${p.artboardId ?? p.pageId}:${p.x}:${p.y}`,
   reply: (file: string, thread: string) => `${file}\0thread:${thread}`,
+  /** What's being written to Ponzu in the canvas's chat. */
+  chat: (file: string) => `${file}\0chat`,
 };
 
 /**

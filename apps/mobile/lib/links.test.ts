@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseAppLink } from "@ponzu/core/links";
-import { incomingPath, parseLink, pathOf } from "./links";
+import { incomingPath, parseLink, pathOf, threadLink } from "./links";
 
 describe("the link grammar, as the phone reads it (@ponzu/core/links)", () => {
   test("a canvas link, with everything it can carry", () => {
@@ -133,5 +133,48 @@ describe("links in this app", () => {
 
   test("a path already in the app passes as it is", () => {
     expect(incomingPath("/canvases", "ponzu")).toBe("/canvases");
+  });
+});
+
+describe("a link in Ponzu's reply (threadLink)", () => {
+  test("the canvas's own address, a board or a page of it", () => {
+    expect(threadLink("https://ponzu.design/canvases/cnv_1?artboard=ab_2", "ponzu")).toEqual({
+      screen: "canvas",
+      id: "cnv_1",
+      params: { artboard: "ab_2" },
+    });
+    expect(threadLink("https://ponzu.design/canvases/cnv_1?page=pg_1", "ponzu")).toEqual({
+      screen: "canvas",
+      id: "cnv_1",
+      params: { page: "pg_1" },
+    });
+    expect(threadLink("https://ponzu.design/designs/des_1/", "ponzu")).toEqual({
+      screen: "canvas",
+      id: "des_1",
+      params: {},
+    });
+  });
+
+  test("this build's own canvas link", () => {
+    expect(threadLink("ponzu-dev://canvas/cnv_1?artboard=ab_2", "ponzu-dev")).toMatchObject({
+      id: "cnv_1",
+      params: { artboard: "ab_2" },
+    });
+    expect(threadLink("ponzu://canvas/cnv_1", "ponzu-dev")).toBeNull();
+  });
+
+  test.each([
+    "https://ponzu.design.evil.test/canvases/cnv_1",
+    "https://evil.test/canvases/cnv_1",
+    "http://ponzu.design/canvases/cnv_1",
+    "https://ponzu.design:8443/canvases/cnv_1",
+    "https://user@ponzu.design/canvases/cnv_1",
+    "https://ponzu.design/canvases/cnv_1/../settings",
+    "https://ponzu.design/canvases/cnv_1?artboard=ab_1&artboard=ab_2",
+    "https://ponzu.design/canvases/cnv_1?artboard=..%2Fx",
+    "https://ponzu.design/pricing",
+    "javascript:alert(1)",
+  ])("%s is not a canvas link", (href) => {
+    expect(threadLink(href, "ponzu-dev")).toBeNull();
   });
 });

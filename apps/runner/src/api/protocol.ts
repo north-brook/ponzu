@@ -496,10 +496,15 @@ export interface CommentItem {
 
 /**
  * A comment's picture: the area round its pin, the pin drawn in, in each theme. Each is a WebP
- * under the canvas's assets address, `COMMENT_PICTURE.scale` times its size as shown.
+ * (from the Mac) or a PNG (from the iPhone, whose WebKit can't write WebP) under the canvas's
+ * assets address, `COMMENT_PICTURE.scale` times its size as shown. A reader takes either: the
+ * address says which.
  */
 export interface CommentPicture {
-  /** `comments/<message id>-light.webp`, relative to the canvas's assets address. */
+  /**
+   * `comments/<message id>-light-<random>.webp` (or `.png`), relative to the canvas's assets
+   * address.
+   */
   light: string;
   dark: string;
   /** Its size as shown, in CSS px. */
@@ -509,6 +514,21 @@ export interface CommentPicture {
 
 /** The size a comment's picture is shown at, in CSS px, and how many device px it has to each. */
 export const COMMENT_PICTURE = { width: 240, height: 160, scale: 2 } as const;
+
+/** The two kinds of file a comment's picture may be: WebP from the Mac, PNG from the iPhone. */
+export type CommentPictureFormat = "webp" | "png";
+
+/**
+ * What a comment's picture's two files are named as they are uploaded, and their type, by
+ * format: one light and one dark, both of the same format.
+ */
+export const COMMENT_PICTURE_FILES: Record<
+  CommentPictureFormat,
+  { light: string; dark: string; contentType: string }
+> = {
+  webp: { light: "light.webp", dark: "dark.webp", contentType: "image/webp" },
+  png: { light: "light.png", dark: "dark.png", contentType: "image/png" },
+};
 
 export interface AssistantItem {
   /** Markdown. Clipped to `MAX_TEXT` characters. */

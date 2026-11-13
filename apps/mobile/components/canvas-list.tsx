@@ -1,9 +1,10 @@
 import { useCallback, useState } from "react";
-import { Alert, ScrollView } from "react-native";
+import { Alert, ScrollView, Text } from "react-native";
 import { openCanvas } from "../lib/canvas/open";
 import { backend } from "../lib/cloud/backend";
 import type { CanvasList as List, ListRow } from "../lib/cloud/list";
 import { fail, select, thud } from "../lib/haptics";
+import { useListNotice } from "../lib/list-notice";
 import { useTheme } from "../lib/theme";
 import { EmptyTrace, SettledHeader, SkeletonRows } from "./canvas-list-parts";
 import { CanvasRow, type RowAction } from "./canvas-row";
@@ -25,6 +26,8 @@ export function CanvasList({
 }) {
   const { color } = useTheme();
   const [trayOpen, setTrayOpen] = useState(false);
+  // What sent the app here may say why (a ping for a canvas no longer the person's).
+  const notice = useListNotice();
   // Settle or Reopen from a held row: the live row moves it, or it stays and says why.
   const act = useCallback((row: ListRow, action: RowAction) => {
     if (action === "settle") thud();
@@ -42,6 +45,23 @@ export function CanvasList({
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingTop: 4, paddingBottom: 24 }}
     >
+      {notice && (
+        <Text
+          testID="canvases-notice"
+          accessibilityRole="alert"
+          style={{
+            marginHorizontal: margin,
+            marginTop: 4,
+            marginBottom: 8,
+            fontFamily: "Inter",
+            fontSize: 15,
+            lineHeight: 20,
+            color: color.muted,
+          }}
+        >
+          {notice}
+        </Text>
+      )}
       {loading && <SkeletonRows margin={margin} />}
       {list?.active.map((row) => (
         <CanvasRow

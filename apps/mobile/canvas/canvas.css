@@ -313,3 +313,32 @@ body {
 .viewport.standby .edge {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
+
+/*
+ * A comment's picture (picture.ts), drawn off screen as the Mac draws it, so everyone's thread
+ * shows the same picture: the Mac's ground, board edges and pin, in each theme. Desktop's values
+ * (packages/canvas's styles.css `.pz-root`), copied here for the scene alone; the phone's own
+ * canvas keeps its pure white or black ground.
+ */
+.pz-root {
+  --pz-canvas: #f4f3ef;
+  --pz-ink: #111110;
+  --pz-comment: #ffc81e;
+  --pz-comment-ink: #111110;
+  --pz-board-edge: rgba(0, 0, 0, 0.06);
+  --pz-board-drop: 0 2px 10px rgba(0, 0, 0, 0.05);
+  --pz-font: "Inter", system-ui, -apple-system, sans-serif;
+  color: var(--pz-ink);
+  font: 13px / 1.5 var(--pz-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.pz-root.pz-dark {
+  --pz-canvas: #121211;
+  --pz-ink: #f4f3ef;
+  --pz-comment: #ffc81e;
+  --pz-comment-ink: #111110;
+  --pz-board-edge: rgba(255, 255, 255, 0.06);
+  --pz-board-drop: 0 0 transparent;
+  color-scheme: dark;
+}

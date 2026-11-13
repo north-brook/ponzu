@@ -454,15 +454,29 @@ describe("a comment's picture", () => {
       ],
     },
   });
-  /** Uploads both themes for `messageId` as `who`, and answers the ids to complete. */
-  async function upload(canvasId: string, messageId: string, who = "maya") {
+  /**
+   * Uploads both themes for `messageId` as `who`, as the Mac does (WebP) or the iPhone (PNG), and
+   * answers the ids to complete.
+   */
+  async function upload(
+    canvasId: string,
+    messageId: string,
+    who = "maya",
+    format: "webp" | "png" = "webp",
+  ) {
     const files = { light: webp("light"), dark: webp("dark") };
+    const type = `image/${format}`;
     const signed = await call(
       t,
       as(who),
       "POST",
       `/v1/canvases/${canvasId}/comments/${messageId}/picture`,
-      { files: [declared("light.webp", files.light), declared("dark.webp", files.dark)] },
+      {
+        files: [
+          declared(`light.${format}`, files.light, type),
+          declared(`dark.${format}`, files.dark, type),
+        ],
+      },
     );
     expect(signed.status).toBe(200);
     for (const [index, file] of signed.body.files.entries()) {
@@ -521,6 +535,85 @@ describe("a comment's picture", () => {
     );
   });
 
+  test("from the iPhone, a PNG pair is the comment's picture as a WebP pair is", async () => {
+    const { canvas } = await sample();
+    await call(t, as("maya"), "POST", `/v1/canvases/${canvas.id}/ops`, {
+      ops: [{ id: "op_png", op: comment("m_png") }],
+    });
+    const done = await complete(
+      canvas.id,
+      "m_png",
+      await upload(canvas.id, "m_png", "maya", "png"),
+    );
+    expect(done.status).toBe(200);
+    const { picture } = done.body;
+    expect(picture).toEqual({
+      light: expect.stringMatching(/^comments\/m_png-light-[0-9a-z]{6}\.png$/),
+      dark: expect.stringMatching(/^comments\/m_png-dark-[0-9a-z]{6}\.png$/),
+      width: 240,
+      height: 160,
+    });
+    const assetKey = await getCanvasAssetKey(t.db, canvas.id);
+    const light = await t.storage.head(`${assetKey}/${picture.light}`);
+    expect(light?.contentType).toBe("image/png");
+    const [item] = await listThreadItems(t.db, { canvasId: canvas.id });
+    expect(item!.payload).toMatchObject({ messageId: "m_png", picture });
+  });
+
+  test("a picture's files are a light and a dark of one format, as their type, and small", async () => {
+    const { canvas } = await sample();
+    const ask = (files: ReturnType<typeof declared>[]) =>
+      call(t, as("maya"), "POST", `/v1/canvases/${canvas.id}/comments/m_pic3/picture`, {
+        files,
+      });
+    const png = (name: string, size?: number) => ({
+      ...declared(name, webp(name), "image/png"),
+      ...(size === undefined ? {} : { size }),
+    });
+    const outcome = (r: Awaited<ReturnType<typeof ask>>) => [r.status, r.body.error?.code];
+
+    // Two of one theme.
+    expect(outcome(await ask([png("light.png"), png("light.png")]))).toEqual([
+      400,
+      "invalid_request",
+    ]);
+    // A PNG's name with another type, and a WebP's name declared as PNG.
+    expect(outcome(await ask([declared("light.png", webp("l")), png("dark.png")]))).toEqual([
+      415,
+      "unsupported_file_type",
+    ]);
+    expect(
+      outcome(
+        await ask([
+          declared("light.webp", webp("l"), "image/png"),
+          declared("dark.webp", webp("d")),
+        ]),
+      ),
+    ).toEqual([415, "unsupported_file_type"]);
+    // Any other kind or name.
+    expect(
+      outcome(
+        await ask([
+          declared("light.jpg", webp("l"), "image/jpeg"),
+          declared("dark.jpg", webp("d"), "image/jpeg"),
+        ]),
+      ),
+    ).toEqual([400, "invalid_request"]);
+    expect(
+      outcome(
+        await ask([
+          declared("light.svg", webp("l"), "image/svg+xml"),
+          declared("dark.svg", webp("d"), "image/svg+xml"),
+        ]),
+      ),
+    ).toEqual([400, "invalid_request"]);
+    // Past 2 MB.
+    expect(outcome(await ask([png("light.png", 2 * 1024 * 1024 + 1), png("dark.png")]))).toEqual([
+      413,
+      "file_too_large",
+    ]);
+  });
+
   test("only its author gives a comment a picture, of its own files, both themes", async () => {
     const { canvas } = await sample();
     await call(t, as("maya"), "POST", `/v1/canvases/${canvas.id}/ops`, {
@@ -533,7 +626,7 @@ describe("a comment's picture", () => {
       `/v1/canvases/${canvas.id}/comments/m_pic2/picture`,
       { files: [declared("light.webp", webp("l")), declared("dark.webp", webp("d"))] },
     );
-    const png = await call(
+    const mixed = await call(
       t,
       as("maya"),
       "POST",
@@ -544,10 +637,15 @@ describe("a comment's picture", () => {
     );
     // Another comment's files are not this one's picture.
     const elsewhere = await complete(canvas.id, "m_pic2", await upload(canvas.id, "m_other"));
+    // Nor are a light of one format and a dark of the other, each from its own upload.
+    const webpPair = await upload(canvas.id, "m_pic2");
+    const pngPair = await upload(canvas.id, "m_pic2", "maya", "png");
+    const crossed = await complete(canvas.id, "m_pic2", [webpPair[0]!, pngPair[1]!]);
 
     expect([reader.status, reader.body.error.code]).toEqual([403, "forbidden"]);
-    expect(png.status).toBeGreaterThanOrEqual(400);
+    expect([mixed.status, mixed.body.error.code]).toEqual([400, "invalid_request"]);
     expect([elsewhere.status, elsewhere.body.error.code]).toEqual([400, "invalid_request"]);
+    expect([crossed.status, crossed.body.error.code]).toEqual([400, "invalid_request"]);
     const [item] = await listThreadItems(t.db, { canvasId: canvas.id });
     expect(item!.payload).not.toHaveProperty("picture");
     const assetKey = await getCanvasAssetKey(t.db, canvas.id);

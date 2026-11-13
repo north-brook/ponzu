@@ -15,7 +15,15 @@ import {
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type Ref,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { KeyboardController } from "react-native-keyboard-controller";
@@ -40,9 +48,14 @@ import { fail, select, success } from "../lib/haptics";
 import { useTheme } from "../lib/theme";
 import { brand, EASE_OUT } from "../lib/tokens";
 import { Glass } from "./glass";
-import { Keyboard, Mic, MicOff, Send } from "./icons";
+import { Keyboard, Mic, MicOff, Send, Stop as StopIcon } from "./icons";
 
 export type Mode = "voice" | "type";
+
+/** What a screen may ask of a composer: send what its field holds, as Send does. */
+export interface ComposerHandle {
+  send(): void;
+}
 
 const MODE_KEY = "ponzu.commentMode";
 let lastMode: Mode = "voice";
@@ -99,7 +112,25 @@ export function Composer({
   autoFocus = true,
   draft,
   leaves = false,
+  name = "comment",
+  leading,
+  onStop,
+  handle,
 }: {
+  /**
+   * What its parts are called for tests and Maestro: `comment-field`, `comment-input` and
+   * `send` for a comment's or a reply's; `chat-field`, `chat-input` and `chat-send` in the chat.
+   */
+  name?: "comment" | "chat";
+  /** A control inside the field's leading edge while typing (the chat's Attach). */
+  leading?: ReactNode;
+  /**
+   * Shown in Send's place while the field is empty (the chat's Stop while Ponzu works); without
+   * it, the empty field offers voice.
+   */
+  onStop?: () => void;
+  /** Lets the screen send what the field holds (the chat's "Tap to try again"). */
+  handle?: Ref<ComposerHandle>;
   mode: Mode;
   onMode: (m: Mode) => void;
   /** "Comment" or "Reply". */
@@ -246,6 +277,17 @@ export function Composer({
     }
   };
 
+  // Always the newest `send`, whose words are the field's now.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  useImperativeHandle(handle, () => ({ send: () => void sendRef.current() }), []);
+
+  const ids =
+    name === "comment"
+      ? { field: "comment-field", input: "comment-input", send: "send" }
+      : { field: `${name}-field`, input: `${name}-input`, send: `${name}-send` };
+  const lead = leading && !voice ? leading : null;
+
   const blocked = dictation.state === "denied" || dictation.state === "unavailable";
   const note =
     dictation.state === "denied"
@@ -257,7 +299,7 @@ export function Composer({
 
   return (
     <Glass
-      testID="comment-field"
+      testID={ids.field}
       style={{ minHeight: 44, borderRadius: 22, justifyContent: "flex-end" }}
     >
       {/*
@@ -269,7 +311,11 @@ export function Composer({
         glass breaks under opacity) and what's heard takes its place.
       */}
       <View
-        style={voice ? styles.hidden : { paddingRight: BESIDE - EDGE }}
+        style={
+          voice
+            ? styles.hidden
+            : { paddingRight: BESIDE - EDGE, ...(lead ? { paddingLeft: BESIDE - EDGE } : {}) }
+        }
         pointerEvents={voice ? "none" : "auto"}
         accessibilityElementsHidden={voice}
         importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
@@ -280,7 +326,7 @@ export function Composer({
             text={field}
             onTextChange={onType}
             axis="vertical"
-            testID={voice ? undefined : "comment-input"}
+            testID={voice ? undefined : ids.input}
             modifiers={[
               // Relative to body, so it follows Dynamic Type as the rest of the app does.
               font({ family: "Inter", size: FIELD_SIZE, textStyle: "body" }),
@@ -342,10 +388,15 @@ export function Composer({
           />
         </View>
       )}
+      {lead && <View style={{ position: "absolute", left: INSET, bottom: INSET }}>{lead}</View>}
       <View style={{ position: "absolute", right: INSET, bottom: INSET }}>
         {has ? (
-          <InkButton label="Send" onPress={send} disabled={sending} testID="send">
+          <InkButton label="Send" onPress={send} disabled={sending} testID={ids.send}>
             <Send size={16} color={color.bg} />
+          </InkButton>
+        ) : onStop ? (
+          <InkButton label="Stop" onPress={onStop} disabled={false} testID={`${name}-stop`}>
+            <StopIcon size={14} color={color.bg} />
           </InkButton>
         ) : voice ? (
           <GlyphButton label="Type instead" testID="to-type" onPress={() => switchTo("type")}>

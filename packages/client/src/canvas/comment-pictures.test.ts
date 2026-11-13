@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { createFakeBackend, settle } from "@ponzu/client/testing";
 import type { Doc, Op, Origin } from "@ponzu/core";
+import { createFakeBackend, settle } from "../testing/index.ts";
 import { CommentPictures } from "./comment-pictures.ts";
 
 /*
@@ -182,4 +182,82 @@ test("a comment with nothing round its pin to show is never drawn: it reads with
   expect(w.drawn).toEqual([]);
   const item = w.kept("m_far");
   expect(item?.kind === "comment" && item.payload.picture).toBeUndefined();
+});
+
+test("the iPhone's pictures: PNG bytes from its canvas page, kept as PNG", async () => {
+  const backend = createFakeBackend();
+  const maya = backend.addPerson({ login: "maya", name: "Maya Ortiz" });
+  const ws = backend.addWorkspace({
+    login: "north-brook",
+    members: { [maya.id]: "admin" },
+    repos: [{ name: "site" }],
+  });
+  const client = backend.connect(maya);
+  const canvas = await client.api.canvases.create({
+    workspaceId: ws.id,
+    repoId: ws.repos[0]!.id,
+    name: "Pricing",
+  });
+  const listeners = new Set<(op: Op, origin: Origin, doc: Doc) => void>();
+  const sent: { bytes: string[]; format: string | undefined }[] = [];
+  const api: typeof client.api.canvases = {
+    ...client.api.canvases,
+    uploadCommentPicture: (id, messageId, files, format) => {
+      const text = (b: Uint8Array) => new TextDecoder().decode(b);
+      sent.push({ bytes: [text(files.light), text(files.dark)], format });
+      return client.api.canvases.uploadCommentPicture(id, messageId, files, format);
+    },
+  };
+  // What the phone's canvas page hands back: each file's base64, as its bridge carries it.
+  const pictures = new CommentPictures<string>({
+    canvasId: canvas.id,
+    meId: maya.id,
+    source: {
+      onOp: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      saved: async () => {},
+    },
+    api,
+    format: "png",
+    draw: async () => ({ light: btoa("light"), dark: btoa("dark") }),
+    bytes: async (base64) => Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)),
+    preview: (base64) => `data:image/png;base64,${base64}`,
+    release: () => {},
+    wait: async () => {},
+  }).start();
+  const me = { kind: "user" as const, id: maya.id, name: "Maya Ortiz" };
+  const op: Op = {
+    op: "thread.create",
+    thread: {
+      id: "th_m_png",
+      pageId: backend.canvas(canvas.id).sequencer.doc.pages[0]!.id,
+      x: 10,
+      y: 10,
+      status: "open",
+      createdAt: 0,
+      updatedAt: 0,
+      messages: [{ id: "m_png", author: me, text: "Here", createdAt: Date.now() }],
+    },
+  };
+  await client.api.canvases.commit(canvas.id, [{ id: "op_m_png", op }]);
+  for (const listener of listeners) listener(op, me, backend.canvas(canvas.id).sequencer.doc);
+  for (let i = 0; i < 4; i++) await settle();
+
+  expect(pictures.getSnapshot().get("m_png")).toEqual({
+    state: "drawn",
+    light: `data:image/png;base64,${btoa("light")}`,
+    dark: `data:image/png;base64,${btoa("dark")}`,
+  });
+  expect(sent).toEqual([{ bytes: ["light", "dark"], format: "png" }]);
+  const item = backend
+    .canvas(canvas.id)
+    .thread.map(({ item }) => item)
+    .find((i) => i.kind === "comment" && i.payload.messageId === "m_png");
+  expect(item?.kind === "comment" && item.payload.picture).toMatchObject({
+    light: expect.stringMatching(/^comments\/m_png-light-.*\.png$/),
+    dark: expect.stringMatching(/^comments\/m_png-dark-.*\.png$/),
+  });
+  pictures.close();
 });

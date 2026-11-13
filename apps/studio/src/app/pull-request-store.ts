@@ -4,7 +4,7 @@ import { QueryObserver } from "@tanstack/react-query";
 import type { LoadedDiff } from "../cloud/model.ts";
 import type { PullRequestMenu } from "../cloud/pr-tab/pull-request-view.tsx";
 import type { NextAction } from "../cloud/pull-request.ts";
-import { bodyForTab, prActionError, rulesWant } from "./pull-request-map.ts";
+import { agentAsk, bodyForTab, prActionError, rulesWant } from "./pull-request-map.ts";
 import { mutate, type StorePonzu } from "./store-ponzu.ts";
 
 /*
@@ -195,26 +195,10 @@ export class PullRequestStore {
       case "blocked":
         if (pr) this.set({ bypass: { reason: rulesWant(pr), headSha: pr.head.sha } });
         break;
-      case "fix_checks": {
-        if (!this.ask(action)) break;
-        const failing = pr?.checks.items
-          .filter((check) => check.state === "failed" || check.state === "cancelled")
-          .map((check) => check.name);
-        this.opts.tellAgent(
-          failing?.length
-            ? `Fix the failing checks on the pull request (${failing.join(", ")}) and push.`
-            : "Fix the failing checks on the pull request and push.",
-        );
+      case "fix_checks":
+      case "resolve":
+        if (this.ask(action)) this.opts.tellAgent(agentAsk(action, tab));
         break;
-      }
-      case "resolve": {
-        if (!this.ask(action)) break;
-        const base = tab.branch.base;
-        this.opts.tellAgent(
-          `The branch conflicts with ${base}. Merge ${base} in, resolve the conflicts and push.`,
-        );
-        break;
-      }
       case "auto_merge_on":
         // Waits on GitHub: the button says so and can't be pressed.
         break;
