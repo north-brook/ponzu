@@ -115,6 +115,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          # main's whole history, for the guard against an older run started again.
+          fetch-depth: 0
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -131,6 +133,9 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           [ -n "$CRON_SECRET" ] || { echo "::error::The dev environment has no CRON_SECRET."; exit 1; }
+      - name: Dev does not serve a newer commit
+        # "Re-run failed jobs" on an older run reuses its plan; this refuses to go backwards.
+        run: bun scripts/ci/deploy-plan.ts --commit "$GITHUB_SHA" --guard dev
       - name: Apply pending migrations to the Neon `dev` branch
         # Before the code that needs them. `db:migrate` applies everything pending in one
         # transaction and fails if a migration in the journal was passed over.
@@ -189,12 +194,15 @@ jobs:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
     outputs:
       previous_commit: ${{ steps.serving.outputs.commit }}
+      promote: ${{ steps.promote.outcome }}
       rollback: ${{ steps.rollback.outcome }}
       restored: ${{ steps.restored.outcome }}
       rollback_minute: ${{ steps.rollback_minute.outcome }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          # main's whole history, for the guard against an older run started again.
+          fetch-depth: 0
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -213,6 +221,10 @@ jobs:
         run: |
           [ -n "$VERCEL_TOKEN" ] || { echo "::error::The production environment has no VERCEL_TOKEN_PRODUCTION."; exit 1; }
           [ -n "$BYPASS" ] || { echo "::error::The production environment has no VERCEL_AUTOMATION_BYPASS_SECRET."; exit 1; }
+      - name: Production does not serve a newer commit
+        # "Re-run failed jobs" on an older run reuses its plan and dev's result; this refuses to
+        # go backwards.
+        run: bun scripts/ci/deploy-plan.ts --commit "$GITHUB_SHA" --guard production
       - name: Record the deployment serving production now
         id: serving
         # The way back, read before anything changes: its URL and the commit it answers. No
@@ -277,8 +289,12 @@ jobs:
       - name: Put back the deployment that was serving
         id: rollback
         # Only when something failed once the promotion had started (a promotion that failed
-        # may still have moved the domain). The URL recorded before, never a bare rollback.
-        if: ${{ failure() && steps.serving.outcome == 'success' && steps.promote.outcome != 'skipped' }}
+        # may still have moved the domain), or the job was cancelled or ran out of time after
+        # it: a cancelled job still runs steps that ask for `cancelled()`. The URL recorded
+        # before, never a bare rollback.
+        if: >-
+          ${{ (failure() || cancelled()) && steps.serving.outcome == 'success'
+          && steps.promote.outcome != 'skipped' && steps.promote.outcome != '' }}
         env:
           PREVIOUS_URL: ${{ steps.serving.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
@@ -287,7 +303,7 @@ jobs:
           bunx vercel@65.14.0 promote "$PREVIOUS_URL" --json --timeout 5m
       - name: Production answers as it did before
         id: restored
-        if: ${{ failure() && steps.rollback.outcome == 'success' }}
+        if: ${{ (failure() || cancelled()) && steps.rollback.outcome == 'success' }}
         env:
           PREVIOUS_COMMIT: ${{ steps.serving.outputs.commit }}
         run: bun scripts/ci/production.ts restored --commit "$PREVIOUS_COMMIT"
@@ -295,7 +311,7 @@ jobs:
         id: rollback_minute
         # A deployment from before the schedule would delete it, and with Disable Cron Jobs on,
         # production would have no minute (docs/production.md, "The minute").
-        if: ${{ failure() && steps.rollback.outcome == 'success' }}
+        if: ${{ (failure() || cancelled()) && steps.rollback.outcome == 'success' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
         run: bun scripts/ci/schedules.ts --environment production --name minute --path /v1/cron/minute
@@ -329,7 +345,9 @@ jobs:
           DEPLOY: ${{ needs.plan.outputs.deploy }}
           DEV: ${{ needs.dev.result }}
           PRODUCTION_ON: ${{ vars.API_DEPLOY_PRODUCTION == 'true' && github.event_name == 'push' }}
+          PRODUCTION_ENABLED: ${{ vars.API_DEPLOY_PRODUCTION == 'true' }}
           PRODUCTION: ${{ needs.production.result }}
+          PROMOTE: ${{ needs.production.outputs.promote }}
           ROLLBACK: ${{ needs.production.outputs.rollback }}
           RESTORED: ${{ needs.production.outputs.restored }}
           ROLLBACK_MINUTE: ${{ needs.production.outputs.rollback_minute }}

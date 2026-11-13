@@ -365,7 +365,7 @@ describe("deploy-api.yml", () => {
     });
     expect(repo.environments.production).toEqual({
       branches: ["main"],
-      requiredReviewers: true,
+      requiredReviewers: false,
       secrets: ["NEON_API_KEY", "VERCEL_AUTOMATION_BYPASS_SECRET", "VERCEL_TOKEN_PRODUCTION"],
     });
     // Only the production environment holds production's token and the bypass, never the
@@ -407,6 +407,7 @@ describe("deploy-api.yml", () => {
     const at = (needle: string) => steps.findIndex((s) => s.run?.includes(needle));
     const order = [
       at('[ -n "$CRON_SECRET" ]'),
+      at('deploy-plan.ts --commit "$GITHUB_SHA" --guard dev'),
       at("db:migrate"),
       at("deploy --environment dev"),
       at("health.ts --env dev"),
@@ -502,6 +503,10 @@ describe("deploy-api.yml", () => {
   test("production checks its token, records the way back, snapshots, migrates, stages, checks, promotes", () => {
     const steps = productionSteps;
     const token = indexOf((s) => !!s.run?.includes('[ -n "$VERCEL_TOKEN" ]'), "token");
+    const guard = indexOf(
+      (s) => s.run === 'bun scripts/ci/deploy-plan.ts --commit "$GITHUB_SHA" --guard production',
+      "guard",
+    );
     const serving = indexOf((s) => s.run === "bun scripts/ci/production.ts serving", "serving");
     const snapshot = indexOf((s) => !!s.run?.includes("neon.ts --default --snapshot"), "snapshot");
     const migrate = indexOf((s) => !!s.run?.includes("bun run db:migrate"), "migrate");
@@ -530,6 +535,7 @@ describe("deploy-api.yml", () => {
     const rollbackMinute = indexOf((s) => s.id === "rollback_minute", "rollback minute");
     const order = [
       token,
+      guard,
       serving,
       snapshot,
       migrate,
@@ -574,6 +580,7 @@ describe("deploy-api.yml", () => {
     // The report hears how the way back went.
     expect((deploy.jobs.production as Job).outputs).toEqual({
       previous_commit: expr("steps.serving.outputs.commit"),
+      promote: expr("steps.promote.outcome"),
       rollback: expr("steps.rollback.outcome"),
       restored: expr("steps.restored.outcome"),
       rollback_minute: expr("steps.rollback_minute.outcome"),
@@ -608,25 +615,39 @@ describe("deploy-api.yml", () => {
     }
     // A failure before the promotion leaves the domain where it was: nothing to put back.
     expect(putBack).toEqual(["promote", "health", "minute"]);
+    // Cancelled, or out of time, while a step ran: put back once the promotion had started.
+    const cancelledAt: string[] = [];
+    for (const [i, stopped] of ids.entries()) {
+      const steps = Object.fromEntries(
+        ids.map((id, j) => [
+          id,
+          { outcome: j < i ? "success" : j === i ? "cancelled" : "skipped", outputs: {} },
+        ]),
+      );
+      if (evaluate(rollback.if as string, { github, vars: {}, status: "cancelled", steps }))
+        cancelledAt.push(stopped);
+    }
+    expect(cancelledAt).toEqual(["promote", "health", "minute"]);
     // Nothing is put back when every step passed.
     const passed = Object.fromEntries(ids.map((id) => [id, { outcome: "success" }]));
     expect(
       evaluate(rollback.if as string, { github, vars: {}, status: "success", steps: passed }),
     ).toBe(false);
     // The check after it runs only when the promotion back went through.
-    for (const [outcome, runs] of [
-      ["success", true],
-      ["failure", false],
-      ["skipped", false],
-    ] as const)
-      expect(
-        evaluate(restored.if as string, {
-          github,
-          vars: {},
-          status: "failure",
-          steps: { rollback: { outcome } },
-        }),
-      ).toBe(runs);
+    for (const status of ["failure", "cancelled"] as const)
+      for (const [outcome, runs] of [
+        ["success", true],
+        ["failure", false],
+        ["skipped", false],
+      ] as const)
+        expect(
+          evaluate(restored.if as string, {
+            github,
+            vars: {},
+            status,
+            steps: { rollback: { outcome } },
+          }),
+        ).toBe(runs);
   });
 
   test("one project, one registry: no image copy, no registry login, no OIDC token", () => {

@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { createFakeBackend, type FakeBackend } from "../../packages/client/src/testing/backend.ts";
 import { FakeClock } from "../../packages/client/src/testing/clock.ts";
-import { CanaryError, canary, EFFORT, MODEL } from "./canary.ts";
+import { canary, EFFORT, MODEL } from "./canary.ts";
 
 interface World {
   fake: FakeBackend;
@@ -94,7 +94,7 @@ describe("the canary", () => {
     };
     const { marks, lines } = await run(w);
     expect(Object.keys(marks)).toEqual([
-      "the check account is alone, on an API key",
+      "the check account is alone in its workspace, on an API key",
       "canvas made with its first message",
       "Claude answered",
       "agent idle",
@@ -116,11 +116,25 @@ describe("the canary", () => {
   });
 
   test("refuses an account that is not alone in its own workspace, before making anything", async () => {
-    for (const workspaces of ["two", "shared"] as const) {
-      const w = world({ workspaces });
-      await expect(run(w)).rejects.toBeInstanceOf(CanaryError);
-      expect(w.fake.canvases.size).toBe(0);
-    }
+    const w = world({ workspaces: "shared" });
+    await expect(run(w)).rejects.toThrow("personal workspace has other members");
+    expect(w.fake.canvases.size).toBe(0);
+  });
+
+  test("works in its personal workspace alone when the account can see another", async () => {
+    const w = world({ workspaces: "two" });
+    const created: { workspaceId?: string }[] = [];
+    const create = w.api.canvases.create;
+    w.api.canvases.create = async (body) => {
+      created.push(body);
+      return create(body);
+    };
+    await run(w);
+    const me = await w.api.me();
+    const personal = me.workspaces.find((x) => x.kind === "personal");
+    expect(me.workspaces.length).toBe(2);
+    expect(created.map((c) => c.workspaceId)).toEqual([personal?.id]);
+    expect(w.fake.canvases.size).toBe(0);
   });
 
   test("never runs on a subscription or with no Claude, and never connects one", async () => {

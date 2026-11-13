@@ -17,8 +17,11 @@
  * - The account's Claude must be the development Anthropic API key, connected once by hand. The
  *   canary refuses a subscription or no Claude at all, and never connects or disconnects one,
  *   so the key is never in the deploy.
- * - The account must be in exactly one workspace, its own personal one, with no other member,
- *   so nothing it does can reach anyone else's canvases. It refuses otherwise.
+ * - It works only in the account's own personal workspace, which must have no other member, and
+ *   it refuses otherwise. It touches nothing else: the one canvas it makes, there, and nothing
+ *   more. The account may see other workspaces (a GitHub account is let into the workspace of
+ *   every repository GitHub lets it read, a public one included), and the canary never opens
+ *   them.
  * - CRON_SECRET is dev's: the canary calls the minute itself while it waits for the sleep, as
  *   Vercel would, so it does not wait on the schedule's jitter.
  *
@@ -95,24 +98,23 @@ export async function canary(deps: Canary): Promise<Record<string, number>> {
     }
   };
 
-  // Whose: the check account alone, in its own workspace alone.
+  // Where: the check account's own personal workspace, with nobody else in it.
   const me = await api.me();
-  if (me.workspaces.length !== 1)
+  const personal = me.workspaces.filter((w) => w.kind === "personal");
+  if (personal.length !== 1)
     throw new CanaryError(
-      `The check account is in ${me.workspaces.length} workspaces; it must be in exactly one, its own.`,
+      `The check account has ${personal.length} personal workspaces; the canary works only in its own one.`,
     );
-  const workspace = me.workspaces[0]!;
-  if (workspace.kind !== "personal")
-    throw new CanaryError("The check account's workspace is not its personal one.");
+  const workspace = personal[0]!;
   const { members } = await api.workspaces.get(workspace.id);
   if (members.length !== 1 || members[0]?.userId !== me.user.id)
-    throw new CanaryError("The check account's workspace has other members.");
+    throw new CanaryError("The check account's personal workspace has other members.");
   const claude = await api.claude.get();
   if (claude.account?.kind !== "api_key")
     throw new CanaryError(
       "The check account's Claude is not an API key: connect the development Anthropic API key to it once (docs/production.md).",
     );
-  mark("the check account is alone, on an API key");
+  mark("the check account is alone in its workspace, on an API key");
 
   const created = await api.canvases.create({
     workspaceId: workspace.id,

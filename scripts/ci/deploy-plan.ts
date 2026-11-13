@@ -115,6 +115,23 @@ export async function plan(
 
 const short = (sha: string) => sha.slice(0, 12);
 
+/**
+ * Why `head` must not go to an environment that serves `live`, or null when it may: the guard
+ * the dev and production jobs run before they touch the database. The plan already refuses to
+ * go backwards, but "Re-run failed jobs" on an older run reuses that run's plan and runs its dev
+ * or production job again, by then behind a newer run. What is live can't be read, or is not in
+ * main's history: it may go (the same rule as the plan).
+ */
+export async function behind(
+  head: string,
+  { environment, commit }: Live,
+  git: Git,
+): Promise<string | null> {
+  if (!commit || commit === head) return null;
+  if (!(await git.isAncestor(head, commit))) return null;
+  return `${environment} serves ${short(commit)}, which is newer than ${short(head)}. This is an older run started again; it deploys nothing, so newer code is never replaced.`;
+}
+
 /** The commit an environment's public health names, or null. */
 export async function liveCommit(
   url: string,
@@ -163,8 +180,23 @@ if (import.meta.main) {
   const argv = process.argv.slice(2);
   const commit = arg(argv, "--commit");
   if (!commit) {
-    console.error("usage: bun scripts/ci/deploy-plan.ts --commit <sha> [--production]");
+    console.error(
+      "usage: bun scripts/ci/deploy-plan.ts --commit <sha> [--production] [--always] | --commit <sha> --guard <dev|production>",
+    );
     process.exit(2);
+  }
+  const guarded = arg(argv, "--guard");
+  if (guarded) {
+    const live = { environment: guarded, commit: await liveCommit(apiUrlOf(guarded)) };
+    const problem = await behind(commit, live, gitIn(ROOT));
+    if (problem) {
+      console.log(`::error title=An older commit, not deployed::${problem}`);
+      process.exit(1);
+    }
+    console.log(
+      `${guarded} serves ${live.commit ? short(live.commit) : "a commit that could not be read"}; ${short(commit)} is not older.`,
+    );
+    process.exit(0);
   }
   const environments = argv.includes("--production") ? ["dev", "production"] : ["dev"];
   const live = await Promise.all(

@@ -18,7 +18,9 @@ const run = (over: Partial<Run> = {}): Run => ({
   deploy: true,
   dev: "success",
   productionOn: true,
+  productionEnabled: true,
   production: "success",
+  promote: "skipped",
   rollback: "skipped",
   restored: "skipped",
   rollbackMinute: "skipped",
@@ -97,6 +99,19 @@ describe("the verdict", () => {
         }),
       ),
     ).toContain("ITS MINUTE IS NOT ACTIVE: turn Disable Cron Jobs off");
+    // Cancelled or out of time once the promotion had started, with nothing put back: it can't
+    // say production is where it was.
+    for (const promote of ["success", "failure", "cancelled"] as const)
+      expect(
+        productionSentence(run({ production: "cancelled", promote, rollback: "skipped" })),
+      ).toContain("PRODUCTION MAY BE SERVING THE FAILED DEPLOYMENT");
+    expect(productionSentence(run({ production: "cancelled", promote: "skipped" }))).toBe(
+      "Production was not promoted, so it still serves what it served before.",
+    );
+    // A dispatch, with production on: it says production waits for the next push.
+    expect(productionSentence(run({ productionOn: false, production: "skipped" }))).toContain(
+      "a dispatch deploys dev alone",
+    );
   });
 });
 
@@ -134,6 +149,25 @@ describe("the issue", () => {
     expect(nothing.done).toEqual([]);
     expect(out.text).toContain("changes nothing the API is made from");
   });
+
+  test("a dispatch that deployed dev alone leaves a production failure's issue open", async () => {
+    const open = fakeGitHub(42);
+    const out = await report({
+      run: run({ productionOn: false, production: "skipped" }),
+      github: open.github,
+      live,
+    });
+    expect(out).toMatchObject({ verdict: "deployed", issue: 42, action: "left open" });
+    expect(open.done).toEqual([]);
+    // With production off altogether, dev is everything a run is asked to do.
+    const devOnly = fakeGitHub(42);
+    const closed = await report({
+      run: run({ productionOn: false, productionEnabled: false, production: "skipped" }),
+      github: devOnly.github,
+      live,
+    });
+    expect(closed.action).toBe("closed");
+  });
 });
 
 describe("from the workflow", () => {
@@ -147,12 +181,16 @@ describe("from the workflow", () => {
       DEPLOY: "true",
       DEV: "success",
       PRODUCTION_ON: "true",
+      PRODUCTION_ENABLED: "true",
       PRODUCTION: "weird",
+      PROMOTE: "cancelled",
       ROLLBACK: "",
       PREVIOUS_COMMIT: "not a sha",
     });
     expect(r.production).toBe("failure");
     expect(r.rollback).toBe("");
+    expect(r.promote).toBe("cancelled");
+    expect(r.productionEnabled).toBe(true);
     expect(r.previousCommit).toBe("");
     expect(r.runUrl).toBe("https://github.com/o/r/actions/runs/7");
   });

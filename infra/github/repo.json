@@ -29,7 +29,7 @@
     },
     "production": {
       "branches": ["main"],
-      "requiredReviewers": true,
+      "requiredReviewers": false,
       "secrets": ["NEON_API_KEY", "VERCEL_AUTOMATION_BYPASS_SECRET", "VERCEL_TOKEN_PRODUCTION"]
     }
   },

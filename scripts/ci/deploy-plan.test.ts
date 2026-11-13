@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { gitIn, liveCommit, plan } from "./deploy-plan.ts";
+import { behind, gitIn, liveCommit, plan } from "./deploy-plan.ts";
 
 let dir: string;
 const commits: Record<string, string> = {};
@@ -130,6 +130,23 @@ describe("the plan", () => {
     const live = [{ environment: "dev", commit: commits.D! }];
     expect((await plan(commits.D!, live, gitIn(dir))).deploy).toBe(false);
     expect((await plan(commits.D!, live, gitIn(dir), { always: true })).deploy).toBe(true);
+  });
+});
+
+describe("the guard before the database", () => {
+  test("an older run started again never goes backwards, on dev or production", async () => {
+    // "Re-run failed jobs" on B's run after D's run has deployed: B's plan said deploy, and is
+    // not asked again, so the job itself refuses.
+    for (const environment of ["dev", "production"]) {
+      const problem = await behind(commits.B!, { environment, commit: commits.D! }, gitIn(dir));
+      expect(problem).toContain(`${environment} serves`);
+      expect(problem).toContain("newer than");
+    }
+  });
+
+  test("the same commit, an older one, an unreadable one or a stranger may go", async () => {
+    for (const commit of [commits.D!, commits.B!, null, "f".repeat(40)])
+      expect(await behind(commits.D!, { environment: "dev", commit }, gitIn(dir))).toBeNull();
   });
 });
 

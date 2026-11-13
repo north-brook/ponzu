@@ -6,7 +6,8 @@
  *
  * - A failed deploy opens it, or comments on the one already open, naming the commit, its pull
  *   request, the job and step that failed, the log, and whether production was put back.
- * - A deploy that does everything it was asked closes it.
+ * - A deploy that does everything it was asked closes it, unless production deploys and this run
+ *   (a dispatch, which deploys dev alone) left it out: that proves nothing about production.
  * - A push that deployed nothing (deploy-plan.ts) leaves it as it is: it proved nothing.
  *
  *   bun scripts/ci/deploy-report.ts
@@ -34,7 +35,11 @@ export interface Run {
   dev: Result;
   /** Whether this run was to deploy production (its variable on, and a push). */
   productionOn: boolean;
+  /** Whether production deploys at all (its variable on), whatever this run's event. */
+  productionEnabled: boolean;
   production: Result;
+  /** How the promotion went, as `steps.promote.outcome` gives it. */
+  promote: Result;
   /** Outcomes of the production job's way back, as `steps.<id>.outcome` gives them. */
   rollback: Result;
   restored: Result;
@@ -72,12 +77,18 @@ export function verdictOf(run: Run): Verdict {
 
 /** What happened to production, in one sentence. */
 export function productionSentence(run: Run): string {
-  if (!run.productionOn) return "Production was not part of this run.";
+  if (!run.productionOn)
+    return run.productionEnabled
+      ? "Production was not part of this run: a dispatch deploys dev alone, and production takes this commit at the next push that changes the API."
+      : "Production was not part of this run.";
   if (run.production === "skipped" || run.production === "")
     return "Production was not touched: it deploys only after dev has passed.";
   if (run.production === "success") return "Production was deployed and promoted.";
-  if (run.rollback === "skipped" || run.rollback === "")
+  const promoted = run.promote !== "skipped" && run.promote !== "";
+  if ((run.rollback === "skipped" || run.rollback === "") && !promoted)
     return "Production was not promoted, so it still serves what it served before.";
+  if (run.rollback === "skipped" || run.rollback === "")
+    return `PRODUCTION MAY BE SERVING THE FAILED DEPLOYMENT: the job stopped after the promotion had started, and nothing was put back. Act now (docs/production.md, "The production deploy, staged").`;
   if (run.rollback !== "success")
     return `PRODUCTION MAY BE SERVING THE FAILED DEPLOYMENT: putting back ${short(run.previousCommit)} failed. Act now (docs/production.md, "The production deploy, staged").`;
   if (run.restored !== "success")
@@ -136,7 +147,8 @@ export async function report(deps: {
   if (verdict === "nothing") return { verdict, text, issue: null, action: "none" };
   const open = await github.openIssue();
   if (verdict === "deployed") {
-    if (open === null) return { verdict, text, issue: null, action: "none" };
+    if (open === null || (run.productionEnabled && !run.productionOn))
+      return { verdict, text, issue: open, action: open === null ? "none" : "left open" };
     await github.closeIssue(open, text);
     return { verdict, text, issue: open, action: "closed" };
   }
@@ -161,7 +173,9 @@ export function fromEnv(env: Record<string, string | undefined>): Run {
     deploy: env.DEPLOY === "true",
     dev: result(env.DEV),
     productionOn: env.PRODUCTION_ON === "true",
+    productionEnabled: env.PRODUCTION_ENABLED === "true",
     production: result(env.PRODUCTION),
+    promote: result(env.PROMOTE),
     rollback: result(env.ROLLBACK),
     restored: result(env.RESTORED),
     rollbackMinute: result(env.ROLLBACK_MINUTE),

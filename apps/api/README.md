@@ -429,11 +429,11 @@ sensitive values:
 
 On GitHub, the environment `dev` (only `main` may use it) is to hold dev's `VERCEL_TOKEN`, dev's
 `CRON_SECRET` and the canary's `CANARY_SESSION_WRITER`, and
-the environment `production` (only `main`, with the founder's approval) holds
+the environment `production` (only `main`, no reviewer) holds
 `VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET` and `NEON_API_KEY`. Both jobs
 read the variables `VERCEL_TEAM_ID`, `VERCEL_API_PROJECT_ID` and `NEON_PROJECT_ID`; dev's
-migration reads the repository's `NEON_API_KEY`. Neither GitHub environment exists yet
-(docs/production.md, "Turning on the deploy workflow").
+migration reads the repository's `NEON_API_KEY`. Both GitHub environments exist; what each still
+lacks is in docs/production.md, "Turning on the deploy workflow".
 
 **Every deployment holds live secrets**, so only the two API domains are public. The project
 keeps Vercel Authentication on its deployments (the legacy Standard Protection,

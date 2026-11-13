@@ -38,7 +38,7 @@ the deploy workflow"). Its minute still runs on the legacy cron while the schedu
 | Files | `assets-dev.ponzu.cloud` | `assets.ponzu.cloud` (bucket `ponzu-assets`), plus `ponzu-private` for checkpoints |
 | Analytics | PostHog "Ponzu Dev" (728454) | PostHog "Ponzu" (731171) |
 | The minute | dev's copy of the `minute` schedule, turned on once by hand | the legacy cron, then production's copy of the schedule ("The minute") |
-| Deploys | from `main`, with `vercel deploy --environment dev`, by the deploy workflow's `dev` job or the orchestrator | from `main` only: by the orchestrator by hand today; staged and promoted by the `production` job, which the founder approves, once it is turned on |
+| Deploys | from `main`, with `vercel deploy --environment dev`, by the deploy workflow's `dev` job or the orchestrator | from `main` only: by the orchestrator by hand today; staged and promoted by the `production` job, after dev has passed in the same run, once it is turned on |
 | Vercel token | dev's `VERCEL_TOKEN`, in the GitHub Environment `dev` (the repository's until that exists) | `VERCEL_TOKEN_PRODUCTION`, in the GitHub Environment `production` |
 
 The project's third environment, **Preview**, is for throwaway builds of a branch: behind Vercel
@@ -449,8 +449,8 @@ A workspace "Ponzu production" with a monthly spend limit, and a key used only a
   It also requires a pull request, squash-merged, with no approval needed (as `main`'s does),
   and it has no bypass. Once it is applied nothing reaches `cloud` by a direct push, a revert
   included: a revert goes through a pull request like any other change.
-- The environment `production`: the founder is the required reviewer, only `main` may deploy,
-  and it holds `VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET` and `NEON_API_KEY`
+- The environment `production`: no reviewer (deploys are automatic once dev has passed), only
+  `main` may deploy, and it holds `VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET` and `NEON_API_KEY`
   (see "The production deploy, staged").
 - The environment `dev`: no reviewer, only `main` may deploy, and it holds dev's own
   `VERCEL_TOKEN`. The deploy workflow's dev job runs in it. It does not exist yet ("Turning on
@@ -563,14 +563,14 @@ Then production, when the program reports it is ready:
     orchestrator that `infra/environments.json` names api-dev for dev, that
     `api.ponzu.design`'s logs have shown no app or runner traffic for a day, and that the rule
     denying every request to `api.ponzu.design` will be removed just before D15.
-12. **D12. The GitHub repository.** Create the environment `production` with yourself as
-    required reviewer and `main` as its only branch, holding the secrets
+12. **D12. The GitHub repository.** Create the environment `production` with `main` as its only
+    branch and no reviewer, holding the secrets
     `VERCEL_TOKEN_PRODUCTION` (from D2), `VERCEL_AUTOMATION_BYPASS_SECRET` (made in Vercel ›
     ponzu-api › Settings › Deployment Protection › Protection Bypass for Automation, named
     `deploy-production`; read "The production deploy, staged" first) and `NEON_API_KEY`.
-    Create it, with its reviewer and its branch, before you set `API_DEPLOY_PRODUCTION`: GitHub
-    creates an environment a job names that does not exist yet, with no reviewer, so the first
-    deploy would run without your approval. Then add the variable `API_DEPLOY_PRODUCTION=true`.
+    Create it, with its branch, before you set `API_DEPLOY_PRODUCTION`: GitHub creates an
+    environment a job names that does not exist yet, with no branch policy and no secrets. Then
+    add the variable `API_DEPLOY_PRODUCTION=true`.
     There is no second project id and no Container Registry policy to add: one project, one
     registry. Repoint the `PONZU_APP_POSTHOG_*` variables and the secret
     `PONZU_APP_POSTHOG_CLI_API_KEY` (the source-map key from D8) to the new PostHog project.
@@ -583,7 +583,7 @@ Then production, when the program reports it is ready:
 14. **D14. Stripe live.** Activate live mode, repeat the test-mode setup with live keys (Secrets,
     Production only on ponzu-api) and a webhook on `https://api.ponzu.design/v1/stripe/webhook`,
     and set `PONZU_BILLING=on`, Production only, only after counsel and tax are settled.
-15. **D15. The first production deploy.** Approve it in Actions: it snapshots, migrates the empty
+15. **D15. The first production deploy.** Watch it in Actions: it snapshots, migrates the empty
     database, deploys without the domain, checks the new deployment, promotes it to
     `api.ponzu.design`, and checks that the `minute` schedule is active. Then run
     `bun scripts/prod/check.ts --env production --deep` until every line is `ok` or `manual`, and
@@ -673,9 +673,10 @@ dev only: it makes a Scratch canvas with a first message on `claude-haiku-5-5` a
 waits for Claude's answer and the agent to go idle, calls the minute with dev's cron secret
 until the sandbox is asleep, sends a second message, waits for the sandbox to wake and Claude to
 answer again, and deletes the canvas whatever happened. It uses the client's own session and API
-code, and is tested against the client's fake backend (`canary.test.ts`). It refuses to run, and
-fails, when the account is in any workspace but its own personal one, when that workspace has
-another member, or when the account's Claude is not an API key; it never connects or disconnects
+code, and is tested against the client's fake backend (`canary.test.ts`). It works only in the
+account's own personal workspace, and refuses to run, and fails, when that workspace has another
+member or when the account's Claude is not an API key. Other workspaces the account can see (the
+workspace of any repository GitHub lets it read, a public one included) it never opens; it never connects or disconnects
 a Claude. With no `CANARY_SESSION`, or no `CANARY_SESSION_WRITER` to keep the rotated session, it
 prints a notice and does nothing. What it needs, once:
 
@@ -802,38 +803,44 @@ in the same run, so `API_DEPLOY_PRODUCTION` without `API_DEPLOY` deploys nothing
 `scripts/ci/workflows.test.ts` evaluates every job's condition, with the jobs before it, for
 every event, branch and combination of the two variables, and pins the answer.
 
-**The founder's approval.** The desired state (`infra/github/repo.json`) still gives the
-`production` environment a required reviewer. With one, every production deploy waits for an
-approval, and because the whole run is one concurrency group, every later merge's dev deploy
-waits behind it (newer merges replace the waiting run, so the approval ships the newest). For
-deploys that need nobody, remove the reviewer from the environment and set `requiredReviewers`
-to `false` for `production` in `repo.json` in the same change. That is the founder's choice; the
-workflow works either way.
+**No approval.** The `production` environment has no required reviewer
+(`infra/github/repo.json`), as the founder asked for deploys that need nobody: dev passing in
+the same run is the gate. A reviewer would still work, but every production deploy would wait
+for the approval, and because the whole run is one concurrency group, every later merge's dev
+deploy would wait behind it (newer merges replace the waiting run, so the approval ships the
+newest). To add one, add it to the environment and set `requiredReviewers` to `true` for
+`production` in `repo.json` in the same change.
 
-What each job reads, and what existed when this was written (13 Nov 2026, from `gh variable
-list`, `gh secret list` and the repository's environments, names only):
+**Running a run again.** "Re-run failed jobs" on an older run reuses that run's plan, by then
+behind a newer run that has deployed. Before it touches the database, each of the dev and
+production jobs asks its environment's public health which commit it serves and stops
+(`deploy-plan.ts --guard`) when that commit is newer than its own, so a run started again never
+puts older code back. To try a failed deploy again, run the newest one again, or dispatch the
+workflow on `main` (dev only).
+
+What each job reads, and what existed when this was last checked (13 Nov 2026, after the
+orchestrator created the environments, from `gh variable list`, `gh secret list` and the
+repository's environments, names only):
 
 | Job | Reads | Exists |
 |---|---|---|
 | `plan` | variables `API_DEPLOY`, `API_DEPLOY_PRODUCTION` | no |
 | `dev` | variables `VERCEL_TEAM_ID`, `VERCEL_API_PROJECT_ID` | yes |
-| `dev` | variable `NEON_PROJECT_ID` | no |
-| `dev` | secret `VERCEL_TOKEN` (the `dev` environment's, else the repository's) | the repository's only; no `dev` environment |
+| `dev` | variable `NEON_PROJECT_ID` | yes |
+| `dev` | secret `VERCEL_TOKEN` (the `dev` environment's, else the repository's) | the repository's only; the `dev` environment exists, limited to `main`, with no secret |
 | `dev` | secret `CRON_SECRET` (dev's, from the `dev` environment; required) | no |
-| `dev` | secret `NEON_API_KEY` (the repository's) | no |
+| `dev` | secret `NEON_API_KEY` (the repository's) | yes |
 | `dev` | secrets `CANARY_SESSION` (the repository's) and `CANARY_SESSION_WRITER` (the `dev` environment's); optional, the canary is skipped without them | no |
 | `production` | variables `VERCEL_TEAM_ID`, `VERCEL_API_PROJECT_ID` | yes |
-| `production` | variable `NEON_PROJECT_ID` | no |
-| `production` | secrets `VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `NEON_API_KEY`, all from the `production` environment | no; no `production` environment |
+| `production` | variable `NEON_PROJECT_ID` | yes |
+| `production` | secrets `VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `NEON_API_KEY`, from the `production` environment | the environment exists, limited to `main`, with no reviewer; it holds `VERCEL_AUTOMATION_BYPASS_SECRET` only. `NEON_API_KEY` is the repository's, which the job reads while the environment has none. `VERCEL_TOKEN_PRODUCTION`: no |
 | `report` | the run's own `GITHUB_TOKEN`, with `issues: write`, `actions: read` and `pull-requests: read` | yes |
 
-So to turn on dev: add the repository variable `NEON_PROJECT_ID` and the repository secret
-`NEON_API_KEY`, create the environment `dev` limited to `main` with dev's own `VERCEL_TOKEN`
-(optional but intended: until then the repository's token deploys dev) and dev's `CRON_SECRET`
-(the value dev's Vercel environment holds), then set `API_DEPLOY=true`. For the canary, do the
-one-time setup above. To turn on production: create the environment `production` limited to
-`main`, holding the three secrets (with or without a reviewer, above), **before** setting
-`API_DEPLOY_PRODUCTION=true` (GitHub creates a missing environment with no protection at all).
+So to turn on dev: put dev's `CRON_SECRET` (the value dev's Vercel environment holds) in the
+`dev` environment, and dev's own `VERCEL_TOKEN` (optional but intended: until then the
+repository's token deploys dev), then set `API_DEPLOY=true`. For the canary, do the one-time
+setup above. To turn on production: put `VERCEL_TOKEN_PRODUCTION` in the `production`
+environment, then set `API_DEPLOY_PRODUCTION=true`.
 Both are the founder's (D12). `bun scripts/prod/check.ts --env production` lists each one still
 missing as `pending`. Then watch the first run end to end: its summary names what deployed and
 what each environment serves.
@@ -1041,7 +1048,7 @@ nothing.
   is not judged on the minute: it is an API deployed before health reported it, which is what
   production serves until its first deploy after this rule reached `main`. The
   commit, image and migration count are the deploy's own check, not this one, because a merged
-  commit waits for the founder's approval before it deploys.
+  commit waits for dev's deploy and checks before production takes it.
 - A run that finds production down fails. The next run reads that conclusion back from the
   Actions API, so the second failing run in a row opens one issue labelled `production-down`
   (the label is made the first time it is needed). A single failing run opens nothing.
