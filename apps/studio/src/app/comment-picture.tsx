@@ -463,10 +463,12 @@ async function rasterise(scene: HTMLElement, deadline: number, assetBase?: strin
 
 /**
  * Properties that never change a still picture: how an element answers a pointer, a caret, a
- * selection or a scroll, and how it would move from one style to the next.
+ * selection or a scroll, and how it would move from one style to the next. `will-change` is not
+ * one of them: `will-change: transform` (or opacity, filter) makes a stacking context and a
+ * containing block, so a fixed or absolute descendant is laid out against it.
  */
 const UNDRAWN =
-  /^(cursor|caret-color|pointer-events|touch-action|user-select|-webkit-user-select|-webkit-user-drag|-webkit-user-modify|-webkit-tap-highlight-color|interpolate-size|will-change|transition(-.*)?|scroll-.*|overscroll-.*)$/;
+  /^(cursor|caret-color|pointer-events|touch-action|user-select|-webkit-user-select|-webkit-user-drag|-webkit-user-modify|-webkit-tap-highlight-color|interpolate-size|transition(-.*)?|scroll-.*|overscroll-.*)$/;
 
 let drawn: string[] | undefined;
 /**
