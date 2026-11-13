@@ -10,7 +10,8 @@
 // Run `--dry-run` first: it reads, writes nothing, prints counts and renders the email to a
 // file. `--send` refuses (exit 2, nothing written) without RESEND_API_KEY, for a notice less
 // than 30 days before it takes effect (a terms change may pass `--sooner`), for a notice with no
-// day written yet, and for dev's check on production. It sends at most 5 a second, records each
+// day written yet, for dev's check on production, and off production without
+// PONZU_EMAIL_ALLOW. It sends at most 5 a second, records each
 // person's in `email_notices`, and never sends anyone a notice twice: run it again freely. It
 // exits 1 when a notice needs a look (a `pending` record over a day old, or Resend asked it to
 // wait). It prints counts and ids, never an address, a name, a key or the reason.

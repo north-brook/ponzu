@@ -438,7 +438,7 @@ describe("--send", () => {
     const run = io();
     expect(await runNotice(t.deps, args(["--notice", "dev-check", "--send"]), run.io)).toBe(1);
     expect(run.printed.join("\n")).toContain(
-      `never sent again (check each at Resend by its key): ${a.id}`,
+      `never sent again (look up each person's address in Resend's emails): ${a.id}`,
     );
     expect(t.mail.sent).toEqual([]);
   });
@@ -504,7 +504,12 @@ describe("who a notice is for", () => {
 });
 
 describe("the 30 days", () => {
-  const on = { now: new Date(START), environment: "production", mailEnabled: true };
+  const on = {
+    now: new Date(START),
+    environment: "production",
+    mailEnabled: true,
+    allowlisted: false,
+  };
 
   test("a dated notice less than 30 days off is refused; 30 days is allowed", () => {
     expect(sendRefusal(request(termsChange(29)), on)).toContain("less than 30 days");
@@ -540,7 +545,20 @@ describe("the 30 days", () => {
   test("dev's check is refused on production", () => {
     const check = request(NOTICES.get("dev-check")!);
     expect(sendRefusal(check, on)).toContain("dev only");
-    expect(sendRefusal(check, { ...on, environment: "dev" })).toBeNull();
+    expect(sendRefusal(check, { ...on, environment: "dev", allowlisted: true })).toBeNull();
+  });
+
+  test("off production, --send without an allowlist is refused before anything is written", async () => {
+    // Everyone would be recorded held for good: a PONZU_ENVIRONMENT mistyped against
+    // production's database would close the notice to all of them.
+    const t = await app({ environment: "dev" });
+    await person(t, "noallow-a");
+    const run = io();
+    expect(await runNotice(t.deps, args(["--notice", "dev-check", "--send"]), run.io)).toBe(2);
+    expect(run.printed.join("\n")).toContain("PONZU_EMAIL_ALLOW is not set");
+    expect(await records(t)).toEqual([]);
+    expect(t.mail.sent).toEqual([]);
+    expect(sendRefusal(request(termsChange(60)), on)).toBeNull();
   });
 });
 
@@ -550,6 +568,7 @@ describe("a suspension", () => {
     const a = await person(t, "sus-a");
     await person(t, "sus-bystander");
     const ws = await workspace(t, "org", "sus-org");
+    await upsertMembership(t.db, { workspaceId: ws.id, userId: a.id, role: "member" });
     const reason = 'Payments were reported as <script>alert("x")</script> fraud & more.';
     const run = io({ "/reason.txt": `${reason}\n` });
     const code = await runNotice(
@@ -582,6 +601,35 @@ describe("a suspension", () => {
     expect(await records(t)).toMatchObject([
       { noticeId: "suspension/2026-01-fraud", userId: a.id, workspaceId: ws.id, outcome: "sent" },
     ]);
+  });
+
+  test("a workspace's suspension tells only its members, and an unknown workspace is refused", async () => {
+    const t = await app();
+    const member = await person(t, "sus-member");
+    const stranger = await person(t, "sus-stranger");
+    const ws = await workspace(t, "org", "sus-private-org");
+    await upsertMembership(t.db, { workspaceId: ws.id, userId: member.id, role: "member" });
+    const base = ["--notice", "suspension", "--send", "--case", "c2", "--reason-file", "/r.txt"];
+    const files = { "/r.txt": "Abuse." };
+
+    const strangers = io(files);
+    const withStranger = [...base, "--workspace", ws.id, "--user", member.id];
+    expect(
+      await runNotice(t.deps, args([...withStranger, "--user", stranger.id]), strangers.io),
+    ).toBe(2);
+    expect(strangers.printed.join("\n")).toContain(stranger.id);
+    for (const dry of [true, false]) {
+      const unknown = io(files);
+      const argv = [...base, "--workspace", "ws_nope", "--user", member.id];
+      const flags = dry ? argv.map((flag) => (flag === "--send" ? "--dry-run" : flag)) : argv;
+      expect(await runNotice(t.deps, args(flags), unknown.io)).toBe(2);
+      expect(unknown.printed.join("\n")).toContain("no workspace ws_nope");
+    }
+    expect(await records(t)).toEqual([]);
+    expect(t.mail.sent).toEqual([]);
+
+    expect(await runNotice(t.deps, args(withStranger), io(files).io)).toBe(0);
+    expect(t.mail.sent.map((m) => m.to)).toEqual([member.address]);
   });
 
   test("refuses a reason over 1,000 characters, no case, or no one named, before anything", async () => {

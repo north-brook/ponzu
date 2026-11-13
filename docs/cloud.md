@@ -3123,17 +3123,20 @@ workspace (never a collaborator of one); a terms, privacy or closing notice to e
 account; a suspension to the people `--user` names, with `--case <id>` (each suspension is
 recorded as `suspension/<case>`), `--reason-file` (the founder's words, at most 1,000 characters,
 sent as escaped text: the one place a person's own words are in any email) and, for a workspace,
-`--workspace`. `--dry-run` writes nothing: it prints counts (people, without an address, already
+`--workspace` (then each person named must be a member of it, so no one else learns of it).
+`--dry-run` writes nothing: it prints counts (people, without an address, already
 recorded by outcome, to send, and the ids of `pending` records over a day old) and renders the
 email to a file. `--send` refuses before writing anything while email is off, for a dated notice
 less than 30 days before its day (a terms change may pass `--sooner`, the terms' "sooner if the
-law or stopping abuse needs it"), for a notice with no day, and for `dev-check` on production.
+law or stopping abuse needs it"), for a notice with no day, for `dev-check` on production, and
+outside production without `PONZU_EMAIL_ALLOW` (everyone would be recorded `held` for good).
 For each person it writes the `pending` record, sends with Resend's key
 `notice/<notice>/<user>` at most 5 times a second (so the API's own emails stay under Resend's 10
 a second), then writes the outcome, the address and Resend's id. A rerun sends to nobody whose
 record is finished. A `pending` record under 24 hours old (the script stopped mid-send) is sent
 again under the same key, which Resend answers with the first email; an older one is listed by
-id, never sent again, and the script exits 1 for the founder to check it at Resend. When Resend
+id, never sent again, and the script exits 1 for the founder to look the person up at Resend
+(docs/production.md, "Email (Resend)"). When Resend
 asks it to wait, the script stops there and is run again. A notice is never paused, carries no
 unsubscribe link, and outside production goes only to `PONZU_EMAIL_ALLOW` (the rest are recorded
 `held`). Its output carries counts and ids, never an address, a name or the reason.
@@ -3142,7 +3145,7 @@ unsubscribe link, and outside production goes only to `PONZU_EMAIL_ALLOW` (the r
 with every kind in `PONZU_EMAIL_PAUSED` until the founder releases them. Dev, previews and a
 local API send only to `PONZU_EMAIL_ALLOW`. `PONZU_EMAIL_ALLOW` set on production, and `billing`
 in `PONZU_EMAIL_PAUSED` while `PONZU_BILLING=on`, are logged at boot as `email_env_problem`
-(the API still starts), and the production check reports the first (docs/production.md, "Email").
+(the API still starts), and the production check reports the first (docs/production.md, "Email (Resend)").
 
 **Live and proof sends**, by the orchestrator on dev only: `PONZU_LIVE_MAIL=1 bun test
 apps/api/src/email/email.live.test.ts` (Resend's test addresses) and

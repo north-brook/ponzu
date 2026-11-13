@@ -2,13 +2,12 @@ import { and, asc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle
 import type { Db } from "../client.ts";
 import type { EMAIL_NOTICE_OUTCOMES } from "../enums.ts";
 import { emailNotices, memberships, notifications, users, workspaces } from "../schema/index.ts";
-
-/** How a legal notice's email ended for one person. */
-export type EmailNoticeOutcome = (typeof EMAIL_NOTICE_OUTCOMES)[number];
-
 import { queryJson, timeParam } from "./json.ts";
 import { DIGEST_DEFAULT_TIME_ZONE } from "./notifications.ts";
 import { run } from "./run.ts";
+
+/** How a legal notice's email ended for one person. */
+export type EmailNoticeOutcome = (typeof EMAIL_NOTICE_OUTCOMES)[number];
 
 /*
  * What Ponzu's emails read and write besides the notifications themselves (docs/cloud.md,

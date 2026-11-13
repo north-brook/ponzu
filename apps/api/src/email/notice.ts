@@ -5,6 +5,7 @@ import {
   emailNoticeRecords,
   existingUsers,
   finishEmailNotice,
+  getMemberWorkspace,
   getWorkspace,
   noticeAudience,
 } from "@ponzu/db";
@@ -125,7 +126,12 @@ export function requestProblem(request: NoticeRequest): string | null {
  */
 export function sendRefusal(
   request: NoticeRequest,
-  { now, environment, mailEnabled }: { now: Date; environment: string; mailEnabled: boolean },
+  {
+    now,
+    environment,
+    mailEnabled,
+    allowlisted,
+  }: { now: Date; environment: string; mailEnabled: boolean; allowlisted: boolean },
 ): string | null {
   const problem = requestProblem(request);
   if (problem) return problem;
@@ -133,6 +139,12 @@ export function sendRefusal(
   const { notice } = request;
   if (notice.devOnly && environment === "production") {
     return `${notice.id} is a check for dev only, never sent on production.`;
+  }
+  // Off production only PONZU_EMAIL_ALLOW is emailed and everyone else is recorded `held`, for
+  // good. Without an allowlist that would be everyone: a PONZU_ENVIRONMENT mistyped against
+  // production's database would close the notice to every person in it.
+  if (environment !== "production" && !allowlisted) {
+    return `PONZU_EMAIL_ALLOW is not set: on ${environment} nobody could be sent it, and everyone would be recorded held.`;
   }
   if (notice.kind === "suspension") return null;
   if (notice.effective === null) {
@@ -143,6 +155,16 @@ export function sendRefusal(
     return `${notice.id} takes effect less than ${NOTICE_LEAD_DAYS} days from now, sooner than the terms promise.`;
   }
   return null;
+}
+
+/** What `sendRefusal` reads from the deps, now. */
+export function refusalFacts(deps: Pick<NoticeDeps, "clock" | "config" | "mail">) {
+  return {
+    now: new Date(deps.clock.now()),
+    environment: deps.config.build.environment,
+    mailEnabled: deps.mail.enabled,
+    allowlisted: deps.config.email.allow !== null,
+  };
 }
 
 /** The notice's email as everyone it goes to gets it: no notice carries anything personal. */
@@ -200,7 +222,10 @@ export interface NoticePlan {
   recordId: string;
   /** Everyone it is for, by id. */
   recipients: string[];
-  /** People `--user` named who are not among those the notice is for (or have no account). */
+  /**
+   * People `--user` named who are not among those the notice is for: no account, or for a
+   * workspace's suspension, not a member of it.
+   */
   outside: string[];
   /** Of the recipients, how many have no address now. */
   withoutAddress: number;
@@ -223,6 +248,15 @@ export async function planNotice(
   let recipients: string[];
   if (request.notice.kind === "suspension") {
     recipients = await existingUsers(db, request.users ?? []);
+    const { workspaceId } = request;
+    if (workspaceId) {
+      // A workspace's suspension names the workspace: only its members may be told, so a
+      // mistyped --user never tells a stranger about someone else's workspace.
+      const members = await Promise.all(
+        recipients.map((userId) => getMemberWorkspace(db, { userId, workspaceId })),
+      );
+      recipients = recipients.filter((_, at) => members[at] !== null);
+    }
   } else {
     const audience = await noticeAudience(
       db,
@@ -282,11 +316,7 @@ export interface NoticeReport {
  * `sendRefusal`; this checks it again and throws, so nothing is written when it would refuse.
  */
 export async function sendNotice(deps: NoticeDeps, request: NoticeRequest): Promise<NoticeReport> {
-  const refusal = sendRefusal(request, {
-    now: new Date(deps.clock.now()),
-    environment: deps.config.build.environment,
-    mailEnabled: deps.mail.enabled,
-  });
+  const refusal = sendRefusal(request, refusalFacts(deps));
   if (refusal) throw new Error(refusal);
   const plan = await planNotice(deps, request);
   if (plan.outside.length > 0) {

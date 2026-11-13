@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { getWorkspace } from "@ponzu/db";
 import {
   type NoticeDeps,
   type NoticePlan,
@@ -6,6 +7,7 @@ import {
   type NoticeRequest,
   noticeProps,
   planNotice,
+  refusalFacts,
   renderNotice,
   requestProblem,
   sendNotice,
@@ -114,14 +116,14 @@ export async function runNotice(deps: NoticeDeps, args: NoticeArgs, io: NoticeIo
     io.print(`Refused: ${problem}`);
     return 2;
   }
+  if (request.workspaceId && !(await getWorkspace(deps.db, request.workspaceId))) {
+    io.print(`Refused: there is no workspace ${request.workspaceId}.`);
+    return 2;
+  }
 
   if (!args.send) return dryRun(deps, request, args, io);
 
-  const refusal = sendRefusal(request, {
-    now: new Date(deps.clock.now()),
-    environment: deps.config.build.environment,
-    mailEnabled: deps.mail.enabled,
-  });
+  const refusal = sendRefusal(request, refusalFacts(deps));
   if (refusal) {
     io.print(`Refused, nothing sent or written: ${refusal}`);
     return 2;
@@ -148,11 +150,7 @@ async function dryRun(
   const plan = await planNotice(deps, request);
   io.print(`Dry run: nothing sent or written.`);
   for (const line of describePlan(plan)) io.print(line);
-  const refusal = sendRefusal(request, {
-    now: new Date(deps.clock.now()),
-    environment: deps.config.build.environment,
-    mailEnabled: deps.mail.enabled,
-  });
+  const refusal = sendRefusal(request, refusalFacts(deps));
   io.print(refusal ? `--send would be refused now: ${refusal}` : "--send would send it now.");
   if (request.notice.kind !== "suspension" && request.notice.effective === null) {
     io.print("No sample: it has no day it takes effect yet.");
@@ -191,7 +189,7 @@ export function describeReport(report: NoticeReport): string[] {
   ];
   if (report.stale.length > 0) {
     lines.push(
-      `Pending over 24 hours, never sent again (check each at Resend by its key): ${report.stale.join(", ")}`,
+      `Pending over 24 hours, never sent again (look up each person's address in Resend's emails): ${report.stale.join(", ")}`,
     );
   }
   if (report.stoppedEarly) {

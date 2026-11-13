@@ -22,7 +22,10 @@ export const emailNotices = pgTable(
     /** The notice file's id (apps/api/src/email/notices/<id>.ts). */
     noticeId: text("notice_id").notNull(),
     userId: text("user_id").notNull(),
-    /** The workspace a billing or price notice was sent for. */
+    /**
+     * The workspace a suspension was for. Null for every other notice: billing starting and a
+     * price rise go once to each person and name no workspace.
+     */
     workspaceId: text("workspace_id"),
     /** The address it went to; null when the person had none. */
     address: text("address"),

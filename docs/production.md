@@ -465,8 +465,13 @@ Off until the founder's email steps (docs/cloud.md, "Email"). When production ha
   `RESEND_API_KEY` and `PONZU_EMAIL_REPLY_TO`, and `PONZU_ENVIRONMENT=production`:
   `bun apps/api/scripts/notice.ts --notice <id> --dry-run`, read the counts and the rendered
   email, then `--send`. It records each person in `email_notices` and never sends anyone a
-  notice twice, so it can be run again after any stop. Exit 1 lists the ids of records still
-  `pending` after a day: look each up at Resend by its key, `notice/<notice>/<user>`.
+  notice twice, so it can be run again after any stop. Off production it refuses to send
+  without `PONZU_EMAIL_ALLOW`, because everyone else would be recorded `held` for good. Exit 1
+  lists the ids of records still `pending` after a day, which the script never sends again:
+  look up each person's address in Resend's emails, which it keeps 30 days (its dashboard
+  finds an email by recipient; finding one by idempotency key is not something we have seen it
+  do). If it went, set that row's `outcome` to `sent` by
+  hand; if it did not, delete the row and run the script again.
 - The billing-starts notice (`billing-starts`, with its day written in a reviewed pull request)
   goes at least 30 days before `PONZU_BILLING=on` in production; the script refuses it sooner.
 
