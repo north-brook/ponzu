@@ -80,6 +80,25 @@ function grid(prefix: string, kind: BoardKind, n: number, cols: number): Artboar
   return out;
 }
 
+/** `n` boards of `kinds` in turn, `cols` to a row, each row as tall as its tallest board. */
+function wall(prefix: string, kinds: BoardKind[], n: number, cols: number): Artboard[] {
+  const out: Artboard[] = [];
+  let y = 0;
+  for (let row = 0; row * cols < n; row++) {
+    let x = 0;
+    let tallest = 0;
+    for (let i = row * cols; i < Math.min(n, (row + 1) * cols); i++) {
+      const kind = kinds[i % kinds.length]!;
+      const ab = BOARDS[kind].make({ id: `ab_${prefix}${i}`, name: `${kind} ${i + 1}`, x, y });
+      x += (Number.parseFloat(String(ab.root.style.width)) || 1440) + GAP;
+      tallest = Math.max(tallest, Number.parseFloat(String(ab.root.style.height)) || 4000);
+      out.push(ab);
+    }
+    y += tallest + GAP;
+  }
+  return out;
+}
+
 export const CANVASES: Record<string, { about: string; seed: () => Seed }> = {
   website: {
     about:
@@ -118,6 +137,15 @@ export const CANVASES: Record<string, { about: string; seed: () => Seed }> = {
   many: {
     about: "Sixty small boards on one page.",
     seed: () => ({ name: "Many", tokens: CORPUS_TOKENS, boards: grid("mn", "tiny-card", 60, 10) }),
+  },
+  wall: {
+    about:
+      "Twenty-four landing pages in three rows, the whole canvas fitted: every board on screen at once, small.",
+    seed: () => ({
+      name: "Wall",
+      tokens: CORPUS_TOKENS,
+      boards: wall("wl", ["landing-weft", "landing-kettle", "landing-halon"], 24, 8),
+    }),
   },
   huge: {
     about: "One 8000 px square board, sparse.",
@@ -427,6 +455,51 @@ const LINE = [
   "The mobile board now matches: the cards stack, and the CTA stays in reach.",
 ];
 
+/** A long reply in Markdown: headings, lists, inline code, a table and fenced code. */
+const LONG_REPLY = `## What changed
+
+I rebuilt the **pricing** section so the plans compare at a glance, and moved the FAQ under it.
+
+- The three plans sit in one row from 960 up, and stack below it
+- Each plan lists the same five lines, in the same order, so the eye runs across
+- \`Most popular\` is a quiet badge now, not a second colour
+
+| Plan | Seats | Price |
+| --- | --- | --- |
+| Starter | 1 | $0 |
+| Team | 10 | $49 |
+| Business | 50 | $199 |
+
+The grid is one component, so the mobile board follows it:
+
+\`\`\`tsx
+export function Plans({ plans }: { plans: Plan[] }) {
+  return (
+    <section className="grid gap-6 md:grid-cols-3">
+      {plans.map((plan) => (
+        <article key={plan.id} className="rounded-2xl border p-6">
+          <h3 className="text-lg font-semibold">{plan.name}</h3>
+          <p className="mt-2 text-3xl tabular-nums">{plan.price}</p>
+          <ul className="mt-6 space-y-2 text-sm">
+            {plan.lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </section>
+  );
+}
+\`\`\`
+
+### Still to do
+
+1. The FAQ's answers are placeholder copy
+2. The footer's columns wrap early at 1024
+3. Dark mode needs the badge's ink checked
+
+Say if you'd rather the plans stay as cards.`;
+
 const thread: Suite = {
   id: "thread",
   surface: "thread",
@@ -505,6 +578,29 @@ const thread: Suite = {
         await field.fill("");
         return m;
       },
+    },
+    {
+      id: "thread.stream-markdown",
+      title: "Claude streams a long Markdown reply",
+      headline: ["fps", "mainMs", "longestTaskMs"],
+      run: (s, state) =>
+        gesture(s, () =>
+          s.page.evaluate(
+            async ({ canvasId, reply }) => {
+              const agent = window.ponzuFake!.backend.agent(canvasId);
+              const id = agent.say("", { streaming: true });
+              // The whole reply in two seconds, a frame's worth of characters at a time: its
+              // table and its code block grow as they would, token by token.
+              const step = Math.ceil(reply.length / 120);
+              for (let f = 1; f <= 120; f++) {
+                agent.say(reply.slice(0, f * step), { id, streaming: true });
+                await window.__pz.frame();
+              }
+              agent.say(reply, { id, streaming: false });
+            },
+            { canvasId: state.canvasId, reply: LONG_REPLY },
+          ),
+        ),
     },
   ],
 };
@@ -631,6 +727,7 @@ export const SUITES: Suite[] = [
   canvasSuite("paint"),
   canvasSuite("motion"),
   canvasSuite("many"),
+  canvasSuite("wall"),
   canvasSuite("huge"),
   thread,
   sidebar,

@@ -66,8 +66,9 @@ description.
 | `paint` | Shadows, filters, blends and masks; big SVG charts; many images. |
 | `motion` | Hundreds of running CSS and SVG animations. |
 | `many` | Sixty small boards on one page. |
+| `wall` | Twenty-four landing pages, the whole canvas fitted: every board on screen at once. |
 | `huge` | One 8000 px board. |
-| `thread` | A 300-line conversation: opening it, Claude streaming a reply, typing in the composer. |
+| `thread` | A 300-line conversation: opening it, Claude streaming a reply (and a long one in Markdown, with a table and code), typing in the composer. |
 | `sidebar` | Switching between two canvases. |
 | `sandbox` | The client's side of a prompt: Enter on the create page to the first board drawn, and a wake landing, with a sandbox that answers at once. |
 
