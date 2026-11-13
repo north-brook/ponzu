@@ -1746,8 +1746,14 @@ page, both with packages/canvas's `comment-picture.tsx`), uploads it with `POST
 `dark.webp` or `light.png` and `dark.png`, at most 2 MB each, staged and copied under
 `comments/` when attached) and attaches it with `…/picture/complete` once the comment's op is committed
 (404 before that); the first picture attached is the one it keeps. Sending a comment never waits
-on it. A comment with no picture (from before pictures, or one that couldn't be drawn or kept)
-says where it was left instead. Older comment items may carry `board`, a copy of the board an
+on it. The desktop app draws it in a hidden window of its own, with its own renderer and an
+in-memory session (apps/desktop/src/pictures.ts), so drawing it never holds up the person's
+window and leaves nothing there; that window closes after a few pictures or 20 s with none. A
+studio without it (a browser, the tests), or one whose picture window failed (and, after two
+failures in a row, for the rest of that canvas's opening), draws the picture in its own window, a
+step at a time when the window is idle. A comment deleted before its picture is kept gets none. A
+comment with no picture (from before pictures, or one that couldn't be drawn or kept) says where
+it was left instead. Older comment items may carry `board`, a copy of the board an
 earlier thumbnail drew; nothing reads it.
 
 A client renders the thread from these alone, and never shows a tool's input or output.

@@ -28,12 +28,13 @@ import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { CanvasChrome } from "../cloud/window/canvas-chrome.tsx";
 import { useAnalytics } from "./analytics/provider.tsx";
 import { AskStore } from "./ask-store.ts";
-import { drawCommentPicture, hasPictureArea } from "./comment-picture.tsx";
+import { hasPictureArea } from "./comment-picture.tsx";
 import { CommentPictures } from "./comment-pictures.ts";
 import type { Host } from "./host.ts";
 import { contributors, pageTabs } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
 import { useWindowFocused } from "./notifications.ts";
+import { pictureDrawer } from "./picture-drawer.ts";
 import { usePonzu } from "./ponzu-query.tsx";
 import { chromeAction, offeredTab, prSummary, rowPullRequest } from "./pull-request-map.ts";
 import { PullRequestStore } from "./pull-request-store.ts";
@@ -195,7 +196,8 @@ function openCanvas({
     meId: actor.id,
     source,
     api: api.canvases,
-    draw: drawCommentPicture,
+    // Out of this window where the shell has a picture window; else here, when it is idle.
+    draw: pictureDrawer(host.pictures),
     drawable: hasPictureArea,
   }).start();
   const pullRequest = new PullRequestStore({

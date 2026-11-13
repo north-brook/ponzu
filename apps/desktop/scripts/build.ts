@@ -1,6 +1,7 @@
 /*
- * Builds the main process and the preload into dist/. `PONZU_TEST_BUILD=1` makes a test build
- * (src/config.ts): the real app, which also honours PONZU_SESSION_FILE, PONZU_ENVIRONMENT_OVERRIDE
+ * Builds the main process, the window's preload and the picture window's (picture-preload.ts)
+ * into dist/. `PONZU_TEST_BUILD=1` makes a test build (src/config.ts): the real app, which also
+ * honours PONZU_SESSION_FILE, PONZU_ENVIRONMENT_OVERRIDE
  * and a remote debugging port, for spare and CI to drive it signed in. The release workflow
  * never sets it. `PONZU_VARIANT=dev` builds Ponzu Dev's (scripts/package-dev.ts sets it).
  *
@@ -43,7 +44,7 @@ const posthog = {
 };
 rmSync(join(root, "dist"), { recursive: true, force: true });
 
-for (const entry of ["main", "preload"]) {
+for (const entry of ["main", "preload", "picture-preload"]) {
   const built = await Bun.build({
     entrypoints: [join(root, "src", `${entry}.ts`)],
     outdir: join(root, "dist"),

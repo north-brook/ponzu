@@ -118,6 +118,38 @@ export interface MacNotice {
   link: DeepLink;
 }
 
+/**
+ * A comment's picture to draw (apps/studio/src/app/comment-picture.tsx): the document as it was
+ * when the comment was made, cut down to what the picture can show (`pictureDoc`), the comment,
+ * and where the canvas's files are. Plain data, so it crosses to the picture window as it is.
+ */
+export interface PictureRequest {
+  doc: unknown;
+  threadId: string;
+  messageId: string;
+  assetBase?: string | undefined;
+}
+
+/**
+ * A comment's picture as the picture window drew it: its two WebP files; `empty`, nothing round
+ * the pin to show, so the comment rightly goes without one; or `failed`, with why.
+ */
+export type PictureAnswer =
+  | { ok: true; light: Uint8Array; dark: Uint8Array }
+  | { ok: false; reason: "empty" }
+  | { ok: false; reason: "failed"; message: string };
+
+/**
+ * `window.ponzuPictureHost`: what the shell's hidden picture window (pictures.ts) hands the
+ * studio it loads there, in place of `window.ponzuDesktop`. It hears a picture to draw at a time
+ * and answers each by its number.
+ */
+export interface PictureHostBridge {
+  /** Hears each picture to draw; then tells the shell the studio is listening. */
+  onRequest(listener: (id: number, request: PictureRequest) => void): void;
+  answer(id: number, answer: PictureAnswer): void;
+}
+
 /** A menu item the studio carries out. */
 export type MenuCommand = "new-canvas" | "settings" | "toggle-sidebar" | "toggle-thread";
 
@@ -217,6 +249,12 @@ export interface PonzuDesktop {
    * project, or the environment says no). Absent from an older shell.
    */
   setUsageSharing?(enabled: boolean): Promise<boolean>;
+  /**
+   * Comments' pictures, drawn in a hidden window of the shell's own (pictures.ts), in its own
+   * renderer, so drawing one never holds up this window or leaves anything in it. Absent from an
+   * older shell: the studio then draws them itself.
+   */
+  pictures?: { draw(request: PictureRequest): Promise<PictureAnswer> };
 }
 
 /** The IPC channels, by what they carry. `invoke` ones answer; `send` ones don't. */
@@ -244,4 +282,9 @@ export const CHANNELS = {
   notifyFailed: "ponzu:notify:failed",
   welcome1x: "ponzu:welcome-1x",
   usageSharing: "ponzu:usage-sharing",
+  picturesDraw: "ponzu:pictures:draw",
+  /** To and from the hidden picture window only. */
+  pictureHostReady: "ponzu:picture-host:ready",
+  pictureHostRequest: "ponzu:picture-host:request",
+  pictureHostAnswer: "ponzu:picture-host:answer",
 } as const;

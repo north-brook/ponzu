@@ -9,6 +9,7 @@ import { App } from "./app/app.tsx";
 import { CantStart } from "./app/cant-start.tsx";
 import { desktopHost } from "./app/desktop-host.ts";
 import type { Host } from "./app/host.ts";
+import { runPictureHost } from "./app/picture-host.ts";
 import { installFocusRule } from "./cloud/ui/quiet-focus.ts";
 
 declare global {
@@ -82,18 +83,25 @@ function launched(analytics: Analytics, setup: AnalyticsSetup | null, version: s
   }
 }
 
-void Promise.all([host(), loadAnalytics(analyticsContext())]).then(([host, analytics]) => {
-  const context = analyticsContext();
-  launched(analytics, context?.setup ?? null, context?.version ?? "");
-  // An error React can't render past goes to PostHog with its component stack, once (in place of
-  // React's own report, which autocapture would count again), and still to the console. What
-  // the window shows for it is what it showed before.
-  const report = analytics.client
-    ? setupReactErrorHandler(analytics.client, (_event, error) => console.error(error))
-    : undefined;
-  createRoot(document.getElementById("root")!, report ? { onUncaughtError: report } : {}).render(
-    <AnalyticsProvider analytics={analytics}>
-      {host ? <App host={host} /> : <CantStart />}
-    </AnalyticsProvider>,
-  );
-});
+/** The app, on its host, reporting where the shell says. */
+const startApp = () =>
+  Promise.all([host(), loadAnalytics(analyticsContext())]).then(([host, analytics]) => {
+    const context = analyticsContext();
+    launched(analytics, context?.setup ?? null, context?.version ?? "");
+    // An error React can't render past goes to PostHog with its component stack, once (in place of
+    // React's own report, which autocapture would count again), and still to the console. What
+    // the window shows for it is what it showed before.
+    const report = analytics.client
+      ? setupReactErrorHandler(analytics.client, (_event, error) => console.error(error))
+      : undefined;
+    createRoot(document.getElementById("root")!, report ? { onUncaughtError: report } : {}).render(
+      <AnalyticsProvider analytics={analytics}>
+        {host ? <App host={host} /> : <CantStart />}
+      </AnalyticsProvider>,
+    );
+  });
+
+// In the desktop's hidden picture window the studio runs no app, reports nothing and keeps
+// nothing: it only draws comments' pictures as the shell asks (app/picture-host.ts).
+if (window.ponzuPictureHost) runPictureHost(window.ponzuPictureHost);
+else void startApp();
