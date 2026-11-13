@@ -778,17 +778,20 @@ test("a checkpoint says what its transcript held when it was taken, not when it 
   });
   await made.recover(null);
 
-  // Everything handed over is in the session: the API is not told, and counts what went out.
+  // Everything handed over is in the session: the newest taken in, said as a number.
   await made.save(id);
-  expect(api.checkpoints.at(-1)).not.toHaveProperty("heldThrough");
+  expect(api.checkpoints.at(-1)).toMatchObject({ turn: 1, heldThrough: 3 });
 
   // Event 5 is still on its way in as the archive is taken.
+  held.handedThrough(5);
   unsettled = [5];
   await writeFile(file, '{"turn":1}\n{"turn":2}\n');
   await made.save(id);
   expect(api.checkpoints.at(-1)).toMatchObject({ turn: 2, heldThrough: 4 });
 
-  // Event 6 goes into a new turn while the archive is on its way up: not in it.
+  // Event 5 went in, and event 6 goes into a new turn while the archive is on its way up: not
+  // in it.
+  held.settled(5);
   unsettled = [];
   api.delays.set("saveCheckpoint", 60);
   await writeFile(file, '{"turn":1}\n{"turn":2}\n{"turn":3}\n');

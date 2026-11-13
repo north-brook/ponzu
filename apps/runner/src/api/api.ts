@@ -141,9 +141,9 @@ export interface Checkpoint {
   /**
    * The newest event the session held when its archive was taken (`heldThrough`), read once the
    * archives are uploaded and just before the checkpoint is recorded: an event that went into
-   * the session while they were on their way lowers it. Undefined: the runner cannot say.
+   * the session while they were on their way lowers it. Given only with a transcript.
    */
-  heldThrough?: () => number | undefined;
+  heldThrough?: () => number;
 }
 
 /** The last checkpoint, with its archives' bytes. */

@@ -66,7 +66,8 @@ export interface CheckpointOptions {
   notify?(message: string): void;
   /**
    * Begins a mark of the events the session holds, as its archive is about to be taken
-   * (save/held.ts). Without it a checkpoint does not say, and the API counts what was delivered.
+   * (save/held.ts). Without it a checkpoint does not say, and the API counts what was delivered
+   * when it records the checkpoint.
    */
   held?(): HeldMark;
   /**

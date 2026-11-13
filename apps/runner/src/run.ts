@@ -1119,8 +1119,10 @@ export class Runner {
             // What a turn left unpushed before this start, or a restore brought back.
             void this.push("start");
           }
-          // A full page: there may be more behind it.
+          // A full page: there may be more behind it. Otherwise every event up to the head is
+          // held here or was delivered before this process: what a checkpoint holds goes from it.
           if (events.length >= CLAIM_LIMIT) this.claimAgain = true;
+          else this.heldEvents.handedThrough(seq);
         } catch (err) {
           if (fatal(err)) break;
           this.log(`claim failed: ${said(err)}`);

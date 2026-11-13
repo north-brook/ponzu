@@ -264,7 +264,8 @@ test("over HTTP the session names the boot, and a checkpoint says what it held o
   const none = { claudeSessionId: null, wipCommit: null, workspace: null };
   const session = new TextEncoder().encode("a gzipped transcript");
   await http.saveCheckpoint({ ...none, turn: 1, session, heldThrough: () => 7 });
-  await http.saveCheckpoint({ ...none, turn: 2, session, heldThrough: () => undefined });
+  // A checkpoint that does not say, as a runner from before it: nothing is sent.
+  await http.saveCheckpoint({ ...none, turn: 2, session });
   expect(fake.checkpoints).toEqual([
     { turn: 1, claudeSessionId: null, wipCommit: null, heldThrough: 7 },
     { turn: 2, claudeSessionId: null, wipCommit: null },

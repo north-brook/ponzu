@@ -312,3 +312,37 @@ test("a turn's usage totals go in its checkpoint's transcript archive", async ()
   expect(tar).toContain(USAGE_FILE);
   expect(tar).toContain(JSON.stringify({ sessionId: SESSION, totals: [opus] }));
 });
+
+test("an event delivered while the checkpoint's call is on its way is never counted as held", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const s = await start(api, d);
+  s.run.ready(SESSION);
+  // A turn whose message is in the session, and nothing else handed over: the mark has nothing
+  // below the newest event to stop at.
+  const first = api.push({ kind: "message", payload: { text: "One" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => api.delivered.includes(first.id));
+  await writeTranscript(d.config, ['{"turn":1}']);
+  s.run.say("m1", "Done.");
+  // The archive is up and what it held is read; the call that records it is slow.
+  api.recordDelayMs = 400;
+  s.run.end();
+  await until(() => api.calls.includes("saveCheckpoint"));
+  await Bun.sleep(30);
+  expect(api.checkpoints).toHaveLength(0);
+  // Meanwhile a new message is taken into a new turn and delivered.
+  const second = api.push({ kind: "message", payload: { text: "Two" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => api.delivered.includes(second.id));
+  expect(api.checkpoints).toHaveLength(0);
+
+  await until(() => api.checkpoints.length === 1);
+  // The checkpoint said what it held as a number, and the API's record stays below the event
+  // delivered while it was on its way, which the archive lacks.
+  expect(api.checkpoints[0]).toMatchObject({ turn: 1, heldThrough: first.seq });
+  expect(api.savedThrough).toBe(first.seq);
+  expect(api.savedThrough!).toBeLessThan(second.seq);
+});

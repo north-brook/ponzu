@@ -147,6 +147,17 @@ export class FakeRunnerApi {
   })[] = [];
   /** What each session call said, in order. */
   readonly sessionRequests: SessionRequest[] = [];
+  /**
+   * What the last recorded checkpoint holds, as the API's `canvas_runners.saved_through`: the
+   * smaller of what it said it held and the newest event delivered as it was recorded, or that
+   * newest event when it did not say. Null while nothing delivered.
+   */
+  savedThrough: number | null = null;
+  /**
+   * How long the checkpoint call itself is on its way after its archives are up and what it held
+   * is read: the API records it when this has passed.
+   */
+  recordDelayMs = 0;
   /** What runners reported restoring. */
   readonly restored: RestoredReport[] = [];
   /** How long each call of a kind takes before the fake looks at it: a slow API. */
@@ -323,12 +334,20 @@ export class FakeRunnerApi {
     await this.enter("saveCheckpoint", runner);
     const { session, workspace, heldThrough: held, ...marker } = point;
     const heldThrough = held?.();
+    if (this.recordDelayMs) await new Promise((resolve) => setTimeout(resolve, this.recordDelayMs));
     this.checkpoints.push({
       ...structuredClone(marker),
       ...(heldThrough === undefined ? {} : { heldThrough }),
     });
     if (!this.saved || this.saved.turn < point.turn) {
       const before = this.saved;
+      const delivered = this.events
+        .filter((e) => e.deliveredAt !== undefined)
+        .reduce<number | null>((most, e) => Math.max(most ?? 0, e.event.seq), null);
+      this.savedThrough =
+        delivered === null || heldThrough === undefined
+          ? delivered
+          : Math.min(heldThrough, delivered);
       const keepSession = !session && !!point.keep?.session && !!before;
       const keepWork = !workspace && !!point.keep?.workspace && !!before;
       this.saved = {

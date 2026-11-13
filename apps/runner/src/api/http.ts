@@ -161,7 +161,8 @@ export class HttpRunnerApi implements RunnerApi {
       });
     }
     // Read now, once the archives are up: what went into the session while they were on their
-    // way is not in them.
+    // way is not in them, and neither is what goes in while this call is on its way, which the
+    // number given keeps out.
     const heldThrough = point.heldThrough?.();
     const { saved } = await this.call<CheckpointResponse>("POST", "/v1/runner/checkpoint", {
       turn: point.turn,

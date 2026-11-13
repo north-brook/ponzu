@@ -1134,10 +1134,14 @@ stop (`ponzu-stop`, above):
   of the same size in the same clock tick is then saved by the checkpoint after it leaves those
   two seconds), and the runner logs `checkpoint_hash_skipped` with how many, their bytes and up
   to ten paths.
-- **What it holds.** With a transcript, the checkpoint names the newest event (`seq`) the session
-  held as the archive was taken (`heldThrough`): below the oldest event the runner was handed and
-  has not seen go into the session, and below any that goes in while the archive is packed or
-  uploaded. The API records it as `canvas_runners.saved_through`, never above the newest event
+- **What it holds.** With a transcript, the checkpoint always names, as a number, the newest
+  event (`seq`) the session held as the archive was taken (`heldThrough`): the newest it had
+  taken in then (the newest event this runner saw go in, or the canvas's head as of a claim that
+  was not full, since every event below it was handed over or delivered before), below the oldest
+  event the runner was handed and has not seen go into the session, and below any that goes in
+  while the archive is packed or uploaded. Always a number, because the API records the call when
+  it lands: an event that goes into the session while the call is on its way is not in the
+  archive. The API records it as `canvas_runners.saved_through`, never above the newest event
   delivered by then, which is what a recreate goes by ("How images roll out"). A checkpoint
   without it (one with no transcript of its own, or from a runner from before it) counts every
   event delivered when it is recorded, as before.
