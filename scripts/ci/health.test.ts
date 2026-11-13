@@ -183,16 +183,27 @@ describe("the protection bypass for a staged deployment", () => {
     expect(asked.every((u) => u === `${STAGED}/v1/health`)).toBe(true);
   });
 
-  test("the command fails, naming the secret, when it is missing", () => {
-    const run = Bun.spawnSync(
+  test("the command fails, naming the secret, when it is missing", async () => {
+    // Awaited, never spawnSync, which can lose the child's exit in a `bun test --parallel` worker.
+    const run = Bun.spawn(
       ["bun", join(ROOT, "scripts/ci/health.ts"), "--env", "production", "--commit", "abc"].concat([
         "--url",
         STAGED,
         "--bypass",
       ]),
-      { env: { PATH: process.env.PATH ?? "", VERCEL_AUTOMATION_BYPASS_SECRET: "" } },
+      {
+        env: { PATH: process.env.PATH ?? "", VERCEL_AUTOMATION_BYPASS_SECRET: "" },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
     );
-    expect(run.exitCode).toBe(1);
-    expect(run.stdout.toString()).toContain("VERCEL_AUTOMATION_BYPASS_SECRET is empty");
+    const [stdout, , code] = await Promise.all([
+      new Response(run.stdout).text(),
+      new Response(run.stderr).text(),
+      run.exited,
+    ]);
+    expect(code).toBe(1);
+    expect(stdout).toContain("VERCEL_AUTOMATION_BYPASS_SECRET is empty");
   });
 });

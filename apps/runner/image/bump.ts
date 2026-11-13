@@ -186,15 +186,36 @@ export function signatureProblem(status: string, fingerprint = SIGNING_KEY_FINGE
   return null;
 }
 
-/** Verifies `sig` over `data` with the key at `keyFile`, in a keyring of its own. */
-export function verifySignature(keyFile: string, data: string, sig: string): string | null {
+/**
+ * Verifies `sig` over `data` with the key at `keyFile`, in a keyring of its own. gpg is awaited,
+ * not run through spawnSync, which can lose a child's exit in a `bun test --parallel` worker.
+ */
+export async function verifySignature(
+  keyFile: string,
+  data: string,
+  sig: string,
+): Promise<string | null> {
   const home = mkdtempSync(join(tmpdir(), "ponzu-gpg-"));
   try {
-    const gpg = (args: string[]) =>
-      spawnSync("gpg", ["--homedir", home, "--batch", "--no-tty", ...args], { encoding: "utf8" });
-    const imported = gpg(["--import", keyFile]);
-    if (imported.error) return `gpg did not run: ${imported.error.message}`;
-    return signatureProblem(gpg(["--status-fd", "1", "--verify", sig, data]).stdout);
+    const gpg = async (args: string[]) => {
+      const child = Bun.spawn(["gpg", "--homedir", home, "--batch", "--no-tty", ...args], {
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [stdout] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      return stdout;
+    };
+    try {
+      await gpg(["--import", keyFile]);
+    } catch (error) {
+      return `gpg did not run: ${(error as Error).message}`;
+    }
+    return signatureProblem(await gpg(["--status-fd", "1", "--verify", sig, data]));
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -443,7 +464,7 @@ async function runApply(d: Discovery, dryRun: boolean): Promise<Applied> {
     const manifestBytes = await (
       await fetchOk(`${RELEASES}/${claude}/manifest.json`)
     ).arrayBuffer();
-    const problem = verifySignature(
+    const problem = await verifySignature(
       file("key.asc", await (await fetchOk(SIGNING_KEY_URL)).arrayBuffer()),
       file("manifest.json", manifestBytes),
       file(
