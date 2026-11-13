@@ -213,6 +213,8 @@ export const head = {
   prChecks: canvases.prChecks,
   prMergeable: canvases.prMergeable,
   prAutoMerge: canvases.prAutoMerge,
+  prLinkedCount: canvases.prLinkedCount,
+  prLinkedOpen: canvases.prLinkedOpen,
   lastActivityAt: canvases.lastActivityAt,
   assetKeyRotatedAt: canvases.assetKeyRotatedAt,
   driver: canvases.driver,

@@ -2,6 +2,7 @@ import {
   appendEvent,
   type BranchCanvas,
   findCanvasByBranch,
+  findLinkingCanvases,
   getUserByGithubId,
   type Json,
   listPullRequestCanvases,
@@ -18,7 +19,10 @@ import { queueWake } from "../sandboxes/wake.ts";
 /*
  * What GitHub says about a canvas's pull request. A canvas owns one branch of its repo
  * (`pz/<topic>`), and a pull request, check or review belongs to it when it is about that
- * branch, in that repo. One from a fork never is, whatever its branch is called.
+ * branch, in that repo. One from a fork never is, whatever its branch is called. A canvas may
+ * also link pull requests (docs/cloud.md, "Linked pull requests"): those are found by their repo
+ * and number, whatever branch or fork they are from, and are read again but never told to the
+ * canvas's agent, which didn't open them.
  */
 
 /** A pull request as a webhook names it. */
@@ -30,7 +34,7 @@ export interface PullRequestRef {
 
 /**
  * Read again, as the App, the pull requests a delivery is about, for each canvas that owns one's
- * branch, and record them (`refreshSoon`). A delivery says what was true when it was sent, and
+ * branch or links it, and record them (`refreshSoon`). A delivery says what was true when it was sent, and
  * GitHub sends them late and out of order, so what is recorded is GitHub's word now, never the
  * payload's.
  */
@@ -44,6 +48,10 @@ export async function refreshCanvases(
   for (const [branch, pullRequest] of branches) {
     const canvas = await findCanvasByBranch(deps.db, { githubRepoId, branch });
     if (canvas) requests.push({ canvasId: canvas.id, number: pullRequest.number });
+  }
+  const numbers = [...new Set(pullRequests.map((pr) => pr.number))];
+  for (const link of await findLinkingCanvases(deps.db, { githubRepoId, numbers })) {
+    requests.push({ canvasId: link.canvasId, repoId: link.repoId, number: link.number });
   }
   await refreshSoon(deps, requests);
 }

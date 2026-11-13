@@ -1,6 +1,6 @@
 {
-  "id": "49db1983-10b2-4a12-92a0-13a632effae9",
-  "prevId": "b279db66-7c53-4fe7-96af-6c87c185c3f0",
+  "id": "528de67e-cedc-4f70-b709-2452f72b1a0d",
+  "prevId": "455eca27-5f89-436c-8a76-973bc3c31ea4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3020,6 +3020,232 @@
       },
       "isRLSEnabled": false
     },
+    "public.canvas_pull_requests": {
+      "name": "canvas_pull_requests",
+      "schema": "",
+      "columns": {
+        "canvas_id": {
+          "name": "canvas_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repo_id": {
+          "name": "repo_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "github_repo_id": {
+          "name": "github_repo_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "number": {
+          "name": "number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checks": {
+          "name": "checks",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'none'"
+        },
+        "mergeable": {
+          "name": "mergeable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_merge": {
+          "name": "auto_merge",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linked_by_user_id": {
+          "name": "linked_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "linked_via": {
+          "name": "linked_via",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "linked_at": {
+          "name": "linked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "canvas_pull_requests_github_repo_id_number_idx": {
+          "name": "canvas_pull_requests_github_repo_id_number_idx",
+          "columns": [
+            {
+              "expression": "github_repo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "canvas_pull_requests_open_read_at_idx": {
+          "name": "canvas_pull_requests_open_read_at_idx",
+          "columns": [
+            {
+              "expression": "read_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"canvas_pull_requests\".\"finished_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "canvas_pull_requests_canvas_id_canvases_id_fk": {
+          "name": "canvas_pull_requests_canvas_id_canvases_id_fk",
+          "tableFrom": "canvas_pull_requests",
+          "tableTo": "canvases",
+          "columnsFrom": [
+            "canvas_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "canvas_pull_requests_repo_id_repos_id_fk": {
+          "name": "canvas_pull_requests_repo_id_repos_id_fk",
+          "tableFrom": "canvas_pull_requests",
+          "tableTo": "repos",
+          "columnsFrom": [
+            "repo_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "canvas_pull_requests_linked_by_user_id_users_id_fk": {
+          "name": "canvas_pull_requests_linked_by_user_id_users_id_fk",
+          "tableFrom": "canvas_pull_requests",
+          "tableTo": "users",
+          "columnsFrom": [
+            "linked_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "canvas_pull_requests_canvas_id_repo_id_number_pk": {
+          "name": "canvas_pull_requests_canvas_id_repo_id_number_pk",
+          "columns": [
+            "canvas_id",
+            "repo_id",
+            "number"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "canvas_pull_requests_state_check": {
+          "name": "canvas_pull_requests_state_check",
+          "value": "\"canvas_pull_requests\".\"state\" in ('draft', 'open', 'merged', 'closed')"
+        },
+        "canvas_pull_requests_checks_check": {
+          "name": "canvas_pull_requests_checks_check",
+          "value": "\"canvas_pull_requests\".\"checks\" in ('none', 'running', 'failing', 'passing')"
+        },
+        "canvas_pull_requests_source_check": {
+          "name": "canvas_pull_requests_source_check",
+          "value": "\"canvas_pull_requests\".\"source\" in ('person', 'agent')"
+        },
+        "canvas_pull_requests_number_check": {
+          "name": "canvas_pull_requests_number_check",
+          "value": "\"canvas_pull_requests\".\"number\" > 0"
+        },
+        "canvas_pull_requests_finished_at_check": {
+          "name": "canvas_pull_requests_finished_at_check",
+          "value": "(\"canvas_pull_requests\".\"state\" in ('merged', 'closed')) = (\"canvas_pull_requests\".\"finished_at\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.canvas_reads": {
       "name": "canvas_reads",
       "schema": "",
@@ -3392,6 +3618,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "pr_linked_count": {
+          "name": "pr_linked_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "pr_linked_open": {
+          "name": "pr_linked_open",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "agent_state": {
           "name": "agent_state",

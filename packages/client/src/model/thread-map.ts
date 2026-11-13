@@ -188,6 +188,8 @@ export function shownItems(
     const notice = item.payload;
     if (notice.type === "question") return !openAsks.has(notice.questionId);
     if (notice.type === "pull_request") {
+      // A linked pull request's: the agent's own lines are about the branch's alone.
+      if (notice.repository) return true;
       const moment = notice.state === "merged" ? "merged" : "opened";
       return notice.state === "closed" || !byAgent.has(`${notice.number}:${moment}`);
     }
@@ -205,7 +207,8 @@ export function branchMoment(items: readonly RunnerItem[]): number {
     const moved =
       (item.kind === "tool" && !item.streaming) ||
       (item.kind === "notice" &&
-        (item.payload.type === "pull_request" || item.payload.type === "pull_request_agent"));
+        ((item.payload.type === "pull_request" && !item.payload.repository) ||
+          item.payload.type === "pull_request_agent"));
     if (moved && item.seq > at) at = item.seq;
   }
   return at;

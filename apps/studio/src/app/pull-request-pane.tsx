@@ -1,10 +1,15 @@
 import type { PullRequestTab } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import { useEffect, useMemo } from "react";
-import { type PullRequestTabState, PullRequestView } from "../cloud/pr-tab/pull-request-view.tsx";
+import {
+  LinkedPullRequestsView,
+  type PullRequestTabState,
+  PullRequestView,
+} from "../cloud/pr-tab/pull-request-view.tsx";
 import { type OpenCanvas, useAccess } from "./canvas.tsx";
 import { BypassMergeDialog, ClosePullRequestDialog } from "./confirm-dialogs.tsx";
 import type { Host } from "./host.ts";
+import { useLinkedPullRequests } from "./linked-pull-requests.ts";
 import { prSummary, toPullRequestDetail } from "./pull-request-map.ts";
 import { opensWith, tabMenu } from "./pull-request-store.ts";
 import { useSnapshot } from "./use-snapshot.ts";
@@ -26,8 +31,16 @@ export function PullRequestPane({
   const head = useLiveQuery("canvas.head", { canvasId: open.id }).rows?.[0];
   const summary = prSummary(head);
   const store = open.pullRequest;
-  // Closing and turning auto-merge off steer the canvas, as the chrome's action does.
+  // Closing and turning auto-merge off steer the canvas, as the chrome's action does; so do
+  // linking and unlinking.
   const canAct = useAccess(open) === "write";
+  const links = useLinkedPullRequests(open.id, head, { always: true });
+  const linked = {
+    linked: links.linked,
+    loading: links.loading,
+    onLink: canAct ? links.link : null,
+    onUnlink: canAct ? links.unlink : null,
+  };
 
   // Opening the tab is looking at it now: GitHub's word as of this moment.
   useEffect(() => store.refresh(), [store]);
@@ -50,7 +63,9 @@ export function PullRequestPane({
     : summary
       ? { kind: pull.status === "error" ? "error" : "loading", summary }
       : null;
-  if (!state) return null;
+  if (!state) {
+    return <LinkedPullRequestsView linked={linked} onOpenLink={(url) => host.openExternal(url)} />;
+  }
   return (
     <PullRequestView
       state={state}
@@ -60,6 +75,7 @@ export function PullRequestPane({
       onLoadDiff={store.loadDiff}
       summary={pull.tab ? opensWith(pull.tab) : null}
       menu={canAct ? tabMenu(pull, store) : null}
+      linked={linked}
     />
   );
 }

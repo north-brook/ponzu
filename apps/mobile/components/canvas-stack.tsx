@@ -24,6 +24,7 @@ export function CanvasStack({
   bottom,
   right,
   prNumber,
+  linkedCount = 0,
   chat,
   onPullRequest,
   onComment,
@@ -35,6 +36,8 @@ export function CanvasStack({
   bottom: number;
   right: number;
   prNumber: number | null;
+  /** How many pull requests the canvas links besides its branch's. */
+  linkedCount?: number;
   chat: RailSignal;
   onPullRequest?: () => void;
   onComment?: () => void;
@@ -55,10 +58,43 @@ export function CanvasStack({
       pointerEvents="box-none"
       style={{ position: "absolute", right, bottom, gap: 12, alignItems: "center", zIndex: 8 }}
     >
-      {prNumber !== null && (
-        <Control testID="stack-pr" label={PR.button(prNumber)} onPress={onPullRequest}>
+      {(prNumber !== null || linkedCount > 0) && (
+        <Control
+          testID="stack-pr"
+          label={
+            linkedCount > 0 ? PR.buttonWithLinked(prNumber, linkedCount) : PR.button(prNumber ?? 0)
+          }
+          onPress={onPullRequest}
+        >
           <PullRequestIcon color={color.ink} />
         </Control>
+      )}
+      {linkedCount > 0 && (prNumber !== null || linkedCount > 1) && (
+        // How many pull requests in all, on the button's top-right edge, as Chat's count.
+        <View
+          testID="stack-pr-count"
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{
+            position: "absolute",
+            right: -4,
+            top: -4,
+            minWidth: 20,
+            height: 20,
+            borderRadius: 10,
+            paddingHorizontal: 5,
+            backgroundColor: color.chip,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{ fontFamily: font.sans, fontWeight: "700", fontSize: 12, color: color.ink }}
+          >
+            {linkedCount + (prNumber === null ? 0 : 1)}
+          </Text>
+        </View>
       )}
       <Control
         testID="stack-comment"

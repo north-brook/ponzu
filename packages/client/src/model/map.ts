@@ -181,6 +181,8 @@ export function toSummary(
             checks: row.prChecks,
             mergeable: null,
             autoMerge: false,
+            linkedCount: row.prLinkedCount,
+            linkedOpen: row.prLinkedOpen,
           }
         : null,
     hereNow: context.hereNow ?? [],

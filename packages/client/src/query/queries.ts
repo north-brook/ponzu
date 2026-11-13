@@ -109,6 +109,18 @@ export function ponzuQueries(api: Api) {
         gcTime: 30 * 60_000,
         refetchOnWindowFocus: false,
       }),
+    /**
+     * The pull requests the canvas links, beside its branch's summary. Read again when the head's
+     * `prLinkedCount` or `prLinkedOpen` moves; kept like the tab.
+     */
+    canvasPullRequests: (canvasId: string) =>
+      queryOptions({
+        queryKey: queryKeys.canvasPullRequests(canvasId),
+        queryFn: () => api.canvases.pullRequests.list(canvasId),
+        staleTime: 0,
+        gcTime: 30 * 60_000,
+        refetchOnWindowFocus: false,
+      }),
     /** One changed file and its diff, at the commit the tab shows: the same commit, the same diff. */
     pullRequestFile: (canvasId: string, path: string, headSha: string | null) =>
       queryOptions({

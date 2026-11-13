@@ -514,7 +514,8 @@ it. Each op is stored with its inverse.
 
 ## The sandbox
 
-One canvas owns one sandbox, one Claude session, one branch and at most one pull request. A
+One canvas owns one sandbox, one Claude session, one branch and at most one pull request from
+that branch, and may link others ("Linked pull requests"). A
 sandbox is a [Vercel Sandbox](https://vercel.com/docs/sandbox): a Firecracker VM, 2 vCPUs and
 4 GB, in `iad1` beside the API's functions, booted from Ponzu's own image ("The image"), with one
 public `https://<sub>.vercel.run` address for the runner's port. It is **persistent**: a stop
@@ -585,7 +586,7 @@ Vercel in memory with a clock the test controls. Nothing else imports the SDK
 | Run | Ops go to the API as they happen. Commits go to the branch as they happen, and at the end of each turn the runner pushes whatever the agent left unpushed ("Git"). After each turn the runner saves a checkpoint: the session's transcript and the checkout's uncommitted work ("Saving the sandbox"). |
 | Sleep | Five minutes after the last activity the API runs `ponzu-stop` (the runner finishes the turn's notice, flushes, reports, checkpoints and closes Claude Code; then `sync`), then stops the session, which snapshots the disk. |
 | Wake | A message, answer or comment wakes it: `up()` resumes the snapshot on a new VM (wake to the runner's `/health` in 2 to 3 seconds) and the API runs `ponzu-start` with the runner's environment. A disk behind the last checkpoint is restored from it; then the runner resumes the Claude session, picks up a turn the last process left unfinished, and takes its pending events. |
-| Settle | On merge the canvas settles and its sandbox is retired: stopped, deleted at Vercel with its snapshots, and its row deleted. |
+| Settle | Once every pull request of the canvas (its branch's and those it links) is merged or closed, at least one merged, the canvas settles ("Settling") and its sandbox is retired: stopped, deleted at Vercel with its snapshots, and its row deleted. |
 | Fresh disk | A snapshot that expired (30 days after its last use; Vercel removes the sandbox 14 days after that), a new image, or a sandbox deleted at Vercel: the next wake boots an empty disk, and the runner rebuilds from the branch and restores the last checkpoint. The conversation and the uncommitted work come back; gitignored files do not. |
 
 Waking is a job. The API records it in `jobs`, starts it with `waitUntil`, and a
@@ -2157,8 +2158,8 @@ tools always find their routes; an API that answers one 404 is said as a refusal
 
 ## Pull requests
 
-A canvas has at most one open pull request, from its branch into its repo's default branch.
-GitHub holds it. The canvas's row keeps the little the sidebar and the chrome show (number,
+A canvas has at most one open pull request, from its branch into its repo's default branch,
+and may link others ("Linked pull requests", below). GitHub holds it. The canvas's row keeps the little the sidebar and the chrome show (number,
 state, the checks rolled up, whether it can merge, auto-merge), clients watch that live, and the
 pull request tab reads the rest from GitHub when it opens. The code is `apps/api/src/
 pull-requests/` and `deps/github-pull-requests.ts`.
@@ -2312,8 +2313,9 @@ branch is the canvas's. One from a fork never is, and nor is one someone pointed
 base: it merges nothing into the default branch, so it neither shows nor settles the canvas.
 Every path that reads one (the tab, an action, a webhook) records what it read through one
 function, `recordRead`: the row, the thread's notice (written once, by an id of its own), and,
-on a merge, the canvas settling. So a merge from the button and GitHub's webhook for it settle
-the canvas once, whichever comes first, and the sandbox's teardown follows from the settled
+when the read moved it into merged or closed, the canvas settling if that left all of its pull
+requests done ("Settling"). So a merge from the button and GitHub's webhook for it settle the
+canvas once, whichever comes first, and the sandbox's teardown follows from the settled
 state. Reads finish out of order and a check finishing leaves GitHub's `updated_at` alone, so a
 read is recorded only over one that began no later (`canvases.pr_read_at`), or over an older pull
 request; a merge is the last word on its pull request, and a canvas reopened after its merge
@@ -2414,7 +2416,9 @@ minute's jobs make. It leaves out a canvas with a read already waiting, one alre
 current fifteen-minute window (a quiet pull request's read changes nothing, so it stays among the
 oldest), and one whose workspace has no working installation. That is at most 20 GraphQL points
 a minute across every installation; a merge on GitHub whose webhooks were all lost settles its
-canvas within about sixteen minutes. Each run that records reads logs `pr_swept` with the count.
+canvas within about sixteen minutes. Linked pull requests that are still open are swept in the
+same budget, the oldest read of both kinds first (keyed `sweep:link:<canvas>:<repo>:<number>:<window>`).
+Each run that records reads logs `pr_swept` with the count.
 
 **Two at once.** A person pressing Merge while the agent merges (or two people, or auto-merge
 landing first) go to GitHub with the same commit, and GitHub merges once. The other's merge is
@@ -2422,6 +2426,99 @@ refused, and the action reads the pull request again: merged, it answers the tab
 person's client shows it merged; the agent's tool says it was already merged, by whom, and that it
 did not merge it). Everything else is already idempotent: opening answers the one open, ready
 answers a pull request already ready, auto-merge one that has it on.
+
+### Linked pull requests
+
+A canvas's work does not always land through its own branch: an agent working in a local
+checkout (Claude Code, Codex, through the MCP), or a person, opens pull requests elsewhere,
+in the canvas's repo or another repo of its workspace. Those can be **linked** to the canvas.
+The branch's own pull request stays on `canvases.pr_*` exactly as above, and is never a link.
+Links are rows of `canvas_pull_requests` (`packages/db/src/queries/linked-pull-requests.ts`):
+the canvas, the repo, the number, and what the last read of GitHub said (title, link, state,
+the checks rolled up, whether it can merge, auto-merge, GitHub's `updatedAt`, when the read
+began), when it was first seen merged or closed (`finished_at`), and who linked it: `person`,
+or `agent` with the agent's name (`linked_via`, "Claude Code"), and the person whose grant it
+used. The canvas keeps how many it links and how many of those are still open
+(`pr_linked_count`, `pr_linked_open`), kept in step by the link queries as `needs_you_count` is
+by the question queries, since a live query can't count; the head carries them, and clients
+read `linkedCount` and `linkedOpen` from it.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/canvases/:id/pull-requests` | none | `{ branch, linked }` |
+| POST | `/v1/canvases/:id/pull-requests` | `{ urls }` (1 to 20) | `{ results }`, one per URL, in order |
+| DELETE | `/v1/canvases/:id/pull-requests/:repoId/:number` | none | 204; 404 when it isn't linked |
+
+Listing takes read access to the canvas; linking and unlinking take write access, as steering
+it does. `branch` is the branch's pull request as the head has it, or null; each of `linked` is
+`{ repoId, repository, number, title, url, state, checks, mergeable, autoMerge, source, via,
+linkedAt, linkedBy }`, the first linked first. The person's route and the MCP's
+`link_pull_request(s)` tools share one function, `linkPullRequests`
+(`apps/api/src/pull-requests/links.ts`), which takes a URL or `{ repository, number }` and
+answers, for each, `linked` (with the pull request as read), `alreadyLinked` (with
+`branch: true` when it is the canvas's own, which is never written as a link), or a refusal with
+a code and a sentence written for an agent to act on:
+
+| Code | When | Says |
+|---|---|---|
+| `invalid_url` | not a GitHub pull request link | "That isn't a GitHub pull request link. Pass one like https://github.com/owner/repo/pull/12." |
+| `repo_not_in_workspace` | a repo outside the canvas's workspace, one the App lost, or the App suspended | "Ponzu's GitHub App isn't installed on {owner/repo} for {workspace}, so Ponzu can't follow that pull request. Link a pull request in one of {workspace}'s repositories, or ask the person to add {owner/repo} to Ponzu on GitHub." |
+| `forbidden` | GitHub says the person can't read the repo (`repoPermission`, as every access question) | "{person} can't read {owner/repo} on GitHub, so Ponzu won't link it." |
+| `not_found` | GitHub has no such pull request | "GitHub has no pull request #{n} in {owner/repo}. Check the number and link it again." |
+| `too_many_pull_requests` | the canvas links 20 already | "This canvas already links 20 pull requests, the most it can. Unlink one it no longer needs, then link this one." |
+
+The pull request is read as the App by its number (`readPullRequestByNumber`, one GraphQL query,
+`LINKED_PULL_REQUEST_QUERY`: state, draft, title, link, the checks rollup, mergeable,
+auto-merge, `updatedAt`, its head and base) and recorded. A pull request from the canvas's branch
+into its default branch is the canvas's own even before a read of the branch recorded it. One
+already merged or closed is recorded finished and counts toward "every one finished" later, but
+linking it never settles the canvas by itself. Each link writes a thread notice
+`{ type: "pull_request_linked", repository, number, url, title, state, via }`, id
+`ti_prl-<repoId>-<number>-<linkedAt ms>`. The count of 20 is read in the same statement as the
+insert, without a lock, so two links at the same moment can go one past it. Unlinking
+(`unlinkPullRequests`, or the DELETE by the list's own key) never settles or reopens the canvas.
+
+**Keeping links in step.** The same webhooks that read the branch's pull request (`pull_request`,
+`check_run`, `check_suite`, `pull_request_review`) read again each link of the pull requests
+they name, found by the repo's GitHub id and the number (any head, forks included: a link is the
+pull request its URL names), in the same two-second windows, as a `pull_request.refresh` job keyed
+`link:<canvas>:<repo>:<number>@<time>`. Nothing about a linked pull request reaches the canvas's
+agent: it didn't open it. A push to the default branch reads only the canvases' own, not links,
+so a link's mergeability can lag until its next webhook or the sweep. `recordLinkedRead` keeps
+only the newest read (the same rule as `pr_read_at`; a merge is the last word), sets
+`finished_at` the first time it is merged or closed (and clears it if reopened), and writes a
+`pull_request` notice with `repository` set, id `ti_pr-<repoId>-<number>-<moment>`, only for
+merged and closed (its opening was the link's own notice). A link is read once, not again while
+GitHub works out whether it can merge, as the branch's is. Lost webhooks are the sweep's ("Lost
+webhooks", above).
+
+**In the apps.** The Mac's pull request mark says `#12 +2`: the branch's number and how many
+more the canvas links; a canvas with none from its branch shows the first one it links, with its
+state and checks, and how many more. The pull request tab keeps the branch's view and adds
+"Linked pull requests" under its details (or alone, when there is no branch pull request): each
+one's state, `owner/repo#n`, title, checks, who linked it (their picture, or the agent's mark,
+with its name), Open on GitHub, and, for someone who can steer the canvas, a menu to unlink it and
+a field to paste a link into, which shows a refusal's sentence under it. The list is read when
+the head's `prLinkedCount` or `prLinkedOpen` moves (`canvasPullRequests` in
+`@ponzu/client/query`). The iPhone's pull request sheet lists them read-only, each opening on
+GitHub; the stack's button shows how many pull requests the canvas has in all once it links any.
+Not proven on a device or in the desktop's end-to-end runs: unit tests and typechecks only.
+
+### Settling
+
+A canvas settles when its work has landed: it has at least one pull request (its branch's or a
+linked one), its branch's (if any) and every linked one is merged or closed, and at least one of
+them merged. `settleWhenDone` checks all of it in one statement, so two reads finishing at once
+settle it once, and it is asked only by a record that moves a pull request into merged or
+closed (`recordRead` for the branch's, `recordLinkedRead` for a link), never by linking or
+unlinking. So:
+
+- the branch's pull request merging while a link is open doesn't settle it; the link merging
+  then does;
+- everything closed with none merged never settles it, as a closed pull request never did;
+- a canvas a person reopened stays open until another pull request moves into merged or closed.
+
+The sandbox's teardown still follows from the settled state ("The sandbox", Settle).
 
 ### The agent's pull request
 

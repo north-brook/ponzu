@@ -46,25 +46,79 @@ function Labelled({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const PRS: [string, PullRequestSummary][] = [
-  ["Draft", { number: 412, state: "draft", checks: "none", mergeable: null, autoMerge: false }],
+  [
+    "Draft",
+    {
+      number: 412,
+      state: "draft",
+      checks: "none",
+      mergeable: null,
+      autoMerge: false,
+      linkedCount: 0,
+      linkedOpen: 0,
+    },
+  ],
   [
     "Checks running",
-    { number: 412, state: "open", checks: "running", mergeable: null, autoMerge: false },
+    {
+      number: 412,
+      state: "open",
+      checks: "running",
+      mergeable: null,
+      autoMerge: false,
+      linkedCount: 0,
+      linkedOpen: 0,
+    },
   ],
   [
     "A check failing",
-    { number: 412, state: "open", checks: "failing", mergeable: true, autoMerge: false },
+    {
+      number: 412,
+      state: "open",
+      checks: "failing",
+      mergeable: true,
+      autoMerge: false,
+      linkedCount: 0,
+      linkedOpen: 0,
+    },
   ],
   [
     "Conflicts",
-    { number: 412, state: "open", checks: "passing", mergeable: false, autoMerge: false },
+    {
+      number: 412,
+      state: "open",
+      checks: "passing",
+      mergeable: false,
+      autoMerge: false,
+      linkedCount: 0,
+      linkedOpen: 0,
+    },
   ],
   ["Ready", f.pr412],
   [
     "Merged",
-    { number: 412, state: "merged", checks: "passing", mergeable: true, autoMerge: false },
+    {
+      number: 412,
+      state: "merged",
+      checks: "passing",
+      mergeable: true,
+      autoMerge: false,
+      linkedCount: 0,
+      linkedOpen: 0,
+    },
   ],
-  ["Closed", { number: 412, state: "closed", checks: "none", mergeable: null, autoMerge: false }],
+  [
+    "Closed",
+    {
+      number: 412,
+      state: "closed",
+      checks: "none",
+      mergeable: null,
+      autoMerge: false,
+      linkedCount: 0,
+      linkedOpen: 0,
+    },
+  ],
 ];
 
 const ACTIONS: NextAction[] = [

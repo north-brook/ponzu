@@ -29,6 +29,8 @@ export const queryKeys = {
   question: (canvasId: string, questionId: string) =>
     ["ponzu", "canvas", canvasId, "question", questionId] as const,
   pullRequest: (canvasId: string) => ["ponzu", "canvas", canvasId, "pull-request"] as const,
+  /** The branch's pull request beside those the canvas links. */
+  canvasPullRequests: (canvasId: string) => ["ponzu", "canvas", canvasId, "pull-requests"] as const,
   /** Who can open a canvas, for Share. */
   canvasPeople: (canvasId: string) => ["ponzu", "canvas", canvasId, "people"] as const,
   /** One changed file's diff at a commit: a push makes another, so the commit is the key. */

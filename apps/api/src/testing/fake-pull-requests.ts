@@ -755,6 +755,33 @@ export class FakePullRequests {
         ...(errors.length > 0 ? { errors } : {}),
       });
     }
+    if (operation === "LinkedPullRequest") {
+      if (
+        !this.#may(caller, "pull_requests", READ_PULLS) ||
+        !this.#may(caller, "contents", READ_PULLS)
+      ) {
+        return error("FORBIDDEN", "Resource not accessible by integration");
+      }
+      const repo = find(`${variables.owner}/${variables.name}`);
+      if (!repo || !this.#reaches(caller, repo))
+        return error("NOT_FOUND", "Could not resolve to a Repository.");
+      const pull = this.#repo(repo).pulls.find(
+        (candidate) => candidate.number === variables.number,
+      );
+      if (!pull) {
+        return Response.json({
+          data: { repository: { pullRequest: null } },
+          errors: [
+            {
+              type: "NOT_FOUND",
+              path: ["repository", "pullRequest"],
+              message: "Could not resolve to a PullRequest.",
+            },
+          ],
+        });
+      }
+      return Response.json({ data: { repository: { pullRequest: this.#pullJson(repo, pull) } } });
+    }
     if (caller.kind !== "user") return error("FORBIDDEN", "Resource not accessible by integration");
     const found = this.#byNodeId(String(variables.id), find);
     if (!found) return error("NOT_FOUND", "Could not resolve to a node.");

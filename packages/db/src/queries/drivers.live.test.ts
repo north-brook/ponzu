@@ -35,6 +35,7 @@ import {
   releaseGithubTokenRefresh,
   saveGithubUserToken,
 } from "./github-tokens.ts";
+import { settleWhenDone } from "./linked-pull-requests.ts";
 import {
   countJoinedMembers,
   ensureWorkspaceAdmin,
@@ -602,7 +603,10 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       updatedAt,
       readAt: new Date(readAt.getTime() + 2),
     });
-    expect(settled).toMatchObject({ status: "settled", prMergeable: true });
+    expect(settled).toMatchObject({ finished: true, prMergeable: true });
+    expect(await settleWhenDone(db, onBranch.id, new Date(readAt.getTime() + 2))).toMatchObject({
+      status: "settled",
+    });
     expect(await getPullRequestContext(db, onBranch.id)).toMatchObject({
       canvas: { prSummary: "Live.", prState: "merged" },
       repo: { githubRepoId: repo.githubRepoId, private: true },

@@ -175,6 +175,25 @@ export interface GithubPullRequestRead {
   pullRequest: GithubPullRequest | null;
 }
 
+/**
+ * A pull request linked to a canvas, as one read by its number finds it (docs/cloud.md, "Linked
+ * pull requests"): the little a link keeps, and where it merges from and into.
+ */
+export interface GithubLinkedPullRequest {
+  number: number;
+  url: string;
+  title: string;
+  state: PrState;
+  head: { ref: string; sha: string; repositoryId: number | null };
+  base: { ref: string };
+  /** The rollup of check runs and commit statuses at its head. */
+  checks: PrChecks;
+  /** Null while GitHub works it out. */
+  mergeable: boolean | null;
+  autoMerge: boolean;
+  updatedAt: Date;
+}
+
 export type OpenResult =
   | { kind: "opened"; number: number }
   /** One is already open from this branch. */
@@ -228,6 +247,14 @@ export interface GithubPullRequests {
     repo: PullRequestRepo,
     query: { branch: string; defaultBranch: string; number: number | null },
   ): Promise<GithubPullRequestRead>;
+  /**
+   * As the App: one pull request of the repo by its number, whatever branch or fork it is from,
+   * or null when the repo has no such pull request.
+   */
+  readPullRequestByNumber(
+    repo: PullRequestRepo,
+    number: number,
+  ): Promise<GithubLinkedPullRequest | null>;
   /** As the person, so that they are its author. */
   openPullRequest(
     userToken: string,
@@ -340,6 +367,19 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
   }
 }`;
 
+/** A linked pull request by its number: what a link keeps, and no more (`readPullRequestByNumber`). */
+export const LINKED_PULL_REQUEST_QUERY = `query LinkedPullRequest($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      number url title state isDraft updatedAt mergeable
+      headRefName headRefOid baseRefName
+      headRepository { databaseId }
+      autoMergeRequest { mergeMethod }
+      head: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+    }
+  }
+}`;
+
 /** The tab query's merge queue fields, which GitHub may refuse alone (`readPullRequest`). */
 const QUEUE_FIELDS = ["isMergeQueueEnabled", "mergeQueueEntry"];
 
@@ -409,6 +449,27 @@ export function createPullRequestCalls({ octokit, asApp }: GithubTransport): Git
           });
         }
         return toRead(data.repository);
+      });
+    },
+
+    readPullRequestByNumber(repo, number) {
+      const { owner, repo: name } = repoParams(repo.repository.fullName);
+      return asApp(target(repo), READ, async (token) => {
+        const { data, errors } = await graphql(octokit, "app", token, LINKED_PULL_REQUEST_QUERY, {
+          owner,
+          name,
+          number,
+        });
+        const noSuchNumber = (error: { type?: string; path?: unknown[] }) =>
+          error.type === "NOT_FOUND" && error.path?.[1] === "pullRequest";
+        if (!data?.repository || !errors.every(noSuchNumber)) {
+          const notFound = errors.some((error) => error.type === "NOT_FOUND");
+          throw new UpstreamError("github", "the linked pull request query was refused", {
+            status: notFound ? 404 : 502,
+          });
+        }
+        const pr = data.repository.pullRequest;
+        return pr ? toLinked(pr) : null;
       });
     },
 
@@ -615,6 +676,31 @@ function toRead(repository: any): GithubPullRequestRead {
   };
 }
 
+function stateOf(pr: any): PrState {
+  if (pr.state === "MERGED") return "merged";
+  if (pr.state === "CLOSED") return "closed";
+  return pr.isDraft ? "draft" : "open";
+}
+
+function toLinked(pr: any): GithubLinkedPullRequest {
+  return {
+    number: pr.number,
+    url: pr.url,
+    title: pr.title,
+    state: stateOf(pr),
+    head: {
+      ref: pr.headRefName,
+      sha: pr.headRefOid,
+      repositoryId: pr.headRepository?.databaseId ?? null,
+    },
+    base: { ref: pr.baseRefName },
+    checks: rollupState(pr.head?.nodes[0]?.commit.statusCheckRollup?.state ?? null),
+    mergeable: pr.mergeable === "MERGEABLE" ? true : pr.mergeable === "CONFLICTING" ? false : null,
+    autoMerge: pr.autoMergeRequest !== null && pr.autoMergeRequest !== undefined,
+    updatedAt: new Date(pr.updatedAt),
+  };
+}
+
 function toPullRequest(pr: any): GithubPullRequest {
   const rollup = pr.head.nodes[0]?.commit.statusCheckRollup ?? null;
   const reviews: any[] = pr.reviews.nodes;
@@ -649,14 +735,7 @@ function toPullRequest(pr: any): GithubPullRequest {
     title: pr.title,
     // Whole, since Ponzu writes its part of it back (at most 65,536 characters on GitHub).
     body: pr.body ?? "",
-    state:
-      pr.state === "MERGED"
-        ? "merged"
-        : pr.state === "CLOSED"
-          ? "closed"
-          : pr.isDraft
-            ? "draft"
-            : "open",
+    state: stateOf(pr),
     head: {
       ref: pr.headRefName,
       sha: pr.headRefOid,

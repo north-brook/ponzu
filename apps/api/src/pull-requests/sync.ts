@@ -1,11 +1,17 @@
 import {
   appendThreadItemOnce,
   type Canvas,
+  getLinkingCanvas,
   getPullRequestContext,
+  type LinkedPullRequestRow,
+  type LinkKey,
   type PullRequestContext,
+  recordLinkedRead as recordLinkedReadRow,
   recordPullRequestRead,
+  settleWhenDone,
 } from "@ponzu/db";
 import type {
+  GithubLinkedPullRequest,
   GithubPullRequest,
   GithubPullRequestRead,
   PullRequestRepo,
@@ -18,8 +24,10 @@ import { type NotifyDeps, notify } from "../notifications/notify.ts";
 /*
  * Keeping a canvas's row in step with its pull request on GitHub. Every path that learns
  * something about one (the tab being opened, an action taken, a webhook) reads GitHub as the
- * App and hands what it read to `recordRead`, the one place the row and the thread hear of it:
- * a merge settles the canvas there whichever path saw it first.
+ * App and hands what it read to `recordRead`, the one place the row and the thread hear of it.
+ * Linked pull requests are kept the same way, through `recordLinkedRead`. Both settle the canvas
+ * (`settleWhenDone`) when they move a pull request into merged or closed and that leaves every
+ * one of the canvas's done, whichever path saw it first.
  */
 
 /**
@@ -167,6 +175,7 @@ export async function recordRead(
     readAt,
   });
   if (!canvas) return null;
+  const settled = canvas.finished ? await settleWhenDone(db, canvasId, readAt) : null;
   const firstSeen = await appendThreadItemOnce(db, {
     id: noticeId(number, state),
     canvasId,
@@ -194,7 +203,83 @@ export async function recordRead(
       authorLogin: loginOrNull(pullRequest.author?.login),
     });
   }
-  return canvas;
+  const { finished: _finished, ...recorded } = canvas;
+  return settled ?? recorded;
+}
+
+/**
+ * Record what a read found about a linked pull request (docs/cloud.md, "Linked pull requests"):
+ * its row, the thread's notice the first time it is seen merged or closed, and, when it moved into
+ * merged or closed, the canvas settling if that left all of its pull requests done. Nothing
+ * reaches the canvas's agent: it didn't open this one. Answers the link as it now stands, or null
+ * when the read was not applied (a later read was recorded first, or the row says this already).
+ */
+export async function recordLinkedRead(
+  deps: Pick<PullRequestDeps, "db" | "log">,
+  key: LinkKey & { repository: string },
+  pullRequest: GithubLinkedPullRequest,
+  readAt: Date,
+): Promise<LinkedPullRequestRow | null> {
+  const { db, log } = deps;
+  const { number, state, url, title } = pullRequest;
+  const recorded = await recordLinkedReadRow(db, {
+    canvasId: key.canvasId,
+    repoId: key.repoId,
+    number: key.number,
+    title,
+    url,
+    state,
+    checks: pullRequest.checks,
+    mergeable: pullRequest.mergeable,
+    autoMerge: pullRequest.autoMerge,
+    updatedAt: pullRequest.updatedAt,
+    readAt,
+  });
+  if (!recorded) return null;
+  if (recorded.finished) await settleWhenDone(db, key.canvasId, readAt);
+  // Its opening was the link's own notice (`pull_request_linked`); only its end is said again.
+  if (state === "merged" || state === "closed") {
+    await appendThreadItemOnce(db, {
+      id: linkedNoticeId(key.repoId, number, state),
+      canvasId: key.canvasId,
+      kind: "notice",
+      payload: { type: "pull_request", repository: key.repository, number, url, title, state },
+    });
+  }
+  log.info("linked_pull_request_recorded", { canvasId: key.canvasId, number, state });
+  return recorded.link;
+}
+
+/**
+ * Read a linked pull request from GitHub and record it. Nothing happens for a link that is gone,
+ * a workspace the App is off, or a pull request GitHub no longer has.
+ */
+export async function refreshLinkedPullRequest(deps: PullRequestDeps, key: LinkKey): Promise<void> {
+  const link = await getLinkingCanvas(deps.db, key);
+  if (!link || link.installationId === null || link.suspendedAt !== null) return;
+  const readAt = new Date(deps.clock.now());
+  const pullRequest = await deps.github.readPullRequestByNumber(
+    {
+      installationId: link.installationId,
+      repository: { id: link.repo.githubRepoId, fullName: link.repo.fullName },
+    },
+    key.number,
+  );
+  if (!pullRequest) return;
+  await recordLinkedRead(deps, { ...key, repository: link.repo.fullName }, pullRequest, readAt);
+}
+
+/**
+ * The id of a linked pull request's notice for reaching a state: its repo in it too, so it can't
+ * be the branch's own (`noticeId`), nor another repo's of the same number.
+ */
+export function linkedNoticeId(
+  repoId: string,
+  number: number,
+  state: GithubLinkedPullRequest["state"],
+): string {
+  const moment = state === "draft" || state === "open" ? "opened" : state;
+  return `ti_pr-${repoId}-${number}-${moment}`;
 }
 
 /**

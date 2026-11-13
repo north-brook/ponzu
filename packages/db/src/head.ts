@@ -25,6 +25,9 @@ export interface CanvasHead {
   prChecks: PrChecks;
   prMergeable: boolean | null;
   prAutoMerge: boolean;
+  /** How many pull requests the canvas links, and how many of them are not merged or closed. */
+  prLinkedCount: number;
+  prLinkedOpen: number;
   lastActivityAt: Date;
   /**
    * When the canvas's file links were last reset; null while they never were. When it moves,
@@ -59,6 +62,8 @@ export const CANVAS_HEAD_COLUMNS = [
   "pr_checks",
   "pr_mergeable",
   "pr_auto_merge",
+  "pr_linked_count",
+  "pr_linked_open",
   "last_activity_at",
   "asset_key_rotated_at",
   "driver",
@@ -89,6 +94,8 @@ export function toCanvasHead(row: LiveCanvasHead): CanvasHead {
     prChecks: row.pr_checks as PrChecks,
     prMergeable: row.pr_mergeable as boolean | null,
     prAutoMerge: row.pr_auto_merge as boolean,
+    prLinkedCount: Number(row.pr_linked_count ?? 0),
+    prLinkedOpen: Number(row.pr_linked_open ?? 0),
     lastActivityAt: new Date(row.last_activity_at as string | Date),
     assetKeyRotatedAt:
       row.asset_key_rotated_at === null || row.asset_key_rotated_at === undefined
