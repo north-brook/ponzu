@@ -538,15 +538,18 @@ describe("billing", () => {
     expect(pushesTo(phone.token)).toHaveLength(0);
   });
 
-  test("a personal workspace's person hears it as theirs", async () => {
-    const { ws, owner, mate, phone } = await billed();
-    // A personal workspace has one person; the others are taken out.
-    await t.db.execute(`update workspaces set kind = 'personal' where id = '${ws.id}'`);
-    for (const login of [mate, `lee${scenes}`, `ines${scenes}`]) {
-      await t.db.execute(
-        `delete from memberships where workspace_id = '${ws.id}' and user_id = '${ws.people[login]!.userId}'`,
-      );
-    }
+  test("a personal workspace's person hears it as theirs, and its collaborators never do", async () => {
+    const { ws, owner, mate, other, reader, phone } = await billed();
+    // The workspace is the owner's own GitHub account. Everyone else in it is a collaborator on
+    // its repos, one of them made an admin.
+    await t.db.execute(
+      `update workspaces set kind = 'personal', github_account_id = ${ws.people[owner]!.github.id} where id = '${ws.id}'`,
+    );
+    await t.db.execute(
+      `update memberships set role = 'admin' where workspace_id = '${ws.id}' and user_id = '${ws.people[mate]!.userId}'`,
+    );
+    const collaborators = [mate, other, reader];
+    const phones = await Promise.all(collaborators.map((login) => registerPhone(ws, login)));
     await notify(t.deps, {
       kind: "billing",
       workspaceId: ws.id,
@@ -558,7 +561,10 @@ describe("billing", () => {
     expect(pushesTo(phone.token).map((message) => message.body)).toEqual([
       "You've used this month's free credits.",
     ]);
-    expect((await rowsOf({ workspaceId: ws.id }))[0]!.userId).toBe(ws.people[owner]!.userId);
+    // One row, the person's: no collaborator has it in their inbox or on their phone.
+    const rows = await rowsOf({ workspaceId: ws.id });
+    expect(rows.map((row) => row.userId)).toEqual([ws.people[owner]!.userId]);
+    for (const collaborator of phones) expect(pushesTo(collaborator.token)).toHaveLength(0);
   });
 
   test("an admin who is not one by the time it goes is not pinged", async () => {
