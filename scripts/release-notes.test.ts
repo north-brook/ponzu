@@ -402,6 +402,8 @@ test("an unpublished release's notes show under the release that shipped them", 
       .nothrow()
       .quiet();
     expect(wrong.exitCode).toBe(1);
+    const bare = await $`bun ${SCRIPT} --changelog ${out} --unpublished`.cwd(dir).nothrow().quiet();
+    expect(bare.exitCode).toBe(1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

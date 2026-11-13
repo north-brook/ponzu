@@ -80,8 +80,8 @@ publishes them beside the build as `changelog.json`. The site reads that file
 from the latest release every hour and shows the releases of Ponzu Cloud, from
 the first versions named in `apps/web/components/site.ts`, newest first. It
 is published only with the desktop app, so an iPhone release shows there once
-the next desktop release is out. A desktop version whose GitHub release is
-still a draft was never published, so the page leaves it out and shows its
+the next desktop release is out. A desktop version whose GitHub releases are
+all still drafts was never published, so the page leaves it out and shows its
 notes under the release after it, which is the one that brought them to
 people (the publish job names those drafts with `--unpublished`). If the file
 can't be read, the page says so and links to GitHub's releases.

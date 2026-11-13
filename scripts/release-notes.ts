@@ -182,8 +182,8 @@ export function compareVersions(a: string, b: string): number {
  * it since the tag before, newest first. Commits after the newest tag haven't
  * shipped and are left out; a release with nothing to say is omitted.
  *
- * A tag in `unpublished` was never released to anyone (its GitHub release is
- * still a draft, as v2.1.1's is: its publish failed and 2.2.0 shipped its
+ * A tag in `unpublished` was never released to anyone (its GitHub releases
+ * are all still drafts, as v2.1.1's is: its publish failed and 2.2.0 shipped its
  * fixes). Its version is left out, and its notes go to the next tag that isn't,
  * which is the release that first carried them to people. Notes of unpublished
  * tags after the newest published one are left out, as unshipped commits are.
@@ -303,7 +303,8 @@ if (import.meta.main) {
   } else if (args[0] === "--changelog") {
     const path = args[1];
     const flag = args[2];
-    if (!path || (flag !== undefined && flag !== "--unpublished") || args.length > 4) {
+    const valid = args.length === 2 || (args.length === 4 && flag === "--unpublished");
+    if (!path || !valid) {
       console.error(
         "usage: bun scripts/release-notes.ts --changelog <out.json> [--unpublished <tag>,<tag>…]",
       );
