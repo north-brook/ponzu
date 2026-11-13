@@ -72,7 +72,6 @@ const pricing = () =>
   [...backend.world.fake.canvases.values()].find(
     (c) => c.repoId === backend.world.acme.repos[0]!.id,
   )!;
-const agent = () => backend.world.fake.agent(pricing().id);
 const sent = (kind: ToCanvas["t"]) => mockPage.got.filter((m) => m.t === kind);
 
 async function openPricing(params: Record<string, string> = {}) {
