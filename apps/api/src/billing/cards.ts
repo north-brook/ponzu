@@ -31,8 +31,8 @@ import { type RefreshDeps, refreshBillingGate } from "./refresh.ts";
  * Settling with a card makes it the customer's default at Stripe, stores it, sets the cap the
  * admin chose with it, and works the gate out again, which wakes what the gate held back. The
  * card is applied before the setup is marked, so a crash between leaves it to be applied again,
- * and a card Stripe has is applied even when the setup was meanwhile marked cancelled or expired:
- * what Stripe has is the truth.
+ * and a card Stripe has is applied, with the setup's cap, even when the setup was meanwhile marked
+ * cancelled or expired, which then becomes `added`: what Stripe has is the truth.
  *
  * None of this runs unless PONZU_BILLING is `on`: the routes refuse first (`requireBillingOn`),
  * and `deps.payments` refuses every call while it is not.
@@ -229,8 +229,17 @@ export async function settleFromStripe(
     return { setup, unreachable: true };
   }
   if (page.status === "complete" && page.paymentMethodId !== null) {
-    // Applied whatever the row says: a card Stripe has is the workspace's card.
-    await applyCard(deps, setup, page.paymentMethodId);
+    // Applied whatever the row says: a card Stripe has is the workspace's card, and a setup
+    // marked cancelled or expired before Stripe finished becomes `added`.
+    try {
+      await applyCard(deps, setup, page.paymentMethodId);
+    } catch (error) {
+      // Stripe refused or could not be reached while making the card the default: the setup is
+      // left as it was, so the poll keeps waiting and the webhook's job is tried again.
+      if (!(error instanceof PaymentsError || error instanceof PaymentsOffError)) throw error;
+      deps.log.warn("card_setup_unreachable", { setupId: setup.id, step: "use_card", error });
+      return { setup, unreachable: true };
+    }
     return { setup: await settle(deps, setup, "added"), unreachable: false };
   }
   if (setup.payload.outcome !== null) return { setup, unreachable: false };
@@ -302,8 +311,10 @@ async function applyCard(deps: RefreshDeps, setup: CardSetup, paymentMethodId: s
     addedByUserId: setup.userId,
     at: now,
   });
-  // The cap chosen with the card, once: a setup settled before has had its say.
-  if (setup.payload.outcome === null) {
+  // The cap chosen with this card, once: a setup already `added` has had its say. One marked
+  // cancelled or expired before Stripe finished never set its cap, so it sets it now: a card is
+  // never stored under a cap other than the one its admin chose with it.
+  if (setup.payload.outcome !== "added") {
     await setMonthlyCap(deps.db, { workspaceId, capCents });
   }
   await refreshBillingGate(deps, workspaceId);

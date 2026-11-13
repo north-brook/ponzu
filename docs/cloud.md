@@ -2819,8 +2819,10 @@ poll (a setup still waiting after five seconds is read from Stripe), the page Ch
 session from Stripe as it is now: a card Stripe collected is made the customer's default for
 invoices, stored, the setup's cap is set, and the gate is worked out again, which wakes what it
 held back; then the setup is marked `added`. The card is applied before the setup is marked, so a
-crash between leaves it to be applied again, and a card Stripe has is applied even if the setup
-was meanwhile marked cancelled or expired. A page left with Cancel marks the setup `cancelled`
+crash between leaves it to be applied again, and a card Stripe has is applied, with the setup's
+cap, even if the setup was meanwhile marked cancelled or expired, which then becomes `added`. If
+Stripe fails while the card is being made the default, the setup stays waiting and is asked again.
+A page left with Cancel marks the setup `cancelled`
 (unless Stripe says it finished); a page Stripe expired, or a setup older than 35 minutes, marks
 it `expired`; and a setup whose page Stripe could not make is `failed`, with 503
 `upstream_unavailable` ("Couldn't reach Stripe. Try again."). The cap may not be below what the

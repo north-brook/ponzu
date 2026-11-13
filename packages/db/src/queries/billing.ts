@@ -383,8 +383,10 @@ export async function beginCardSetup(
 }
 
 /**
- * Record the Checkout session Stripe made for an open card setup. False when it is no longer
- * open (a newer setup replaced it, or it was settled).
+ * Record the Checkout session Stripe made for a card setup not yet settled, once. A setup a newer
+ * one replaced in the meantime still records it: its page is open in the admin's browser, and the
+ * return page and the poll read that page through this. False when it was settled, or already
+ * has a session.
  */
 export async function setCardSetupSession(
   db: Db,
@@ -396,7 +398,8 @@ export async function setCardSetupSession(
       with updated as (
         update auth_states
            set payload = jsonb_set(payload, '{checkoutSessionId}', to_jsonb(${sessionId}::text))
-         where id = ${id} and kind = 'card_setup' and consumed_at is null
+         where id = ${id} and kind = 'card_setup'
+           and payload ->> 'outcome' is null and payload ->> 'checkoutSessionId' is null
         returning id
       )
       select json_build_object('updated', (select count(*) from updated)) as result
@@ -444,7 +447,9 @@ export async function readCardSetup(
 /**
  * Say how a card setup ended, once. Whichever comes first (the return page, the app's poll or
  * Stripe's webhook) settles it, and every later call answers `settled: false` with the setup as
- * the first left it. Null when there is no such setup.
+ * the first left it. The one exception is `added` over `cancelled`, `expired` or `failed`: Stripe
+ * can finish a page after its setup was marked otherwise (the admin went back to it after
+ * Cancel), and a card Stripe has wins. Null when there is no such setup.
  */
 export async function settleCardSetup(
   db: Db,
@@ -464,7 +469,10 @@ export async function settleCardSetup(
                payload = a.payload || jsonb_build_object('outcome', ${outcome}::text,
                                                          'settledAt', ${timeParam(at)}::text)
           from locked
-         where a.id = locked.id and locked.payload ->> 'outcome' is null
+         where a.id = locked.id
+           and (locked.payload ->> 'outcome' is null
+                -- A card Stripe finished after the setup was marked cancelled or expired.
+                or (${outcome}::text = 'added' and locked.payload ->> 'outcome' <> 'added'))
         returning a.*
       )
       select json_build_object('settled', true, 'setup', ${cardSetupJson}) as result from settled

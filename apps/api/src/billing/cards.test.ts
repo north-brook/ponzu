@@ -262,6 +262,45 @@ describe("with billing on", () => {
     });
   });
 
+  test("a card finished after Cancel still lands, with the cap chosen with it", async () => {
+    await withBilling("on", async () => {
+      const ws = await team();
+      const id: string = (await start(ws, { capUsd: 120, scheme: "ponzu" })).body.id;
+      expect((await back(`setup=${id}&cancelled=1`)).html).toContain("No card added");
+      expect((await poll(ws, id)).body.status).toBe("cancelled");
+      // The admin went back to the still-open Checkout tab and finished it there.
+      t.payments.completeSetup(sessionOf(id).id);
+      await deliver(checkoutEvent("checkout.session.completed", id, ws.id));
+      expect(await getWorkspace(t.db, ws.id)).toMatchObject({
+        stripePaymentMethodId: sessionOf(id).paymentMethodId,
+        monthlyCapCents: 12_000,
+      });
+      expect((await poll(ws, id)).body.status).toBe("added");
+      const page = await back(`setup=${id}&session_id=${sessionOf(id).id}`);
+      expect(page.html).toContain(`data-link="ponzu://billing/card?setup=${id}&amp;result=added"`);
+    });
+  });
+
+  test("Stripe failing as the card is made the default leaves the setup waiting, not broken", async () => {
+    await withBilling("on", async () => {
+      const ws = await team();
+      const id: string = (await start(ws)).body.id;
+      t.payments.completeSetup(sessionOf(id).id);
+      t.clock.advance(POLL_ASKS_STRIPE_AFTER_MS);
+      t.payments.failNext(
+        "useCard",
+        new PaymentsError({ type: "api_error", code: null, status: 500, requestId: null }),
+      );
+      const fresh = (await t.signInAs({ login: "maya" })).headers;
+      const down = await poll(ws, id, fresh);
+      expect(down.status).toBe(200);
+      expect(down.body.status).toBe("waiting");
+      expect((await getWorkspace(t.db, ws.id))!.stripePaymentMethodId).toBeNull();
+      // Asked again, once Stripe answers: added.
+      expect((await poll(ws, id, fresh)).body.status).toBe("added");
+    });
+  });
+
   test("a build that takes no links gets a page that names none and closes", async () => {
     await withBilling("on", async () => {
       const ws = await team();

@@ -242,7 +242,10 @@ describe("card setups", () => {
     const second = await begin(1);
     expect(second!.replaced).toEqual([first!.id]);
 
-    expect(await setCardSetupSession(db, { id: first!.id, sessionId: "cs_old" })).toBe(false);
+    // The replaced one still records its page (it is open in a browser), once.
+    expect(await setCardSetupSession(db, { id: first!.id, sessionId: "cs_old" })).toBe(true);
+    expect(await setCardSetupSession(db, { id: first!.id, sessionId: "cs_other" })).toBe(false);
+    expect((await readCardSetup(db, { id: first!.id }))!.payload.checkoutSessionId).toBe("cs_old");
     expect(await setCardSetupSession(db, { id: second!.id, sessionId: "cs_new" })).toBe(true);
     expect(await readCardSetup(db, { id: second!.id, userId: admin.id })).toEqual({
       id: second!.id,
@@ -315,6 +318,35 @@ describe("card setups", () => {
       setup: { consumedAt: later(2), payload: { outcome: "added" } },
     });
     expect(await settleCardSetup(db, { id: "auth_nothing", outcome: "added", at: now })).toBeNull();
+  });
+
+  test("a card Stripe finished after the setup was cancelled turns it added, and only then", async () => {
+    const workspace = await seedWorkspace(db, "late-card");
+    const admin = await seedUser(db, "ana");
+    const setup = await beginCardSetup(db, {
+      userId: admin.id,
+      workspaceId: workspace.id,
+      capCents: 10_000,
+      scheme: "none",
+      now,
+      expiresAt: later(35),
+    });
+    await settleCardSetup(db, { id: setup!.id, outcome: "cancelled", at: later(1) });
+    expect(
+      await settleCardSetup(db, { id: setup!.id, outcome: "expired", at: later(2) }),
+    ).toMatchObject({ settled: false, setup: { payload: { outcome: "cancelled" } } });
+    expect(
+      await settleCardSetup(db, { id: setup!.id, outcome: "added", at: later(3) }),
+    ).toMatchObject({
+      settled: true,
+      setup: {
+        consumedAt: later(1),
+        payload: { outcome: "added", settledAt: later(3).toISOString() },
+      },
+    });
+    expect(
+      await settleCardSetup(db, { id: setup!.id, outcome: "added", at: later(4) }),
+    ).toMatchObject({ settled: false, setup: { payload: { settledAt: later(3).toISOString() } } });
   });
 });
 
