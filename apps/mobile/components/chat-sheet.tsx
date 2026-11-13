@@ -15,7 +15,7 @@ import {
 import type { Doc } from "@ponzu/core";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   type NativeScrollEvent,
@@ -119,9 +119,13 @@ export function ChatSheet({
   message: number | null;
   /** Gone, with the newest seq of the thread it held: how far the person has read it. */
   onDismiss: (readSeq: number | null) => void;
-  /** A comment's picture was pressed: the sheet goes, and the canvas goes to its pin. */
-  onOpenComment: (threadId: string) => void;
-  onOpenLink: (url: string) => void;
+  /**
+   * A comment's picture was pressed: the sheet goes, and the canvas goes to its pin. With the
+   * newest seq the thread held, since leaving this way is closing it too.
+   */
+  onOpenComment: (threadId: string, readSeq: number | null) => void;
+  /** A link in a reply was pressed, with the newest seq the thread held, as for a comment. */
+  onOpenLink: (url: string, readSeq: number | null) => void;
   top: number;
   right?: number;
   maxWidth?: number;
@@ -171,7 +175,15 @@ export function ChatSheet({
   const foot = chatFoot({
     items,
     head,
-    owner: canvas?.ownerId ? (people.get(canvas.ownerId) ?? null) : null,
+    // Unknown until the canvas and its workspace's members are in: never "its owner left" for
+    // a list that hasn't come yet.
+    owner: !canvas
+      ? undefined
+      : !canvas.ownerId
+        ? null
+        : members.data
+          ? (people.get(canvas.ownerId) ?? null)
+          : undefined,
     meId: me.id,
     workspace,
     now: Math.max(now, Date.now()),
@@ -252,6 +264,18 @@ export function ChatSheet({
     }
   }, [thread, rows, message, store]);
 
+  // A link or a comment's picture closes the sheet as a swipe does: the thread is read as far
+  // as it held. Stable, so the memoized lines don't redraw for them.
+  const readSeq = useRef<number | null>(null);
+  readSeq.current = readTo(thread.items);
+  const leave = useRef({ onOpenComment, onOpenLink });
+  leave.current = { onOpenComment, onOpenLink };
+  const openComment = useCallback(
+    (id: string) => leave.current.onOpenComment(id, readSeq.current),
+    [],
+  );
+  const openLink = useCallback((url: string) => leave.current.onOpenLink(url, readSeq.current), []);
+
   const writable = !readOnly;
   const empty = thread.items !== null && rows.length === 0;
   return (
@@ -285,7 +309,7 @@ export function ChatSheet({
           );
         }}
         renderItem={({ item: row }) => (
-          <ChatLine row={row} meId={me.id} onOpenComment={onOpenComment} onOpenLink={onOpenLink} />
+          <ChatLine row={row} meId={me.id} onOpenComment={openComment} onOpenLink={openLink} />
         )}
         ListEmptyComponent={
           empty || thread.failed ? (

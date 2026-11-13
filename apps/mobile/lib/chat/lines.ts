@@ -120,21 +120,31 @@ export function chatFoot({
   /** `chatItems`: a message on its way counts as said, so the line says Thinking from the tap. */
   items: readonly ThreadItem[];
   head: Head | undefined;
-  /** The canvas's owner among the workspace's members; null when they aren't one any more. */
-  owner: Person | null;
+  /**
+   * The canvas's owner among the workspace's members; null when they aren't one any more;
+   * undefined while the canvas or its members aren't known yet (loading, or offline with nothing
+   * kept), when nothing is said about the owner's Claude rather than that the owner left.
+   */
+  owner: Person | null | undefined;
   meId: string;
+  /** The canvas's workspace; null while it isn't known yet. */
   workspace: ChatWorkspace | null;
   now: number;
 }): ChatFoot | null {
   const blocker = head?.agentBlocker ?? null;
-  if (
-    workspace &&
-    (blocker === "credits_used_up" || blocker === "cap_reached" || blocker === "payment_failed")
-  ) {
-    return { kind: "waiting", text: billingWait(blocker, workspace), failed: false };
+  if (blocker === "credits_used_up" || blocker === "cap_reached" || blocker === "payment_failed") {
+    return {
+      kind: "waiting",
+      text: workspace ? billingWait(blocker, workspace) : CHAT.waits,
+      failed: false,
+    };
   }
-  const gate = steerGate({ access: "write", repo: null, head, owner, me: undefined, now });
+  const ownerKnown = owner !== undefined || !blocker?.startsWith("claude_");
+  const gate = ownerKnown
+    ? steerGate({ access: "write", repo: null, head, owner: owner ?? null, me: undefined, now })
+    : null;
   if (gate) return { kind: "waiting", text: gateMessage(gate, meId), failed: false };
+  if (!ownerKnown) return null;
   const agent = agentActivity(head);
   const sandbox = sandboxLine(agent);
   if (sandbox) return { kind: "waiting", text: sandbox.text, failed: sandbox.failed };

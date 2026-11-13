@@ -476,8 +476,8 @@ export default function CanvasScreen() {
     if (at.artboardId && pageOf) canvas.current?.post({ t: "focus", artboardId: at.artboardId });
   };
   /** A comment's picture in the chat: the sheet goes, the canvas goes to the pin, its thread opens. */
-  const openCommentFromChat = (id: string) => {
-    closeChat(null);
+  const openCommentFromChat = (id: string, readSeq: number | null) => {
+    closeChat(readSeq);
     const pin = doc?.threads.find((t) => t.id === id);
     if (!pin) return;
     showPlace(pin.artboardId ? { artboardId: pin.artboardId } : { pageId: pin.pageId });
@@ -487,10 +487,10 @@ export default function CanvasScreen() {
    * A link in Ponzu's reply: a page or board of this canvas is shown in place, with the sheet
    * gone; another canvas opens; anything else prose.ts let through leaves the app.
    */
-  const openLink = (url: string) => {
+  const openLink = (url: string, readSeq: number | null) => {
     const route = threadLink(url, config().scheme);
     if (route?.id === canvasId) {
-      closeChat(null);
+      closeChat(readSeq);
       showPlace({ pageId: route.params.page, artboardId: route.params.artboard });
       return;
     }

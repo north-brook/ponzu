@@ -203,6 +203,37 @@ describe("the line at the foot", () => {
     );
   });
 
+  test("the owner's Claude while the members aren't known yet: nothing, never 'its owner left'", () => {
+    for (const blocker of ["claude_not_connected", "claude_expired", "claude_limited"] as const) {
+      expect(
+        foot(head({ agentBlocker: blocker, agentBlockedUntil: "2026-11-13T16:00:00Z" }), [], {
+          owner: undefined,
+        }),
+      ).toBeNull();
+    }
+    // Known to be gone, it says so.
+    expect(
+      (
+        foot(head({ agentBlocker: "claude_not_connected" }), [], { owner: null }) as {
+          text: string;
+        }
+      ).text,
+    ).toStartWith("Its owner left the workspace");
+    // Not knowing the owner changes nothing else.
+    expect(foot(head({ agentState: "working" }), [], { owner: undefined })).toEqual({
+      kind: "working",
+      text: "Thinking",
+    });
+  });
+
+  test("a billing blocker before the workspace is known: only that the canvas waits", () => {
+    expect(foot(head({ agentBlocker: "credits_used_up" }), [], { workspace: null })).toEqual({
+      kind: "waiting",
+      text: "This canvas waits.",
+      failed: false,
+    });
+  });
+
   test("billing: the neutral first sentence and 'This canvas waits.', never a way to pay", () => {
     const team = { name: "Acme", personal: false };
     for (const blocker of ["credits_used_up", "cap_reached", "payment_failed"] as const) {

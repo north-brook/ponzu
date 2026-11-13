@@ -251,12 +251,16 @@ describe("the chat sheet", () => {
     await openChat();
     const link = await screen.findByText("the Plans board");
     mockPage.got = [];
+    const seen = jest.spyOn(backend.api.canvases, "seen");
+    const last = pricing().thread.at(-1)!.item.seq;
     await act(async () => {
       fireEvent.press(link);
     });
     await waitFor(() => expect(screen.queryByTestId("chat-sheet")).toBeNull());
     expect(sent("focus").at(-1)).toEqual({ t: "focus", artboardId: "ab_plans" });
     expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+    // Leaving by the link is closing the sheet: the thread is read as far as it held.
+    expect(seen).toHaveBeenCalledWith(pricing().id, expect.objectContaining({ threadSeq: last }));
 
     await act(async () => {
       agent().say("Read [the docs](https://example.com/docs) or [this](javascript:alert(1)).");
@@ -266,9 +270,11 @@ describe("the chat sheet", () => {
       fireEvent.press(await screen.findByText("the docs"));
     });
     expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith("https://example.com/docs");
-    // The javascript: link is only words: pressing it opens nothing.
-    const words = screen.getByText(/or this\./);
-    expect(words.props.onPress).toBeUndefined();
+    // The javascript: link is only words: the reply holds one link, the safe one.
+    const reply = screen.getByText(/or this\./);
+    expect(reply.props.onPress).toBeUndefined();
+    expect(screen.queryAllByRole("link", { name: "the docs" })).toHaveLength(1);
+    expect(screen.queryAllByRole("link", { name: "this" })).toHaveLength(0);
   });
 
   test("opened by a link (sheet=chat): up at once, and its field waits for a tap", async () => {
