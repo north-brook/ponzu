@@ -12,6 +12,7 @@
     "apps/runner/image",
     "apps/studio/src",
     "apps/studio/scripts",
+    "apps/studio/perf",
     "apps/desktop/src/**/*.test.ts",
     "scripts"
   ]
