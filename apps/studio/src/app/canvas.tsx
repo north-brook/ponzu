@@ -448,15 +448,17 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
     rail: { open: rail.open, signal, onToggle: does.toggleRail },
     actionExpected: expected,
   });
+  // Kept as well: the slot draws again with each line of the thread, and the dialog shows none.
+  const resetDialog = useKeptElement(ResetFileLinksDialog, {
+    open: resetting !== null,
+    busy: resetting === "busy",
+    onCancel: () => setResetting(null),
+    onConfirm: confirmReset,
+  });
   return (
     <>
       {chrome}
-      <ResetFileLinksDialog
-        open={resetting !== null}
-        busy={resetting === "busy"}
-        onCancel={() => setResetting(null)}
-        onConfirm={confirmReset}
-      />
+      {resetDialog}
     </>
   );
 });
