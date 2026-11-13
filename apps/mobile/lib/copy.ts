@@ -194,6 +194,8 @@ export const NEEDS_YOU = {
   next: "Next",
   of: (at: number, count: number) => `${at} of ${count}`,
   send: "Send",
+  noteLabel: "Note",
+  secretLabel: (name: string) => `The value of ${name}`,
   /** Under the slot, when someone else's answer closed the ask the person was on. */
   answered: "Someone already answered this.",
   answeredBy: (name: string) => `${name} already answered this.`,
@@ -201,8 +203,9 @@ export const NEEDS_YOU = {
   /** Under the slot, when an answer didn't go: the Mac's words. */
   failed: "Your answer didn't go through. Send it again.",
   offline: "Your answer didn't reach Ponzu. Check your connection and send it again.",
+  /** The Mac's sentence, but Settings › Environments is only in Ponzu on the Mac. */
   secretsFull:
-    "This repo has no room for another secret. Remove one in Settings › Environments, then send it again.",
+    "This repo has no room for another secret. Remove one in Ponzu on your Mac, in Settings › Environments, then send it again.",
   secretReserved:
     "Claude asked for a name Ponzu keeps for itself, so it can't be a secret. Tell Claude to use another name.",
   noRepository: "A Scratch canvas has no repository to keep a secret with.",

@@ -81,6 +81,12 @@ export function NeedsYou({
   const pages = pagesOf(asks);
   const [current, setCurrent] = useState<string | null>(start ? `${start}:0` : null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  // A later push or link naming another question, while the card is up, turns to it.
+  const [startedAt, setStartedAt] = useState(start);
+  if (start !== startedAt) {
+    setStartedAt(start);
+    if (start) setCurrent(`${start}:0`);
+  }
   const at = Math.max(
     0,
     pages.findIndex((p) => keyOf(p) === current),
@@ -237,7 +243,9 @@ export function NeedsYou({
             // One field per page: the words typed are that page's.
             key={keyOf(page)}
             testID="needs-you-note"
-            accessibilityLabel={ask.kind === "secret" ? `The value of ${ask.name}` : "Note"}
+            accessibilityLabel={
+              ask.kind === "secret" ? NEEDS_YOU.secretLabel(ask.name) : NEEDS_YOU.noteLabel
+            }
             value={draft.note}
             editable={!busy && isOpen(ask)}
             onChangeText={(note) => setDraft({ ...draft, note })}

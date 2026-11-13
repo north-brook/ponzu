@@ -282,6 +282,45 @@ describe("needs you", () => {
     expect(screen.getByLabelText("3 of 4")).toBeTruthy();
   });
 
+  test("a later push's question, with the card already up, turns to it", async () => {
+    const [, plan, permission] = await stockAsks(backend.world);
+    await openPricing({ sheet: "chat", question: plan! });
+    await screen.findByTestId("needs-you");
+    expect(header()).toBe("Plan");
+    mockParams = { ...mockParams, question: permission! };
+    await act(async () => {
+      screen.rerender(
+        <WindowInsetsProvider>
+          <CloudProvider>
+            <CanvasScreen />
+          </CloudProvider>
+        </WindowInsetsProvider>,
+      );
+    });
+    await waitFor(() => expect(header()).toBe("Permission"));
+    expect(screen.getByLabelText("4 of 4")).toBeTruthy();
+  });
+
+  test("a secret: a secure field, sent by its own route and never as an answer", async () => {
+    agent().ask({ kind: "secret", payload: { name: "STRIPE_KEY", description: null } }, "Secret");
+    await openPricing({ sheet: "chat" });
+    await screen.findByTestId("needs-you");
+    expect(header()).toBe("Secret");
+    const answer = jest.spyOn(backend.api.canvases, "answer");
+    const answerSecret = jest.spyOn(backend.api.canvases, "answerSecret");
+    const field = screen.getByLabelText("The value of STRIPE_KEY");
+    expect(field.props.secureTextEntry).toBe(true);
+    await act(async () => {
+      fireEvent.changeText(field, "sk_test_123");
+    });
+    await send();
+    await waitFor(() => expect(answerSecret).toHaveBeenCalledTimes(1));
+    expect(answerSecret.mock.calls[0]!.slice(2)).toEqual(["sk_test_123"]);
+    expect(answer).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByTestId("needs-you")).toBeNull());
+    expect(screen.queryByText("sk_test_123")).toBeNull();
+  });
+
   test("on a canvas the person may only read: the ask shows, and can't be answered", async () => {
     agent().ask(BLUE, "Button colour");
     const repo = backend.world.fake.workspaces.get(backend.world.acme.id)!.repos[0]!;

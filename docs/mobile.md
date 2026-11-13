@@ -534,7 +534,8 @@ is answerable and what each answer says are the Mac's, from
 - **Read only or offline**, the card still shows what is asked, its options
   unpressable, and the read-only or offline line is in the field's place.
 - **Links.** A push or link with `question=<id>` opens the chat at that
-  question's page.
+  question's page, and one naming another question while the card is up
+  turns the pager to it.
 - **Proofs.** `bun test apps/mobile/lib/chat/ask-store.test.ts` (order, sent
   once, a teammate's answer untouched and started, a 409 naming who answered,
   one naming nobody, a withdrawn question, an answer that doesn't go then
@@ -542,7 +543,8 @@ is answerable and what each answer says are the Mac's, from
   canvas screen against the fake: one question with no pager, four pages with
   the pager through a multi-select, a plan and a permission, a note alone as
   the answer, Send pressed twice, a teammate answering elsewhere, a 409, a
-  push's question, and read-only. `rntests/canvas-stack.rntest.tsx` covers the
+  push's question, a later push's question with the card up, a secret by its
+  own route, and read-only. `rntests/canvas-stack.rntest.tsx` covers the
   count on Chat. `maestro/needs-you.yaml` (seed `needs-you`) runs it on a
   simulator, on spare only.
 

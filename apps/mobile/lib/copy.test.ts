@@ -86,7 +86,8 @@ test("Needs you in the Mac's words", () => {
     movedOn: NEEDS_YOU.movedOn,
     failed: NEEDS_YOU.failed,
     offline: NEEDS_YOU.offline,
-    secretsFull: NEEDS_YOU.secretsFull,
+    // The phone says where Settings › Environments is; the rest is the Mac's.
+    secretsFull: NEEDS_YOU.secretsFull.replace(" in Ponzu on your Mac,", ""),
     secretReserved: NEEDS_YOU.secretReserved,
     noRepository: NEEDS_YOU.noRepository,
     // The Mac writes the repo's name into its sentence.
