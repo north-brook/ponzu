@@ -137,7 +137,7 @@ describe("GET /v1/github/accounts and POST /v1/github/sync", () => {
 });
 
 describe("POST /v1/github/install-link", () => {
-  test("a link to the App's install page with a sealed state, good for fifteen minutes", async () => {
+  test("a link to GitHub's account picker with a sealed state, good for fifteen minutes", async () => {
     const tess = await t.signInAs({ login: "tess" });
 
     const response = await post("/v1/github/install-link", tess, { client: "mac" });
@@ -145,8 +145,9 @@ describe("POST /v1/github/install-link", () => {
     expect(response.status).toBe(200);
     const { url, expiresAt } = await response.json();
     const link = new URL(url);
+    // The picker by name: the plain install page skips it once the App is installed anywhere.
     expect(link.origin + link.pathname).toBe(
-      "https://github.com/apps/ponzu-test/installations/new",
+      "https://github.com/apps/ponzu-test/installations/select_target",
     );
     const state = link.searchParams.get("state")!;
     expect(state).toStartWith("pzv1.");

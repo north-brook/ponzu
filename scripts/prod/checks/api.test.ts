@@ -18,7 +18,13 @@ import type { CheckContext, Finding } from "./finding.ts";
 const FIXTURES = join(import.meta.dir, "..", "fixtures", "api");
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8"));
 const infra = infraBeforeLaunch();
-const health = (): Health => fixture("dev-health.json");
+/**
+ * Dev's recorded health, naming the image current.json names now. The recording holds whichever
+ * image was current the day it was made, and these tests are about an API that runs the current
+ * one, so a new image (a Claude Code bump) must not fail them. A test that wants a stale image
+ * gives one.
+ */
+const health = (): Health => ({ ...fixture("dev-health.json"), image: currentImage.image });
 const selfcheck = (): SelfcheckAnswer => fixture("dev-selfcheck.json");
 const read = <T>(body: T, status = 200) => ({ ok: true as const, status, body });
 const statuses = (findings: Finding[]) => findings.map((f) => `${f.status} ${f.id}`);
