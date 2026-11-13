@@ -126,6 +126,19 @@ jobs:
               if [ "$enabled" = true ]; then
                 gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
               fi
+              # Main merges through a merge queue. Turning auto-merge off does not take a
+              # PR out of the queue once its checks have put it there, so a held PR that is
+              # queued is taken out.
+              owner=${GITHUB_REPOSITORY%/*}
+              name=${GITHUB_REPOSITORY#*/}
+              queued=$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$name\") {
+                  pullRequest(number: $number) { id isInMergeQueue } } }" \
+                --jq '.data.repository.pullRequest | select(.isInMergeQueue) | .id')
+              if [ -n "$queued" ]; then
+                gh api graphql \
+                  -f query="mutation { dequeuePullRequest(input: {id: \"$queued\"}) { clientMutationId } }" >/dev/null
+                echo "took held release PR #$number out of the merge queue"
+              fi
               why=${answer#hold: }
               why=${why//'%'/'%25'}
               why=${why//$'\r'/'%0D'}
