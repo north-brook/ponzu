@@ -358,6 +358,7 @@ export async function listStaleInstallations(
  * was when left out). `role` is used only for a new member: the role is Ponzu's own and a sync
  * must never undo a change an admin made. The one exception is an owner of the account, who
  * is always an admin, so nobody can take a workspace from the people GitHub says own it.
+ * `created` says whether this made the row: the person joined the workspace just now.
  */
 export async function upsertMembership(
   db: Db,
@@ -367,7 +368,7 @@ export async function upsertMembership(
     role: MemberRole;
     githubAccess?: GithubAccess;
   },
-): Promise<Membership> {
+): Promise<Membership & { created: boolean }> {
   const [row] = await run(
     db
       .insert(memberships)
@@ -384,7 +385,8 @@ export async function upsertMembership(
             : {}),
         },
       })
-      .returning(),
+      // An inserted row has no deleting transaction; an updated one has this one's.
+      .returning({ ...getTableColumns(memberships), created: sql<boolean>`(xmax = 0)` }),
   );
   return row!;
 }
