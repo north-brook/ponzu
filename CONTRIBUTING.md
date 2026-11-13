@@ -34,6 +34,35 @@ lowercase description. CI checks it.
 
 Scopes are optional: `fix(desktop): …`, `feat(canvas): …`.
 
+### Merging, and changes with a migration
+
+`main` merges through GitHub's merge queue once its ruleset carries it
+(`infra/github/ruleset-main.json`). "Merge when ready", or
+`gh pr merge <number> --squash`, adds a green pull request to the queue, which
+tests it on top of `main` and the entries ahead of it and merges it if the
+checks pass there too. Nobody can skip the queue. A merge to `main` ships an app
+release and deploys the API by itself, so it is never a casual click.
+
+A pull request that adds a database migration:
+
+1. Change `packages/db/src/schema`, then run `bun run db:generate --name <feature>`
+   in `packages/db`. One migration per pull request, expand only (add, never take
+   away), and `SET LOCAL lock_timeout = '5s';` first, under a
+   `-- hand-written (…)` line, when it touches a table that already exists.
+2. Check it as CI will:
+   `bun scripts/ci/migration-guard.ts check --base origin/main` (the number, the
+   snapshot chain, expand only, the lock timeout) and
+   `bun scripts/ci/migration-contract.ts --base origin/main` (the API from before
+   your change passes its own tests on your schema).
+3. If another pull request took the number first, merge `origin/main` and run
+   `bun scripts/ci/migration-guard.ts renumber`, which does the rest; commit what
+   it changed.
+4. Once merged, the deploy workflow migrates and deploys. Nobody runs a migration
+   by hand.
+
+The whole of it, and what is not proven, is in
+[docs/production.md](docs/production.md#landing-a-change-with-a-migration).
+
 ### Release notes
 
 A change users would notice ends its PR description with a `## Release note`

@@ -78,7 +78,11 @@ describe("apply posthog", () => {
 describe("apply github-rulesets", () => {
   const TOKEN = "ghp_0123456789abcdefghij0123456789";
   const REPO = "/repos/north-brook/ponzu/rulesets";
-  const main = fixture("github/ruleset-25478973.json");
+  // Main's ruleset as recorded, before the merge queue its file adds.
+  const before = fixture("github/ruleset-25478973.json");
+  const queue = infra["github/ruleset-main.json"].rules.find((r) => r.type === "merge_queue");
+  // And as it is once that is applied, which the tests below start from.
+  const main = { ...before, rules: [...before.rules, queue] };
   function routes(list: { id: number; name: string }[], details: Record<number, unknown>): Routes {
     const out: Routes = { [`GET ${REPO}`]: () => list };
     for (const [id, body] of Object.entries(details)) out[`GET ${REPO}/${id}`] = () => body;
@@ -96,6 +100,20 @@ describe("apply github-rulesets", () => {
         body: infra["github/ruleset-cloud.json"],
       },
     ]);
+    expect(net.writes()).toEqual([]);
+  });
+
+  test("main as recorded, before the merge queue: one PUT of its file by id", async () => {
+    const net = fakeNetwork(
+      routes([{ id: before.id, name: before.name }], { [before.id]: before }),
+    );
+    const plan = await planRulesets(applyContext("dev", { GH_TOKEN: TOKEN }, net.fetch));
+    expect(plan.changes[0]?.request).toEqual({
+      method: "PUT",
+      url: `https://api.github.com${REPO}/${before.id}`,
+      body: infra["github/ruleset-main.json"],
+    });
+    expect(plan.changes[0]?.says).toContain("it lacks merge_queue");
     expect(net.writes()).toEqual([]);
   });
 

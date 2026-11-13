@@ -477,8 +477,9 @@ Off until the founder's email steps (docs/cloud.md, "Email"). When production ha
 
 ### The GitHub repository
 
-- `main` keeps its ruleset exactly as it is: `infra/github/ruleset-main.json` is a copy of it,
-  and a test compares the two field by field against a read-only recording.
+- `main` keeps its ruleset as it is, plus a merge queue ("Landing a change with a migration"):
+  `infra/github/ruleset-main.json` is a copy of it with that one rule added, and a test compares
+  the two field by field against a read-only recording.
 - `cloud` gets a ruleset requiring "Conventional commit messages", "Check, typecheck, test",
   "Database on Postgres" and "Desktop package". A test checks each is a job name in `ci.yml`.
   It also requires a pull request, squash-merged, with no approval needed (as `main`'s does),
@@ -754,6 +755,155 @@ required reviewer, limited to `main`, holding the three secrets, **before** sett
 `API_DEPLOY_PRODUCTION=true` (GitHub creates a missing environment with no reviewer). Both are
 the founder's (D12). `bun scripts/prod/check.ts --env production` lists each one still missing as
 `pending`.
+
+## Landing a change with a migration
+
+Many lanes merge to `main` without knowing about each other, and a merge to `main` migrates the
+database before the API that merge built goes live. Three things make that safe without a
+person keeping the order: the merge queue, the migration guard and the contract. All three run
+in CI's **Migrations** job (`.github/workflows/ci.yml`), on every pull request, every merge-queue
+entry and every push to `main`, and "Check, typecheck, test", the check `main` requires, passes
+only when that job did.
+
+### The merge queue
+
+`infra/github/ruleset-main.json` adds GitHub's merge queue to `main`'s ruleset. Once applied:
+
+- A green pull request is not merged directly. It joins the queue, and GitHub tests it as `main`
+  with every entry ahead of it and itself on top (`ci.yml` runs on `merge_group`). It merges only
+  when every required check passes there too. Two pull requests that are green alone and break
+  each other cannot both merge: the second fails in the queue and is taken out.
+- One entry merges at a time (`max_entries_to_merge: 1`), squashed, so every merge is its own
+  push to `main` with its own migration and its own deploy. Up to five entries are tested at once
+  (`max_entries_to_build: 5`), and each must pass on its own (`ALLGREEN`). An entry whose checks
+  have not answered in 60 minutes is taken out.
+- Release Please's release pull requests still merge themselves. `release.yml` turns on
+  auto-merge with `gh pr merge --squash --auto`; on a branch with a merge queue that puts the
+  pull request in the queue once its checks pass (`gh pr merge --help`: "no merge strategy is
+  required"; the `--squash` is ignored and the queue squashes). A release pull request that
+  `scripts/release-hold.ts` holds loses auto-merge as before, and if it is already in the queue
+  it is also taken out of it (turning auto-merge off does not do that). So is a release pull
+  request whose hold could not be decided.
+
+**What changes for a person merging by hand.** The button says "Merge when ready" and adds the
+pull request to the queue; it merges some minutes later, after the queue's run. From a terminal,
+`gh pr merge <number> --squash` does the same (with `--auto` it waits for the checks first). No
+one can skip the queue: the ruleset has no bypass, so `gh pr merge --admin` is refused too. To
+take a pull request out of the queue, use "Remove from queue" on the pull request. A held release
+pull request is merged the same way, and so joins the queue like any other.
+
+**Applying it** is the founder's or the orchestrator's (an agent only reads):
+
+```sh
+gh api repos/north-brook/ponzu/rulesets/25478973            # main's ruleset as it is now
+gh api -X PUT repos/north-brook/ponzu/rulesets/25478973 --input infra/github/ruleset-main.json
+GH_TOKEN=$(gh auth token) bun scripts/prod/check.ts --env dev   # github.ruleset.main: ok
+```
+
+`bun scripts/prod/apply.ts github-rulesets --yes` does the same, and also creates "Protect
+cloud" for the retired `cloud` branch, which is harmless. Until it is applied, the check reports
+`github.ruleset.main` as `pending` ("has no merge_queue rule yet"), not `fail`; with the rule
+applied and different from the file (another merge method, more entries at a time), it fails.
+The queue needs nothing else: the required checks keep their names, and every job in `ci.yml`
+already reports on a queue entry.
+
+### The migration guard
+
+`bun scripts/ci/migration-guard.ts check --base <ref>` judges the change's migrations against
+`<ref>`'s: the merge commit's base on a pull request, the entry ahead of it in the queue, the
+commit before it on a push. It fails, naming the file and line, when:
+
+- the new migration is not the next after the base's newest: its number is taken, the base's
+  newest is missing from its journal, or its `when` is older than the base's newest (`db:migrate`
+  would skip it);
+- its drizzle snapshot does not follow the base's newest snapshot (`prevId`), or the numbers, the
+  journal, the files and the snapshot chain disagree anywhere;
+- it edits or deletes a migration the base has (applied migrations never change);
+- it adds more than one migration;
+- it is not expand only: the statements `scripts/ci/migrations.ts` refuses (DROP of a table,
+  column, index, type, extension, function or sequence, a column's DEFAULT dropped, RENAME, a
+  type change, SET NOT NULL, ADD COLUMN … NOT NULL without a default, TRUNCATE), unless a
+  `-- contract:` line says why it is safe now;
+- a statement names a table the base already has before `lock_timeout` is set. Each such
+  statement holds a lock on that table until the migration commits, so a long transaction on it
+  would hold every request behind the migration. The migration's first statement is then
+  `SET LOCAL lock_timeout = '5s';--> statement-breakpoint`, under a `-- hand-written (…)` line, as
+  in `0031_search`. A timeout of zero or DEFAULT is no timeout and does not count. A migration
+  that only creates new tables needs none.
+
+When another lane's migration took the number first, the failure prints what to run:
+
+```sh
+git fetch origin && git merge origin/main     # a conflict in packages/db/migrations is fine
+bun scripts/ci/migration-guard.ts renumber    # against origin/main; --base <ref> for another
+git add packages/db/migrations && git commit
+```
+
+`renumber` does the renumbering by itself: it takes `main`'s journal and snapshots, deletes the
+branch's own migration, runs `db:generate` again under the next number (so the `when` is newer and
+the `prevId` is `main`'s newest), and puts the hand-written lines back. When Drizzle writes the
+same statements as before, the old file goes back whole under its new number; when it does not
+(`main` changed the same tables), it stops and prints the hand-written lines to paste. It then
+checks that a second `db:generate` finds nothing to do and that the guard passes. The migration's
+own tests that look it up by name keep working; a test that expects it to be the newest has to be
+changed by hand.
+
+Tried on the live example: `#586` (`0032_billing`) merged into a copy of `main`, then `#602`
+(`0032_email`) merged on top of it. The guard failed `#602` with the renumber advice, `renumber`
+made `0033_email` (the same SQL, the snapshot following billing's), and the guard then passed. In a
+real queue `#602`'s entry would not even build: both add `meta/0032_snapshot.json`, so GitHub finds
+a merge conflict and takes it out of the queue; the guard is what catches the cases that merge
+cleanly.
+
+### The contract: the API from before the merge on the new schema
+
+For the minutes a deploy takes, and for good after a rollback, the API that was live before the
+merge runs on the schema the merge's migration makes. `bun scripts/ci/migration-contract.ts
+--base <ref>` proves it can: it takes the base's code, puts the change's migrations in its place,
+and runs the base's own tests of its database code there (`packages/db` and `apps/api`, about 140
+files), every test database built from the new migrations. In CI it also applies them to a
+Postgres 18 with the base's `db:migrate` and runs the base's `*.live.test.ts` there. Left out are
+`packages/db/src/schema/`, whose tests are about the migrations themselves (true of the change,
+not of the base), and the API's surface and vendor tests, which reach no database. Without a new
+migration it passes at once. It replaces the "old API's inserts still go" tests written by hand in
+`#552` and `#602`, which wrote the old API's rows themselves; this runs the old API's own code.
+
+The PGlite tests run side by side and the Postgres ones one file at a time, as "Database on
+Postgres" runs them, since they share one database. With `--head <ref>` it reads the change's
+migrations from a ref, so a pull request can be tried without checking it out.
+
+Tried, on a local Postgres 15 (CI's is 18): `main`'s code on `#602`'s schema and on `#586`'s each
+pass (1,771 tests on PGlite, 38 on Postgres). `main`'s code on `#602`'s schema with a column
+`main` reads dropped behind a lying `-- contract:` line, which the guard lets through, fails 705.
+
+### A lane's migration, start to finish
+
+1. Change `packages/db/src/schema`, then `bun run db:generate --name <feature>` in
+   `packages/db`. Add hand-written lines under `-- hand-written (<why>)`; if the migration touches
+   a table that exists, the first is `SET LOCAL lock_timeout = '5s';`.
+2. Write the API so the old one keeps working on the new schema (add, never take away), and the
+   new one is safe on the old schema only if it can be (Drizzle's `select()` names every column, so
+   usually it is not; the deploy migrates first).
+3. Before pushing: `bun scripts/ci/migration-guard.ts check --base origin/main`,
+   `bun scripts/ci/migration-contract.ts --base origin/main` and `bun test packages/db`.
+4. Open the pull request. CI's Migrations job runs the same against its base.
+5. Whoever lands it adds it to the queue. If the queue or the guard says the number is taken,
+   renumber as above, push, and add it again.
+6. Once merged, `deploy-api.yml` migrates and deploys ("The production deploy, staged"). Nobody
+   runs a migration by hand.
+
+**Not proven.** No merge queue has run on this repository yet, and no queue entry has run the
+Migrations job. The contract checks the code of the commit right before the merge, not the code
+that is actually live: if two merges with migrations deploy as one (a deploy that skips a queued
+older commit), the API live before both runs on two migrations that were each checked only
+against their own base. The lock rule finds a table by its quoted name, or unquoted after a word
+that takes a table; a name built in dynamic SQL is not found. The lint does not catch a
+constraint narrowed on data that exists (a CHECK or UNIQUE added to an existing column), or a
+DELETE; the contract catches what the old API's own tests exercise, and a reviewer the rest. And
+the release notes ride on the squash commit's body (`squash_merge_commit_message: PR_BODY` in
+`infra/github/repo.json`): that the queue's squash takes the repository's commit message settings
+has not been seen yet, so look at the first queued `feat:` or `fix:` commit on `main` and at the
+release pull request that follows it.
 
 ## The minute
 
