@@ -1,8 +1,10 @@
 /*
  * What the evals spend, and the cap they stop at. Every model call an eval makes is priced from
  * its token usage by the table below and added up here, and a call is refused before it is
- * sent when the most it could cost would take the total past the cap. The agent's turns
- * run on a Claude sign-in, not this key, so they are counted in turns (`TurnBudget`), not here.
+ * sent when the most it could cost would take the total past the cap. The agent's turns run on
+ * the same key through Claude Code, whose cost cannot be known before a turn: they are counted in
+ * turns (`TurnBudget`) before they start, and what Claude Code says each cost is added here after
+ * (`Meter.add`), so the calls after a turn still stop at the cap.
  */
 
 /** Dollars per million tokens, Anthropic's first-party prices (Haiku's for prompts under 100K). */
@@ -93,6 +95,17 @@ export class Meter {
     return usd;
   }
 
+  /**
+   * After something the meter could not price beforehand (an agent turn, which Claude Code
+   * prices itself), what it cost. Nothing is refused here: the next `reserve` sees it.
+   */
+  add(label: string, usd: number): number {
+    const cost = Number.isFinite(usd) && usd > 0 ? usd : 0;
+    this.spent += cost;
+    this.calls.push({ model: "claude-code", label, usage: { input: 0, output: 0 }, usd: cost });
+    return cost;
+  }
+
   /** Spend so far by label, for the report. */
   byLabel(): Record<string, { calls: number; usd: number }> {
     const out: Record<string, { calls: number; usd: number }> = {};
@@ -106,7 +119,7 @@ export class Meter {
   }
 }
 
-/** Real agent turns run on a Claude sign-in: they are capped by count. */
+/** Real agent turns, on the evals' API key through Claude Code: they are capped by count. */
 export class TurnBudget {
   used = 0;
   constructor(readonly max: number) {}

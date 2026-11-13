@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Calibration } from "./calibrate.ts";
 import type { Judge, Model } from "./judge.ts";
+import { evalsApiKey, withoutSecret } from "./key.ts";
 import type { Meter, TurnBudget } from "./meter.ts";
 
 /*
@@ -15,7 +16,7 @@ import type { Meter, TurnBudget } from "./meter.ts";
 export interface EvalContext {
   /** Every model call on the API key is metered against the cap. */
   meter: Meter;
-  /** Real agent turns, on a Claude sign-in. */
+  /** Real agent turns, on the evals' API key through Claude Code. */
   turns: TurnBudget;
   /** Claude models on the evals' API key. */
   models: (id: string) => Model;
@@ -90,8 +91,12 @@ export function writeReport(
   name = "latest",
 ): void {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${name}.json`), `${JSON.stringify(report, null, 2)}\n`);
-  writeFileSync(join(dir, `${name}.md`), markdown.endsWith("\n") ? markdown : `${markdown}\n`);
+  // What is kept never carries the evals' key, whatever a model or an error repeated of it.
+  const key = evalsApiKey() ?? "";
+  const json = withoutSecret(`${JSON.stringify(report, null, 2)}\n`, key);
+  writeFileSync(join(dir, `${name}.json`), json);
+  const md = withoutSecret(markdown.endsWith("\n") ? markdown : `${markdown}\n`, key);
+  writeFileSync(join(dir, `${name}.md`), md);
 }
 
 /** Adds one result of `criterion` to `rates`. A verdict of n/a adds nothing. */

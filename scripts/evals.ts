@@ -12,11 +12,12 @@
  *   agent                  the agent's thread messages (apps/runner/evals/agent)
  *   all                    judges, then every suite
  *
- * The Anthropic key is PONZU_ANTHROPIC_API_KEY, or ANTHROPIC_API_KEY. Spend stops before the call
- * that could pass PONZU_EVALS_SPEND_USD (default $3) or --cap. Agent turns run on the Claude
- * sign-in in PONZU_EVALS_CLAUDE_TOKEN_FILE (or CLAUDE_CODE_OAUTH_TOKEN), at most --turns of them
- * (default 6). Each suite writes results/latest.json and latest.md beside its cases; the judges
- * write results/calibration.json and calibration.md.
+ * Everything runs on one Anthropic API key, PONZU_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY (the
+ * development key), never on a Claude sign-in. Spend stops before the call that could pass
+ * PONZU_EVALS_SPEND_USD (default $3) or --cap. Agent turns run on the same key through Claude
+ * Code, at most --turns of them (default 6); what each cost is added to the spend after it ends.
+ * Each suite writes results/latest.json and latest.md beside its cases; the judges write
+ * results/calibration.json and calibration.md.
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -26,13 +27,16 @@ import {
   calibrationMarkdown,
   createJudge,
   type EvalContext,
+  evalsApiKey,
   gitCommit,
   JUDGE_MODEL,
   Meter,
+  NO_EVALS_KEY,
   percent,
   readCalibrations,
   type Suite,
   TurnBudget,
+  withoutSecret,
 } from "@ponzu/evals";
 import { ideasSuite } from "../apps/api/evals/ideas/ideas.eval.ts";
 import { agentSuite } from "../apps/runner/evals/agent/agent.eval.ts";
@@ -47,10 +51,22 @@ const flag = (name: string) => {
 const words = args.filter((arg, i) => !arg.startsWith("--") && !args[i - 1]?.startsWith("--"));
 const [command = "all", ...named] = words;
 
-const apiKey = process.env.PONZU_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
+const apiKey = evalsApiKey() ?? "";
 if (!apiKey) {
-  console.error("Set PONZU_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY): see docs/evals.md.");
+  console.error(NO_EVALS_KEY);
   process.exit(2);
+}
+// Nothing a run prints carries the key, whatever a model, a suite or an error repeated of it.
+for (const stream of ["log", "warn", "error"] as const) {
+  const print = console[stream].bind(console);
+  console[stream] = (...parts: unknown[]) =>
+    print(
+      ...parts.map((part) =>
+        typeof part === "string" || part instanceof Error
+          ? withoutSecret(part instanceof Error ? (part.stack ?? String(part)) : part, apiKey)
+          : part,
+      ),
+    );
 }
 const cap = Number(flag("cap") ?? process.env.PONZU_EVALS_SPEND_USD ?? 3);
 const meter = new Meter(cap);
@@ -97,7 +113,10 @@ async function calibrateAll(suites: Suite[]) {
     }
     if (done.length && !only) {
       const recorded = Object.values(readCalibrations(suite.resultsDir));
-      writeFileSync(join(suite.resultsDir, "calibration.md"), calibrationMarkdown(recorded));
+      writeFileSync(
+        join(suite.resultsDir, "calibration.md"),
+        withoutSecret(calibrationMarkdown(recorded), apiKey),
+      );
     }
   }
   return ok;
@@ -130,6 +149,10 @@ try {
     ok = await calibrateAll(pick([]));
     if (ok) await runAll(pick([]));
   } else await runAll(pick([command, ...named]));
+} catch (error) {
+  // Printed here rather than by the runtime, so the key is taken out of it too.
+  console.error(error instanceof Error ? error : String(error));
+  ok = false;
 } finally {
   console.log(
     `\nSpent $${meter.spent.toFixed(4)} of the $${cap.toFixed(2)} cap; ${ctx.turns.used} agent turn(s).`,

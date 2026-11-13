@@ -6,6 +6,8 @@ import {
   calibrate,
   compareLabels,
   type EvalContext,
+  evalsApiKey,
+  NO_EVALS_KEY,
   reportHeader,
   requireCalibrated,
   SpendCapReached,
@@ -28,6 +30,7 @@ import {
   runTurn,
   type TurnOutcome,
   type TurnSetup,
+  turnCostUsd,
 } from "./harness.ts";
 import { THREAD_JUDGE_EXAMPLES } from "./judge.examples.ts";
 import {
@@ -382,14 +385,6 @@ interface CaseResult {
   judgedAt?: string | null;
 }
 
-function claudeToken(): string | null {
-  const file =
-    process.env.PONZU_EVALS_CLAUDE_TOKEN_FILE ??
-    join(import.meta.dir, "../../../../.context/cloud/claude-oauth-token");
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  return existsSync(file) ? readFileSync(file, "utf8").trim() : null;
-}
-
 function claudeBinary(): string | null {
   if (process.env.PONZU_CLAUDE) return process.env.PONZU_CLAUDE;
   try {
@@ -446,23 +441,31 @@ export const agentSuite: Suite = {
       THREAD_JUDGE,
       threadJudgeVersion(THREAD_JUDGE_MODEL),
     );
-    const token = claudeToken();
+    // The evals' API key, the one the judges use: never a Claude sign-in, from the environment
+    // or from disk.
+    const apiKey = evalsApiKey();
     const claude = claudeBinary();
     const chromium = process.env.PONZU_CHROMIUM ?? findHeadlessShell();
     const cases = ctx.only ? AGENT_CASES.filter((c) => ctx.only!.includes(c.id)) : AGENT_CASES;
     const startedAt = ctx.meter.spent;
     const notRun: string[] = [];
     const results: CaseResult[] = [];
-    if (!token || !claude) {
-      notRun.push(
-        `every case: ${!token ? "no Claude sign-in (PONZU_EVALS_CLAUDE_TOKEN_FILE)" : "no claude binary"}`,
-      );
+    if (!apiKey || !claude) {
+      notRun.push(`every case: ${!apiKey ? NO_EVALS_KEY : "no claude binary"}`);
     }
-    // One at a time: each is a real Claude Code session on one person's plan.
-    for (const c of token && claude ? cases : []) {
-      if (!token || !claude) break;
+    // One at a time: each is a real Claude Code session, which can run for minutes.
+    for (const c of apiKey && claude ? cases : []) {
+      if (!apiKey || !claude) break;
       const row: CaseResult = { id: c.id, title: c.title, request: c.request };
       results.push(row);
+      // A turn's cost is known only once it ends: none starts once the cap is spent.
+      if (ctx.meter.spent >= ctx.meter.capUsd) {
+        notRun.push(
+          `${c.id}: the $${ctx.meter.capUsd.toFixed(2)} cap is spent ($${ctx.meter.spent.toFixed(4)})`,
+        );
+        row.error = "not run: spend cap";
+        continue;
+      }
       try {
         ctx.turns.take(`${c.id}'s turn`);
       } catch (error) {
@@ -475,12 +478,14 @@ export const agentSuite: Suite = {
       let turn: TurnOutcome;
       try {
         turn = await runTurn(setup, {
-          token,
+          apiKey,
           claude,
           ...(chromium ? { chromium } : {}),
           log: ctx.log,
         });
       } catch (error) {
+        // A failed turn was paid for too, as far as the runner reported it before it failed.
+        ctx.meter.add("agent:turn", turnCostUsd((error as { usage?: TurnOutcome["usage"] }).usage));
         row.error = String(error);
         ctx.log(`${c.id}: the turn failed: ${row.error}`);
         continue;
@@ -513,11 +518,10 @@ export const agentSuite: Suite = {
         boards_made: madeBoards.length,
         commits: turn.commits.length,
         minutes: Math.round(turn.durationMs / 6000) / 10,
-        claude_code_cost_usd:
-          Math.round(
-            turn.usage.reduce((s, u) => s + u.models.reduce((m, x) => m + x.costUsd, 0), 0) * 100,
-          ) / 100,
+        claude_code_cost_usd: Math.round(turnCostUsd(turn.usage) * 100) / 100,
       };
+      // The turn ran on the evals' key: what Claude Code says it cost counts against the cap.
+      ctx.meter.add("agent:turn", turnCostUsd(turn.usage));
       row.factInputs = factInputs(setup, turn);
       row.facts = factsText(row.factInputs);
       row.midTurn = turn.midTurn;
@@ -680,6 +684,7 @@ function finish(
     failures,
     cases: results,
   };
+  // writeReport takes the key out of what it writes, whatever a model or an error repeated of it.
   writeReport(RESULTS, report, agentMarkdown(report, results));
   return report;
 }
