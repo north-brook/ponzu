@@ -12,9 +12,9 @@ data layer, pairing, Tailscale and the camera are gone. iPhone 1.1.0, in
 TestFlight, has launch, sign-in, setup, the canvases list, search, new
 canvas, a live canvas with comments and comment pictures, the chat, needs
 you, the pull request with Merge, and pings, which are built but stay off
-until the API sends them (below, "Pings"). The list's filter came after it.
-Still to come: the rest of iPad and iPhone Duo, standby, analytics, and the
-last of settings.
+until the API sends them (below, "Pings"). Since then: the list's filter, the
+chat beside the canvas on an iPad, and standby on iPhone Duo (below). Still to
+come: analytics, and the last of settings.
 
 ## Layout
 
@@ -887,9 +887,11 @@ in `app.json`).
 - **The chat docks** beside the canvas in a window 900pt or wider, flat
   (`chatPanel`: a 13-inch iPad either way up, an 11-inch one sideways, the
   inner display sideways with its rail): a 344pt panel at the trailing edge,
-  under the canvas's bar. The canvas frames its boards in what it leaves, and
-  its stack stays in reach beside it; Chat there closes the panel, as far
-  as it was read. Partly folded, the chat stays a sheet.
+  under the canvas's bar. The page's insets leave it out, so a canvas not yet
+  moved frames its boards in what is left (one the person has panned stays
+  where it is), and its stack and bar stay in reach beside it; Chat there
+  closes the panel, as far as it was read, and the pull request button
+  closes it before its sheet opens. Partly folded, the chat stays a sheet.
 - **The tabs** are named on an iPad, where the tab bar is a row of names
   across the top that VoiceOver reads by name; on an iPhone they're marks,
   together in one bar. Search is a plain tab, not the system's search tab

@@ -584,6 +584,8 @@ export default function CanvasScreen() {
     setHolding(null);
     setNotice(null);
     setPullRequest(true);
+    // A docked chat gives way, read as far as it held, as the chat's own pull request line does.
+    if (chatDocked) setChatClosing(true);
   };
   /** A pull request line in the chat: the chat is read as far as it held, and the sheet opens. */
   const openPullRequestFromChat = (readSeq: number | null) => {
@@ -683,7 +685,9 @@ export default function CanvasScreen() {
   const standbyBoards = cloudStandbyPath(head, pageBoards);
   const standbyKey = standbyBoards.join(",");
   const following = useMemo(() => standbyBoards, [standbyKey]);
-  const nothingUp = !pending && !thread && !holding && !movingDraft && !chat && !pullRequest;
+  // Nothing the person is in the middle of: a sheet, a comment being placed, the pings ask.
+  const nothingUp =
+    !pending && !thread && !holding && !movingDraft && !chat && !pullRequest && !asking && !placing;
   const {
     standby: standingBy,
     listen,
@@ -698,8 +702,12 @@ export default function CanvasScreen() {
     if (follow) canvas.current?.post({ t: "follow", artboardId: follow, ms: FOLLOW.move });
   }, [follow]);
 
-  // Writing or reading a comment keeps the chrome, focused board or not; standby has none.
-  const bare = standby || (Boolean(focusedBoard) && !moving && !pending && !thread && !holding);
+  /** The chat docked beside the canvas (an iPad's window, `chatPanel`), once it can be drawn. */
+  const chatDocked = chat && docksChat && Boolean(chatMe);
+  // Writing or reading a comment keeps the chrome, focused board or not, and so does a docked
+  // chat beside it; standby has none.
+  const bare =
+    standby || (Boolean(focusedBoard) && !moving && !pending && !thread && !holding && !chatDocked);
   const navigation = useNavigation();
   useEffect(() => {
     navigation.setOptions({ autoHideHomeIndicator: bare });
@@ -731,18 +739,17 @@ export default function CanvasScreen() {
   };
   const manyPages = (doc?.pages.length ?? 0) > 1;
 
-  /** The chat docked beside the canvas: what it takes at the trailing edge, its gap included. */
-  const chatDocked = chat && docksChat;
+  /** What the docked chat takes at the trailing edge, its gap included. */
   const besideChat = chatDocked ? PANEL_WIDTH + 8 : 0;
-  // The page frames its boards in what the panel leaves.
+  // The page frames its boards in what the panel leaves (the rail's side too) when it reframes.
   const canvasInsets = useMemo(
     () => ({
       top: insets.top + BAR,
-      right: besideChat ? besideChat + 8 : 0,
+      right: besideChat ? besideChat + 8 + insets.right : 0,
       bottom: insets.bottom,
       left: 0,
     }),
-    [insets.top, insets.bottom, besideChat],
+    [insets.top, insets.bottom, insets.right, besideChat],
   );
   /** What a sheet over the canvas keeps clear at the trailing edge: the rail, and a docked chat. */
   const sheetRight = insets.right + besideChat;
@@ -763,7 +770,7 @@ export default function CanvasScreen() {
   const line = notice ?? queued ?? (placeholderLine ? null : status.line);
   // A docked chat leaves the canvas and its stack in reach, Chat there closing it.
   const sheetUp = Boolean(
-    pending || thread || holding || movingDraft || (chat && !docksChat) || pullRequest || asking,
+    pending || thread || holding || movingDraft || (chat && !chatDocked) || pullRequest || asking,
   );
   const offline =
     state.status === "offline" || !onlineManager.isOnline() ? CANVAS_WORDS.offline : null;
@@ -1066,7 +1073,7 @@ export default function CanvasScreen() {
         />
       )}
       {/* After the comment's field has gone, and over nothing else. */}
-      {asking && !pending && !thread && !holding && !chat && !pullRequest && (
+      {asking && !pending && !thread && !holding && (!chat || chatDocked) && !pullRequest && (
         <PingAsk
           right={sheetRight}
           onTurnOn={async () => {

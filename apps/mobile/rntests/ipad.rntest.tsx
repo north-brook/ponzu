@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globa
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import type { ToCanvas } from "../canvas/protocol";
-import { backend, stockChat } from "../lib/cloud/backend.fake";
+import { backend, stockChat, stockPullRequest } from "../lib/cloud/backend.fake";
 import { CloudProvider } from "../lib/cloud/query";
 import { drafts } from "../lib/drafts";
 import { PANEL_WIDTH } from "../lib/duo-layout";
@@ -127,6 +127,17 @@ describe("an iPad's window", () => {
     // Chat again closes it, and the canvas has the window back.
     await fireEvent.press(screen.getByTestId("stack-chat"));
     await waitFor(() => expect(screen.queryByTestId("chat-sheet")).toBeNull());
+    await waitFor(() => expect(lastInsets()?.right).toBe(0));
+  });
+
+  test("the pull request button beside the docked chat closes it and opens the pull request", async () => {
+    Object.assign(mockWindow, { width: 1376, height: 1032 });
+    await stockPullRequest(backend.world);
+    await openPricing();
+    await openChat();
+    await fireEvent.press(await screen.findByTestId("stack-pr"));
+    await screen.findByTestId("pr-sheet");
+    expect(screen.queryByTestId("chat-sheet")).toBeNull();
     await waitFor(() => expect(lastInsets()?.right).toBe(0));
   });
 
