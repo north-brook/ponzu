@@ -41,11 +41,14 @@ export const canvasPullRequests = new Hono<AppEnv>()
     async (c) => {
       const { id } = c.req.valid("param");
       await requireCanvas(c, id, "write");
+      const { agent } = c.var.actor;
       const results: LinkResult[] = await linkPullRequests(c.var.deps, {
         canvasId: id,
         user: c.var.actor.user,
         refs: c.req.valid("json").urls,
-        source: "person",
+        // Through Ponzu's MCP, the person's own agent links them (docs/cloud.md, "Your own agent").
+        source: agent ? "agent" : "person",
+        via: agent?.name ?? null,
       });
       return c.json({ results });
     },

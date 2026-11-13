@@ -3742,6 +3742,9 @@ to read; a refusal is the route's own sentence, as a tool error.
 | `answer_question` | `canvas`, `question`, `answers?`, `approved?`, `note?` | answers one of the agent's questions; a secret stays the person's to give in the app |
 | `wait_for_activity` | `canvas`, `after?`, `timeout_seconds?` (240 at most) | waits until Ponzu's agent finishes a turn or needs the person, or the time is up, and answers what came since `after` |
 | `stop_agent` | `canvas` | the Stop button |
+| `link_pull_request`, `link_pull_requests` | `canvas`, `url` / `urls` | `POST /v1/canvases/:id/pull-requests` as the person, linked with source `agent` and `via` the agent's name ("Linked pull requests"); each refusal is the route's sentence |
+| `unlink_pull_request` | `canvas`, `url` | unlinks one the canvas links, never its own |
+| `list_pull_requests` | `canvas` | the canvas's own pull request and every one it links, with state and checks |
 
 A canvas is named by its id or its link. `wait_for_activity` looks every three seconds, as two
 of the person's own reads; it is a function's long wait, inside the 300 seconds one may run. Not

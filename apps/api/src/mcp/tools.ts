@@ -164,6 +164,46 @@ async function threadAfter(
   return { items: newer, more: newer.length === items.length && items.length === 50 && after > 0 };
 }
 
+interface PullRequestList {
+  branch: { number: number; state: string; checks: string } | null;
+  linked: {
+    repoId: string;
+    repository: string;
+    number: number;
+    title: string;
+    url: string;
+    state: string;
+    checks: string;
+    via: string | null;
+  }[];
+}
+
+/** Link these, and say what happened to each, as the person's route answered. */
+async function linked(api: PersonApi, canvasId: string, urls: string[]): Promise<string> {
+  const { results } = await api.call<{
+    results: (
+      | {
+          ref: string;
+          result: "linked";
+          pullRequest: { repository: string; number: number; state: string; title: string };
+        }
+      | { ref: string; result: "alreadyLinked"; message: string }
+      | { ref: string; result: "refused"; code: string; message: string }
+    )[];
+  }>("POST", `/v1/canvases/${canvasId}/pull-requests`, { urls });
+  const lines = results.map((r) =>
+    r.result === "linked"
+      ? `Linked ${r.pullRequest.repository}#${r.pullRequest.number} (${r.pullRequest.state}): ${r.pullRequest.title}`
+      : r.result === "alreadyLinked"
+        ? `${r.ref}: ${r.message}`
+        : `Not linked, ${r.ref}: ${r.message}`,
+  );
+  return [
+    ...lines,
+    "The canvas settles once every pull request is merged or closed and at least one merged.",
+  ].join("\n");
+}
+
 async function openQuestions(ctx: ToolContext, canvasId: string): Promise<QuestionLike[]> {
   // Read only after `getCanvas` let the person see the canvas.
   return (await listOpenQuestions(ctx.deps.db, canvasId)) as QuestionLike[];
@@ -441,6 +481,99 @@ export const delegateTools: McpTool[] = [
       const canvas = await getCanvas(api, args.canvas);
       await api.call("POST", `/v1/canvases/${canvas.id}/stop`);
       return "Asked it to stop.";
+    },
+  }),
+
+  mcpTool({
+    name: "link_pull_requests",
+    title: "Link pull requests",
+    description:
+      "Link the pull requests you opened for a canvas's work, by their GitHub links. Link every one you open or push to, as soon as it exists. The canvas settles (it's done, and its sandbox goes) once every linked pull request is merged or closed and at least one merged. A pull request must be in a repository of the canvas's workspace that the person can read.",
+    input: {
+      canvas: Canvas,
+      urls: z
+        .array(z.string().min(1).max(512))
+        .min(1)
+        .max(20)
+        .describe("Each pull request's link, like https://github.com/owner/repo/pull/12."),
+    },
+    async run(args, { api }) {
+      const canvas = await getCanvas(api, args.canvas);
+      return linked(api, canvas.id, args.urls);
+    },
+  }),
+
+  mcpTool({
+    name: "link_pull_request",
+    title: "Link pull request",
+    description:
+      "Link one pull request you opened for a canvas's work, by its GitHub link: link_pull_requests for one. The canvas settles once every linked pull request is merged or closed and at least one merged.",
+    input: {
+      canvas: Canvas,
+      url: z
+        .string()
+        .min(1)
+        .max(512)
+        .describe("Its link, like https://github.com/owner/repo/pull/12."),
+    },
+    async run(args, { api }) {
+      const canvas = await getCanvas(api, args.canvas);
+      return linked(api, canvas.id, [args.url]);
+    },
+  }),
+
+  mcpTool({
+    name: "unlink_pull_request",
+    title: "Unlink pull request",
+    description:
+      "Stop a canvas following a pull request it links (one that isn't the canvas's work after all). Never the canvas's own, from its branch.",
+    input: { canvas: Canvas, url: z.string().min(1).max(512) },
+    async run(args, { api }) {
+      const canvas = await getCanvas(api, args.canvas);
+      const asked = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(args.url);
+      if (!asked) throw new Refusal(400, "invalid_url", "That isn't a GitHub pull request link.");
+      const { linked: links } = await api.call<PullRequestList>(
+        "GET",
+        `/v1/canvases/${canvas.id}/pull-requests`,
+      );
+      const link = links.find(
+        (l) =>
+          l.repository.toLowerCase() === asked[1]!.toLowerCase() && l.number === Number(asked[2]),
+      );
+      if (!link) return `${asked[1]}#${asked[2]} isn't linked to this canvas.`;
+      await api.call(
+        "DELETE",
+        `/v1/canvases/${canvas.id}/pull-requests/${link.repoId}/${link.number}`,
+      );
+      return `Unlinked ${link.repository}#${link.number}.`;
+    },
+  }),
+
+  mcpTool({
+    name: "list_pull_requests",
+    title: "List pull requests",
+    description:
+      "A canvas's pull requests: its own, from its branch, and the ones linked to it, each with its state and checks.",
+    input: { canvas: Canvas },
+    readOnly: true,
+    async run(args, { api }) {
+      const canvas = await getCanvas(api, args.canvas);
+      const { branch, linked: links } = await api.call<PullRequestList>(
+        "GET",
+        `/v1/canvases/${canvas.id}/pull-requests`,
+      );
+      const lines: string[] = [];
+      if (branch) {
+        lines.push(
+          `#${branch.number} (the canvas's own, from its branch): ${branch.state}, checks ${branch.checks}`,
+        );
+      }
+      for (const l of links) {
+        lines.push(
+          `${l.repository}#${l.number} ${l.title}: ${l.state}, checks ${l.checks}${l.via ? `, linked by ${l.via}` : ""} ${l.url}`,
+        );
+      }
+      return lines.join("\n") || "No pull requests yet.";
     },
   }),
 ];

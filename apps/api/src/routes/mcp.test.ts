@@ -421,3 +421,31 @@ describe("driving a canvas", () => {
     await t.backgroundDone();
   });
 });
+
+describe("pull requests", () => {
+  test("an agent links the pull requests it opened; they say they came through it", async () => {
+    const { access_token } = await connect("maya");
+    const created = await tool(access_token, "create_canvas", { repository: ws.repo.fullName });
+    const canvasId = /Created (cnv_[0-9a-z]+)/.exec(created.text)![1]!;
+    const repo = t.github.repo(ws.repo.fullName)!;
+    t.github.pulls.push(repo, "feature-mcp");
+    const pull = t.github.pulls.openAsSomeone(repo, { head: "feature-mcp", login: "sam" });
+    const url = `https://github.com/${ws.repo.fullName}/pull/${pull.number}`;
+
+    const linked = await tool(access_token, "link_pull_request", { canvas: canvasId, url });
+    expect(linked.isError).toBe(false);
+    expect(linked.text).toContain(`Linked ${ws.repo.fullName}#${pull.number} (open)`);
+    const listed = await tool(access_token, "list_pull_requests", { canvas: canvasId });
+    expect(listed.text).toContain("linked by Claude Code");
+
+    const elsewhere = await tool(access_token, "link_pull_requests", {
+      canvas: canvasId,
+      urls: ["https://github.com/someone-else/repo/pull/1", "not a link"],
+    });
+    expect(elsewhere.text).toContain("Not linked, https://github.com/someone-else/repo/pull/1");
+    expect(elsewhere.text).toContain("Not linked, not a link");
+
+    const unlinked = await tool(access_token, "unlink_pull_request", { canvas: canvasId, url });
+    expect(unlinked.text).toBe(`Unlinked ${ws.repo.fullName}#${pull.number}.`);
+  });
+});
