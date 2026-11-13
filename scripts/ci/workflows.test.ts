@@ -484,6 +484,24 @@ describe("every workflow", () => {
       '[ "$WORKFLOWS" = success ]',
     );
   });
+
+  test("ci.yml's tests run under the watchdog, cut off a minute before the job's own limit", () => {
+    const tests = load("ci.yml").jobs.tests as Job & { "timeout-minutes": number };
+    // The deadline counts from the job's first step.
+    expect(tests.steps[0]?.run).toBe('echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"');
+    const run = tests.steps.find((s) => s.name === "Tests")?.run ?? "";
+    expect(run).toContain(`deadline=$((JOB_STARTED + ${tests["timeout-minutes"]} * 60 - 60))`);
+    expect(run).toMatch(
+      /bun scripts\/ci\/test-watchdog\.ts --deadline "\$deadline" --trace "\$results\/running" -- \\\n\s*bun test --parallel /,
+    );
+    // The trace the watchdog reads is kept by the first preload.
+    const bunfig = Bun.TOML.parse(
+      readFileSync(join(import.meta.dir, "../../bunfig.toml"), "utf8"),
+    ) as {
+      test: { preload: string[] };
+    };
+    expect(bunfig.test.preload[0]).toBe("./scripts/ci/test-trace.ts");
+  });
 });
 
 describe("uptime.yml", () => {
