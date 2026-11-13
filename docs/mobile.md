@@ -545,6 +545,23 @@ unsent pin offers Open, Move and Discard draft.
   unavailable and VoiceOver says why ("You can look at this canvas. Steering
   it takes push access to <repo>."), a hold does nothing, and a thread's sheet
   shows that line in place of its reply field, with Resolve unavailable.
+- **The picture of where it was left** (iPhone design slice 12). Each
+  comment and reply sent from the phone gets the picture the Mac gives its
+  own: the area round the pin, light and dark, at `COMMENT_PICTURE`'s size.
+  The canvas page draws it with the Mac's code (packages/canvas's
+  `comment-picture.tsx`, by path in `canvas/picture.ts`), as PNG, since
+  WebKit's canvas can't write WebP (asked for WebP it writes PNG, which the
+  page refuses as a wrong type rather than mislabel). The app asks with
+  `picture` as the comment's op is made, and the page answers `picture` with
+  each theme's base64, `none` when there is nothing round the pin, or
+  `failed`. `lib/canvas/pictures.ts` does the rest with the client's
+  `CommentPictures` (shared with the Mac): upload as `light.png` and
+  `dark.png`, then attach once the API has the comment. The chat shows the
+  drawn picture at once from here. Nothing about sending waits on it: a
+  picture the page can't draw in 30 seconds, or that can't be uploaded or
+  attached (offline, or an API from before PNG was taken), is let go of,
+  and the comment reads "On <place>". The page draws one at a time and
+  calls no API.
 - **Proofs.** `bun test apps/mobile/lib/canvas/comments.test.ts` runs each op
   over the real `CloudSource` and the fake backend (shown at once, refused,
   read only, offline then landed, a reply reopening) and the drafts over a
@@ -553,8 +570,15 @@ unsent pin offers Open, Move and Discard draft.
   with a stand-in web view: Comment, a tap, Send puts the op on the page at
   once; a refused one comes back with its words; a read-only canvas disables
   Comment. `canvas/page.webkit.test.ts` checks a tap after Comment drops a
-  pin in WebKit. `maestro/comment.yaml` and `comment-modes.yaml` run the
-  flows on a simulator, on spare only.
+  pin in WebKit, and draws a comment's picture there: two PNGs, 480 × 320,
+  with no policy violation. `lib/canvas/pictures.test.ts` runs the pictures
+  over the real `CloudSource` and a stand-in page (kept as PNG, a reply's
+  too, and none kept when the page has nothing, fails or never answers);
+  `rntests/comments.rntest.tsx` checks the screen asks the page after the
+  op and the chat shows the picture. `maestro/comment.yaml` and
+  `comment-modes.yaml` run the flows on a simulator, on spare only;
+  `comment.yaml` ends on the chat showing the picture the simulator's
+  WebKit drew.
 
 ### The chat
 

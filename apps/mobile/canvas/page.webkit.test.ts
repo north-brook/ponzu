@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { type Doc, emptyDoc, parseArtboardFile } from "@ponzu/core";
 import { type Browser, type Page, webkit } from "playwright-core";
 import { buildPage } from "./build.ts";
-import { ASSETS_PLACEHOLDER, type ToCanvas } from "./protocol.ts";
+import { ASSETS_PLACEHOLDER, type PictureAnswer, type ToCanvas } from "./protocol.ts";
 
 /*
  * The canvas page in WebKit (Playwright's, the engine WKWebView uses), headless, loaded as the
@@ -277,6 +277,81 @@ describe.skipIf(!haveWebKit)("the canvas page in WebKit", () => {
     expect(spot!.y).toBeLessThan(600);
     await page.close();
   }, 60_000);
+
+  test("draws a comment's picture as PNG, light and dark, under its own policy", async () => {
+    const page = await open();
+    const doc = fixture();
+    const comment = (
+      id: string,
+      at: { artboardId?: string; pageId?: string; x: number; y: number },
+    ) => ({
+      id: `th_${id}`,
+      ...at,
+      status: "open" as const,
+      createdAt: 0,
+      updatedAt: 0,
+      messages: [
+        {
+          id,
+          author: { kind: "user" as const, id: "u_maya", name: "Maya" },
+          text: "Bigger",
+          createdAt: 0,
+        },
+      ],
+    });
+    await post(page, {
+      t: "doc",
+      doc,
+      assetBase: `${origin}/cnv_page/`,
+      theme: "light",
+      file: "cnv_page",
+    });
+    await waitForSent(page, "drawn");
+    // Asked for as the comment is made: its op follows the ask.
+    await post(page, { t: "picture", id: "p1", threadId: "th_m_1", messageId: "m_1" });
+    await post(page, {
+      t: "op",
+      op: { op: "thread.create", thread: comment("m_1", { artboardId: "ab_home", x: 120, y: 80 }) },
+    });
+    // One on the ground, far from every board: nothing round it to show.
+    await post(page, {
+      t: "op",
+      op: {
+        op: "thread.create",
+        thread: comment("m_far", { pageId: "pg_home", x: 90_000, y: 90_000 }),
+      },
+    });
+    await post(page, { t: "picture", id: "p2", threadId: "th_m_far", messageId: "m_far" });
+    const answers = async () =>
+      (await page
+        .waitForFunction(
+          () => {
+            const sent = (window as unknown as { __sent: { t: string; id?: string }[] }).__sent;
+            const pictures = sent.filter((m) => m.t === "picture");
+            return pictures.length >= 2 ? pictures : null;
+          },
+          undefined,
+          { timeout: 30_000 },
+        )
+        .then((h) => h.jsonValue())) as unknown as PictureAnswer[];
+    const [first, second] = await answers();
+    expect(first).toMatchObject({ id: "p1" });
+    if (!first || !("light" in first)) throw new Error(`No picture: ${JSON.stringify(first)}`);
+    for (const theme of [first.light, first.dark]) {
+      const bytes = Uint8Array.from(atob(theme), (c) => c.charCodeAt(0));
+      // PNG's signature, then its header's width and height: twice the size it is shown at.
+      expect([...bytes.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+      const view = new DataView(bytes.buffer);
+      expect([view.getUint32(16), view.getUint32(20)]).toEqual([480, 320]);
+    }
+    expect(first.light).not.toBe(first.dark);
+    expect(second).toEqual({ t: "picture", id: "p2", none: true });
+    // The drawing broke nothing the page's policy holds to.
+    expect(
+      await page.evaluate(() => (window as unknown as { __violations: string[] }).__violations),
+    ).toEqual([]);
+    await page.close();
+  }, 90_000);
 
   test("a working board has its ring and no rain, on a pure white ground", async () => {
     const page = await open();

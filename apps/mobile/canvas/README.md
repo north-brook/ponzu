@@ -17,6 +17,7 @@ no API. The app posts it messages; it posts back gestures.
 | `gestures.ts` | Touches turned into pan, pinch, tap, double-tap and hold. A double-tap focuses a board; pinching out or panning past it leaves. |
 | `store.ts` | What the app has said; each op applied here with `applyOp` on a fresh copy of the doc. |
 | `probe.ts` | The canvas timing its own gestures, when the app asks: frames and camera moves, as `perf/` counts them. |
+| `picture.ts` | A comment's picture, when the app asks: drawn with the Mac's code (packages/canvas's `comment-picture.tsx`), light and dark, as PNG (WebKit can't write WebP), sent back as base64. |
 | `csp.ts` | The page's content security policy. |
 | `build.ts` | Builds `dist/index.html` and `dist/bundle.ts`. |
 | `page.webkit.test.ts` | The built page in Playwright's WebKit, loaded as the app loads it. |
@@ -81,6 +82,14 @@ A `longpress` means: show the comment sheet, send `pending` with the pin and `in
 `openThread` means: show the thread sheet and send `thread` with its id.
 A comment sheet dismissed with words in it leaves its pin: send `unsent` with every such pin, by its
 draft's key, and the threads with a reply left unsent. `openUnsent` means one was tapped: show its comment sheet again and send `pending`.
+`picture` (with an `id`, a thread and a message) asks for the picture of where the person's
+comment was left: the page waits for the comment to reach its doc (up to 5 seconds), draws it
+off screen in both themes, and answers `picture` with the same `id` and each theme's PNG as
+base64, `none` when there is nothing round the pin to show, or `failed`
+(lib/canvas/pictures.ts uploads them). The drawing reads default styles in a frame it writes
+itself, so `about:srcdoc` is allowed beside the base URL and `about:blank`. Its scene takes the
+Mac's ground and pin colours from `.pz-root` in `canvas.css`, so everyone's thread shows the same
+picture.
 `probe` with a rate has the page measure that share of gestures (`probe.ts`), each sent back as
 `perf` when the camera comes to rest; see `perf/README.md`.
 `focused` with a board means the board has the screen: hide the chrome. A pan or pinch on it sends

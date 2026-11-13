@@ -1,10 +1,12 @@
 import { createRoot } from "react-dom/client";
 import { PhoneCanvas } from "./Canvas.tsx";
+import { picture } from "./picture.ts";
 import { probe } from "./probe.ts";
-import { listen, send } from "./store.ts";
+import { listen, onPicture, send } from "./store.ts";
 
 listen();
 probe();
+onPicture(picture);
 window.addEventListener("error", (e) =>
   send({ t: "error", message: String(e.error?.stack ?? e.message) }),
 );

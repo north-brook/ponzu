@@ -41,6 +41,7 @@ import {
   type Spot,
   statusOp,
 } from "../../lib/canvas/comments";
+import { type LocalPicture, PicturePage, phonePictures } from "../../lib/canvas/pictures";
 import { canvasStatus, previewUrl } from "../../lib/canvas/status";
 import { useCanvasHead, useCanvasSource, useCanvasView } from "../../lib/canvas/use-canvas";
 import { backend } from "../../lib/cloud/backend";
@@ -176,6 +177,28 @@ export default function CanvasScreen() {
   // The page draws from the canvas's own files: known from the replica, or first from the view.
   const assetsUrl = source?.assetBase ?? view.data?.assetsUrl ?? null;
   const name = head?.name ?? view.data?.name ?? (state.path || doc?.name || "");
+
+  // The picture of where each comment and reply the person sends was left, drawn by the page as
+  // it is sent and kept with it once the API has it, as the Mac does (lib/canvas/pictures.ts).
+  const picturePage = useMemo(() => new PicturePage((msg) => canvas.current?.post(msg)), []);
+  useEffect(() => () => picturePage.close(), [picturePage]);
+  const [pictures, setPictures] = useState<ReadonlyMap<string, LocalPicture>>(() => new Map());
+  useEffect(() => {
+    if (!source || !me) return;
+    const made = phonePictures({
+      canvasId,
+      meId: me.id,
+      source,
+      api: backend.api.canvases,
+      page: picturePage,
+    }).start();
+    const off = made.subscribe(() => setPictures(made.getSnapshot()));
+    return () => {
+      off();
+      made.close();
+      setPictures(new Map());
+    };
+  }, [source, me?.id, canvasId, picturePage]);
 
   // The agent's boards get the ring.
   const ringed = status.working.join(" ");
@@ -417,9 +440,12 @@ export default function CanvasScreen() {
         case "drawn":
           setDrawn(true);
           break;
+        case "picture":
+          picturePage.heard(msg);
+          break;
       }
     },
-    [canvasId],
+    [canvasId, picturePage],
   );
 
   /** Sent, and answered: a refusal's words go where the person will see them. */
@@ -944,6 +970,7 @@ export default function CanvasScreen() {
           canvas={view.data}
           doc={doc}
           me={chatMe}
+          pictures={pictures}
           readOnly={readOnly}
           offline={offline}
           focus={chatFocus && (head?.needsYouCount ?? 0) === 0}

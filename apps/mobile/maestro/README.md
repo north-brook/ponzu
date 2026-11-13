@@ -14,7 +14,7 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | `canvases.yaml` | Maya's list in every state: the row waiting on her first, with its question; the working row; Settled folding the settled canvas away; holding a row to settle it; settings from the lockup switching to Northbrook, and usage with nothing to pay. |
 | `new-canvas.yaml` | Sam, with no canvases: New canvas comes by itself, in Scratch, in the Mac's words; Send waits for a prompt, then makes the canvas and opens it. Maya: New canvas from the header, the picker grouped by workspace, and a repo in Northbrook moving the statement to it. |
 | `canvas.yaml` | A canvas from its row (the fake's Pricing page): the web view draws it, the placeholder gives way, the title and the floating stack (Comment, Chat, no pull request); Back to the list. |
-| `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it. |
+| `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it; the chat then shows the picture of where it was left, which the canvas page drew as it was sent. |
 | `comment-modes.yaml` | A hold on the FAQ board brings the field up in voice, which says it can't hear (the microphone is refused); Type instead and Speak instead switch; typed words swiped away stay as an unsent pin, which brings the field back with them. |
 | `chat.yaml` | The Pricing page's chat (seed `chat`): Maya's bubbles, Ponzu's reply from its Markdown, the aside and working line while the turn runs; words typed with the keyboard up and sent mid-run land as a bubble; Stop ends the turn ("You stopped it"); a swipe down closes the sheet; opened again, the reply's link to the Plans board closes it and focuses that board. |
 | `needs-you.yaml` | The Pricing page waiting on Maya (seed `needs-you`): Chat says three questions wait; opened, the asks take the composer's place with the pager across four pages; a single choice, then a multi-select with a note typed with the keyboard up (Send stays on screen above it), the plan's first paragraph and then all of it with Approve, and the permission with Allow; once the last is sent the composer is back. |
@@ -65,7 +65,7 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `comment-input`, `comment-error`, `to-type`, `to-voice`, `send`, `thread-sheet`,
 `resolve`, `thread-note`, `thread-read-only`, `draft-sheet`, `move-done`,
 `chat-sheet`, `chat-thread`, `chat-input`, `chat-send`, `chat-stop`,
-`chat-attach`, `chat-working`, `chat-waiting`, `chat-line`, `chat-read-only`,
+`chat-attach`, `chat-working`, `chat-waiting`, `chat-line`, `chat-read-only`, `chat-comment-picture`, `chat-comment-open`,
 `stack-chat-badge`, `needs-you`, `needs-you-header`, `needs-you-pager`,
 `needs-you-previous`, `needs-you-next`, `needs-you-option`, `needs-you-note`,
 `needs-you-send`, `needs-you-plan`, `needs-you-read-plan`, `needs-you-blocked`,

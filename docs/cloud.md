@@ -1697,10 +1697,13 @@ notice      { type: "waking" | "resumed" | "started" }                    the ru
 A `comment` item also says where it was left (`pageId`, `pageName`, and `at`, the pin's place on
 the page in page px) and, once its author's app has attached one, `picture`: the area round the
 pin as it was when the comment was made, the pin drawn in with its number, as `{ light, dark,
-width, height }` (`COMMENT_PICTURE`, 240 × 160 shown, WebP at twice that). The app that sent
-the comment draws it from the document as it stood then, uploads it with `POST
-/v1/canvases/:id/comments/:messageId/picture` (two files, `light.webp` and `dark.webp`, staged
-and copied under `comments/` when attached) and attaches it with `…/picture/complete` once the comment's op is committed
+width, height }` (`COMMENT_PICTURE`, 240 × 160 shown, at twice that: WebP from the Mac, PNG from
+the iPhone, whose WebKit can't write WebP; a reader takes either). The app that sent the comment
+draws it from the document as it stood then (the Mac in its window, the iPhone in its canvas
+page, both with packages/canvas's `comment-picture.tsx`), uploads it with `POST
+/v1/canvases/:id/comments/:messageId/picture` (two files of one format, `light.webp` and
+`dark.webp` or `light.png` and `dark.png`, at most 2 MB each, staged and copied under
+`comments/` when attached) and attaches it with `…/picture/complete` once the comment's op is committed
 (404 before that); the first picture attached is the one it keeps. Sending a comment never waits
 on it. A comment with no picture (from before pictures, or one that couldn't be drawn or kept)
 says where it was left instead. Older comment items may carry `board`, a copy of the board an
@@ -2504,7 +2507,7 @@ Under a canvas's asset key:
 | `assets/<name>` | a file of the canvas, as markup references it |
 | `previews/<seq>-light.png`, `previews/<seq>-dark.png` | the previews of `canvases.preview_seq` |
 | `exports/<upload id>-<name>` | a file an export link reaches |
-| `comments/<message id>-<theme>-<random>.webp` | the picture of where a comment was left, in each theme |
+| `comments/<message id>-<theme>-<random>.webp` (`.png` from the iPhone) | the picture of where a comment was left, in each theme |
 
 At the bucket's root, `pull-requests/<key>/light.png` and `dark.png` are a pull request's
 picture, copied from the previews when it opens, under a random key that opens nothing else

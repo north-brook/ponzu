@@ -280,6 +280,57 @@ describe("against the API's own routes", () => {
     expect([ines.status, ines.code]).toEqual([403, "forbidden"]);
   });
 
+  test("a comment's picture: WebP from the Mac, PNG from the iPhone, each kept as sent", async () => {
+    // Storage's signed PUTs reach the test's storage; nothing else goes through this fetch.
+    const maya = clientFor("maya", {
+      fetch: async (input, init) => t.storage.fetch(String(input), init as RequestInit),
+    });
+    const canvas = await maya.canvases.create({
+      workspaceId: ws.id,
+      repoId: ws.repo.id,
+      name: "Pictures",
+    });
+    const { doc } = await maya.canvases.doc(canvas.id);
+    const pageId = doc.pages[0]!.id;
+    const comment = (messageId: string): ClientOp => ({
+      id: newOpId(),
+      op: {
+        op: "thread.create",
+        thread: {
+          id: `th_${messageId}`,
+          pageId,
+          x: 10,
+          y: 10,
+          status: "open",
+          createdAt: 0,
+          updatedAt: 0,
+          messages: [
+            { id: messageId, author: { kind: "user", name: "Maya" }, text: "Here", createdAt: 0 },
+          ],
+        },
+      } as ClientOp["op"],
+    });
+    await maya.canvases.commit(canvas.id, [comment("m_mac"), comment("m_phone")]);
+    const bytes = (s: string) => new TextEncoder().encode(s);
+
+    const mac = await maya.canvases.uploadCommentPicture(canvas.id, "m_mac", {
+      light: bytes("light"),
+      dark: bytes("dark"),
+    });
+    const phone = await maya.canvases.uploadCommentPicture(
+      canvas.id,
+      "m_phone",
+      { light: bytes("light"), dark: bytes("dark") },
+      "png",
+    );
+    const fromMac = await maya.canvases.attachCommentPicture(canvas.id, "m_mac", mac);
+    const fromPhone = await maya.canvases.attachCommentPicture(canvas.id, "m_phone", phone);
+    expect(fromMac.picture.light).toMatch(/^comments\/m_mac-light-[0-9a-z]{6}\.webp$/);
+    expect(fromMac.picture.dark).toMatch(/^comments\/m_mac-dark-[0-9a-z]{6}\.webp$/);
+    expect(fromPhone.picture.light).toMatch(/^comments\/m_phone-light-[0-9a-z]{6}\.png$/);
+    expect(fromPhone.picture.dark).toMatch(/^comments\/m_phone-dark-[0-9a-z]{6}\.png$/);
+  });
+
   test("search answers what the fake backend answers for the same canvas", async () => {
     // The same steps, through the client, on the real API and on the fake. Only the agent may
     // make a board, so each world makes it as its own agent.

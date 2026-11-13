@@ -3,6 +3,7 @@ import {
   type AskAnswer,
   ERROR_COPY,
   ERROR_DETAIL,
+  type LocalPicture,
   membersById,
   modelChangedLine,
   ownerChangedLine,
@@ -99,6 +100,7 @@ export function ChatSheet({
   canvas,
   doc,
   me,
+  pictures,
   readOnly,
   offline,
   focus,
@@ -119,6 +121,11 @@ export function ChatSheet({
   canvas: ChatCanvas | undefined;
   doc: Doc | null;
   me: Person;
+  /**
+   * The pictures of the person's own comments sent from this phone, by message id, drawn here
+   * (lib/canvas/pictures.ts): shown before, and instead of, loading the kept ones.
+   */
+  pictures?: ReadonlyMap<string, LocalPicture>;
   /** Why the person can't steer (read access, or the last copy offline): in the field's place. */
   readOnly: string | null;
   /** The phone can't reach Ponzu now: sending waits, and the field says so. */
@@ -169,10 +176,15 @@ export function ChatSheet({
         items: thread.items,
         pending: thread.pending,
         openAsks,
-        context: { people, assetsUrl: canvas?.assetsUrl ?? null, doc },
+        context: {
+          people,
+          assetsUrl: canvas?.assetsUrl ?? null,
+          doc,
+          ...(pictures ? { pictures } : {}),
+        },
         me,
       }),
-    [thread.items, thread.pending, openAsks, people, canvas?.assetsUrl, doc, me],
+    [thread.items, thread.pending, openAsks, people, canvas?.assetsUrl, doc, me, pictures],
   );
   const rows = useMemo(() => chatRows(items, head), [items, head]);
   // "Thinking" after a send lasts its grace and no longer: draw again when it ends.
@@ -609,7 +621,8 @@ function PersonLine({
       )}
       {comment && (
         <Pressable
-          testID="chat-comment-open"
+          // VoiceOver reads the press, not the picture in it: the id says which it shows.
+          testID={picture ? "chat-comment-picture" : "chat-comment-open"}
           accessibilityRole="button"
           accessibilityLabel={CHAT.openComment(placeOf(comment))}
           onPress={() => {

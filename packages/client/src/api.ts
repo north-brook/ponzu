@@ -1,5 +1,9 @@
 import type { ClientOp, PageIcon } from "@ponzu/core";
-import type { ThreadItem } from "@ponzu/runner/protocol";
+import {
+  COMMENT_PICTURE_FILES,
+  type CommentPictureFormat,
+  type ThreadItem,
+} from "@ponzu/runner/protocol";
 import type { InferRequestType, InferResponseType } from "hono/client";
 import { ApiError, abortError, networkError } from "./errors.ts";
 import type { Randomness } from "./pkce.ts";
@@ -341,24 +345,27 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         return done.files[0]!;
       },
       /**
-       * Puts the picture of where the person left a comment in storage, its light and its dark
-       * WebP, before or after the comment's op is committed. Answers the uploads, for
-       * `attachCommentPicture` once the comment is in the thread.
+       * Puts the picture of where the person left a comment in storage, its light and its dark,
+       * before or after the comment's op is committed: WebP (the Mac's), or PNG (the iPhone's,
+       * whose WebKit can't write WebP). Answers the uploads, for `attachCommentPicture` once the
+       * comment is in the thread.
        */
       uploadCommentPicture: async (
         id: string,
         messageId: string,
         files: { light: Uint8Array; dark: Uint8Array },
+        format: CommentPictureFormat = "webp",
       ): Promise<string[]> => {
         const crypto = opts.crypto ?? (globalThis.crypto as unknown as Randomness);
+        const named = COMMENT_PICTURE_FILES[format];
         const themes = [
-          { name: "light.webp", bytes: files.light },
-          { name: "dark.webp", bytes: files.dark },
+          { name: named.light, bytes: files.light },
+          { name: named.dark, bytes: files.dark },
         ];
         const declared = await Promise.all(
           themes.map(async ({ name, bytes }) => ({
             name,
-            contentType: "image/webp",
+            contentType: named.contentType,
             size: bytes.byteLength,
             sha256: hex(await crypto.subtle.digest("SHA-256", bytes)),
           })),
