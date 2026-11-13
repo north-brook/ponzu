@@ -72,6 +72,15 @@ export function stillRunning(traces: Trace[], alive: (pid: number) => boolean): 
   return traces.filter((t) => t.stage !== "done" && alive(t.pid));
 }
 
+/**
+ * The records of live workers whose file's tests had all ended. Such a worker is in that file's
+ * own afterAll hooks (a browser that will not close, say) or idle after them: the record cannot
+ * tell which, because it is written before those hooks run (test-trace.ts).
+ */
+export function pastTests(traces: Trace[], alive: (pid: number) => boolean): Trace[] {
+  return traces.filter((t) => t.stage === "done" && alive(t.pid));
+}
+
 function minutes(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
@@ -88,7 +97,12 @@ export function whereIn(t: Trace): string {
 }
 
 /** The report's lines: one annotation per file still running, then the process tree. */
-export function report(running: Trace[], tree: { proc: Proc; depth: number }[], now: number) {
+export function report(
+  running: Trace[],
+  tree: { proc: Proc; depth: number }[],
+  now: number,
+  ended: Trace[] = [],
+) {
   const lines: string[] = [];
   if (running.length === 0) {
     lines.push(
@@ -98,6 +112,11 @@ export function report(running: Trace[], tree: { proc: Proc; depth: number }[], 
   for (const t of running) {
     const what = `worker ${t.worker} (pid ${t.pid}) had been on ${t.file} for ${minutes(now - t.since)}, ${whereIn(t)}`;
     lines.push(`::error file=${t.file},title=Still running when the tests were cut off::${what}`);
+  }
+  for (const t of ended) {
+    lines.push(
+      `::notice file=${t.file},title=Past its tests when the tests were cut off::worker ${t.worker} (pid ${t.pid}) had ended every test of ${t.file} (${t.ended} of them) ${minutes(now - t.since)} after starting it: it was in that file's own afterAll hooks, or idle after them`,
+    );
   }
   lines.push("::group::The processes under bun test (stat Z is a child that exited unreaped)");
   lines.push("PID PPID STAT ELAPSED %CPU COMMAND");
@@ -210,8 +229,10 @@ if (import.meta.main) {
   }
   // Read before anything is stopped, so the report shows each process as it was running.
   const tree = await processTree(child.pid);
-  const running = stillRunning(readTraces(trace), alive);
-  for (const line of report(running, tree, Date.now())) console.log(line);
+  const traces = readTraces(trace);
+  const running = stillRunning(traces, alive);
+  const ended = pastTests(traces, alive);
+  for (const line of report(running, tree, Date.now(), ended)) console.log(line);
   for (const pid of await stopTree(child.pid)) {
     try {
       process.kill(pid, "SIGKILL");

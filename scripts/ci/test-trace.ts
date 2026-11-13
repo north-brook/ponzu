@@ -18,7 +18,12 @@ export interface Trace {
   file: string;
   /** Milliseconds since the epoch when the worker started on this file. */
   since: number;
-  /** "loading" until the file's tests begin; "done" once its last hook has run. */
+  /**
+   * "loading" until the file's tests begin; "done" once its tests have all ended. A file's own
+   * root-level afterAll hooks run AFTER this is written (bun runs same-scope afterAll hooks in
+   * the order they were registered, and this preload registers first), so "done" does not mean
+   * its teardown has finished: the watchdog lists a live worker on a "done" file apart.
+   */
   stage: "loading" | "running" | "done";
   /** Tests that have begun, and tests that have ended (passed, failed or timed out). */
   begun: number;

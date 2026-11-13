@@ -10,7 +10,7 @@ import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Trace } from "./test-trace.ts";
-import { parsePs, report, stillRunning, treeOf, whereIn } from "./test-watchdog.ts";
+import { parsePs, pastTests, report, stillRunning, treeOf, whereIn } from "./test-watchdog.ts";
 
 const WATCHDOG = join(import.meta.dir, "test-watchdog.ts");
 const PRELOAD = join(import.meta.dir, "test-trace.ts");
@@ -46,6 +46,24 @@ describe("reading where a worker was", () => {
       trace({ pid: 3, stage: "loading" }),
     ];
     expect(stillRunning(traces, (pid) => pid !== 3).map((t) => t.pid)).toEqual([1]);
+  });
+
+  test("a live worker past its file's tests is listed apart: in the file's own teardown, or idle", () => {
+    const traces = [
+      trace({ pid: 1 }),
+      trace({ pid: 2, stage: "done", file: "a.e2e.test.ts", ended: 4 }),
+      trace({ pid: 3, stage: "done" }),
+    ];
+    // Worker 3 has exited: only a live worker can still be in a teardown hook.
+    const ended = pastTests(traces, (pid) => pid !== 3);
+    expect(ended.map((t) => t.pid)).toEqual([2]);
+    const lines = report([], [], 0, ended);
+    expect(
+      lines.some(
+        (l) =>
+          l.startsWith("::notice file=a.e2e.test.ts,") && l.includes("own afterAll hooks, or idle"),
+      ),
+    ).toBe(true);
   });
 
   test("the process tree is the command and what it started, each under its parent", () => {
