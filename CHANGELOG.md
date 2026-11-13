@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.4](https://github.com/north-brook/ponzu/compare/v2.3.3...v2.3.4) (2026-11-13)
+
+
+### Performance Improvements
+
+* **studio:** draw a comment's picture out of the person's window ([#601](https://github.com/north-brook/ponzu/issues/601)) ([ea77ad8](https://github.com/north-brook/ponzu/commit/ea77ad8985ba2f70e2d097c97c6a20bec8826821))
+
 ## [2.3.3](https://github.com/north-brook/ponzu/compare/v2.3.2...v2.3.3) (2026-11-13)
 
 
