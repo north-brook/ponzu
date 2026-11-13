@@ -2387,8 +2387,10 @@ const Board = memo(function Board({
 }) {
   const { w, h: fixed } = size(ab);
   const rank = useCallback(() => rankOf(ab.id), [rankOf, ab.id]);
-  // Its picture and loops, named by its content and theme.
-  const version = versionOf(ab, tokens, () => serializeArtboardElement(ab));
+  // Its picture and loops, named by its content and theme. Naming serializes the whole board
+  // (again after every edit), so a source with neither (Ponzu Cloud draws no pictures) skips it.
+  const named = !!(source.snapshotUrl || source.loopsUrl);
+  const version = named ? versionOf(ab, tokens, () => serializeArtboardElement(ab)) : "";
   const snapshotUrl = useMemo(
     () =>
       source.snapshotUrl &&
