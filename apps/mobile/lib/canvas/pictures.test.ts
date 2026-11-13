@@ -157,6 +157,42 @@ describe("a comment's picture from the phone", () => {
     expect(h.uploads).toEqual([]);
   });
 
+  test("against an API from before PNG was taken, the comment goes and reads without one", async () => {
+    const h = await harness();
+    // What a deployed API that takes only WebP answers a PNG pair (checkUpload's names rule).
+    const { ApiError } = await import("@ponzu/client");
+    const refused = new ApiError(
+      400,
+      "invalid_request",
+      "A comment is named light.webp or dark.webp.",
+    );
+    const pictures = phonePictures({
+      canvasId: "cnv_old_api",
+      meId: h.me.id,
+      source: h.source,
+      api: {
+        uploadCommentPicture: async () => {
+          throw refused;
+        },
+        attachCommentPicture: async () => {
+          throw new Error("never asked");
+        },
+      },
+      page: h.fake.page,
+      wait: async () => {},
+    }).start();
+    h.pictures.close();
+    const op = newThreadOp({ artboardId: "ab_plans", x: 4, y: 3 }, "Old API", h.me);
+    const messageId = op.thread.messages[0]!.id;
+    await commit(h.source, op);
+    await h.settle();
+    h.fake.answer(h.fake.asked.at(-1)!.id, { light: PNG_LIGHT, dark: PNG_DARK });
+    await h.settle();
+    expect(pictures.getSnapshot().has(messageId)).toBe(false);
+    expect(h.kept(messageId)?.text).toBe("Old API");
+    expect(h.kept(messageId)?.picture).toBeUndefined();
+  });
+
   test("an answer to no ask is dropped, and closing lets every ask go", async () => {
     const posted: ToCanvas[] = [];
     const page = new PicturePage((msg) => posted.push(msg));
