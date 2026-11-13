@@ -1,0 +1,21 @@
+appId: design.ponzu.app.dev
+name: push-warm-open
+---
+# Pings from the simulator (run.sh, `xcrun simctl push`), part 1: the app
+# open on the Onboarding canvas, on an API that sends pings (seed `pings`).
+# run.sh then sends pricing-question.apns, a needs-you ping for the Pricing
+# page, which warm-tap.yaml taps.
+- runFlow: ../shared/start.yaml
+- openLink: ponzu-dev://dev?seed=pings
+- extendedWaitUntil:
+    visible: "Onboarding, .*app.*"
+    timeout: 30000
+- tapOn: "Onboarding, .*app.*"
+- extendedWaitUntil:
+    visible:
+      id: canvas
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: stack-chat
+    timeout: 30000

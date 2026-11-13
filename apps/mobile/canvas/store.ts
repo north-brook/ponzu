@@ -78,6 +78,12 @@ export let state: CanvasState = {
 let rate = 0;
 export const probeRate = () => rate;
 
+/** Who draws a comment's picture the app asks for (picture.ts, set by index.tsx). */
+let pictureHandler: ((ask: Extract<ToCanvas, { t: "picture" }>) => void) | null = null;
+export function onPicture(handler: typeof pictureHandler) {
+  pictureHandler = handler;
+}
+
 /** An agent's work develops onto the canvas, as on desktop. One per open design. */
 export let arrivals = new Arrivals();
 
@@ -182,6 +188,9 @@ export function receive(msg: ToCanvas) {
       break;
     case "probe":
       rate = msg.rate;
+      break;
+    case "picture":
+      pictureHandler?.(msg);
       break;
     case "insets":
       set({

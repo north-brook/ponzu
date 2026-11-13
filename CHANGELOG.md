@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/north-brook/ponzu/compare/v2.1.1...v2.2.0) (2026-11-13)
+
+
+### Features
+
+* **mobile:** chat, questions, pull requests, pings, comment pictures and search on iphone ([#600](https://github.com/north-brook/ponzu/issues/600)) ([7099b71](https://github.com/north-brook/ponzu/commit/7099b71ea5302b240a8372e2c1a0b3e6f0d50633))
+
 ## [2.1.1](https://github.com/north-brook/ponzu/compare/v2.1.0...v2.1.1) (2026-11-13)
 
 

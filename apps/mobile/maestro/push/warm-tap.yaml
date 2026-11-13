@@ -1,0 +1,24 @@
+appId: design.ponzu.app.dev
+name: push-warm-tap
+---
+# Part 2: while this runs, run.sh sends the Pricing page's needs-you ping every
+# couple of seconds, with Onboarding on screen, so its banner shows. Maestro
+# reads only the app's own views, not iOS's banner over them, so the banner is
+# tapped where iOS draws it, at the top of the screen. (Under the banner, if it
+# hasn't come yet, is the canvas's title, which a tap leaves alone.) The tap
+# opens the Pricing page with its chat at the question the ping named.
+- repeat:
+    while:
+      notVisible:
+        id: needs-you
+    times: 15
+    commands:
+      - tapOn:
+          point: "50%,8%"
+          retryTapIfNoChange: false
+- extendedWaitUntil:
+    visible:
+      id: needs-you
+    timeout: 20000
+- assertVisible: "Which blue for the buttons?"
+- assertVisible: "1 of 4"

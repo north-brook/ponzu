@@ -20,4 +20,6 @@ export interface Backend {
   installId(): Promise<string>;
   /** The fake only: put the app in a named state (app/dev.tsx). False for a name it lacks. */
   seed?(scenario: string): boolean;
+  /** The fake only: put the next launch in a named state too (app/dev.tsx `relaunch=1`). */
+  seedNextLaunch?(scenario: string): Promise<void>;
 }

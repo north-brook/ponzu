@@ -1702,10 +1702,13 @@ notice      { type: "waking" | "resumed" | "started" }                    the ru
 A `comment` item also says where it was left (`pageId`, `pageName`, and `at`, the pin's place on
 the page in page px) and, once its author's app has attached one, `picture`: the area round the
 pin as it was when the comment was made, the pin drawn in with its number, as `{ light, dark,
-width, height }` (`COMMENT_PICTURE`, 240 × 160 shown, WebP at twice that). The app that sent
-the comment draws it from the document as it stood then, uploads it with `POST
-/v1/canvases/:id/comments/:messageId/picture` (two files, `light.webp` and `dark.webp`, staged
-and copied under `comments/` when attached) and attaches it with `…/picture/complete` once the comment's op is committed
+width, height }` (`COMMENT_PICTURE`, 240 × 160 shown, at twice that: WebP from the Mac, PNG from
+the iPhone, whose WebKit can't write WebP; a reader takes either). The app that sent the comment
+draws it from the document as it stood then (the Mac in its window, the iPhone in its canvas
+page, both with packages/canvas's `comment-picture.tsx`), uploads it with `POST
+/v1/canvases/:id/comments/:messageId/picture` (two files of one format, `light.webp` and
+`dark.webp` or `light.png` and `dark.png`, at most 2 MB each, staged and copied under
+`comments/` when attached) and attaches it with `…/picture/complete` once the comment's op is committed
 (404 before that); the first picture attached is the one it keeps. Sending a comment never waits
 on it. The desktop app draws it in a hidden window of its own, with its own renderer and an
 in-memory session (apps/desktop/src/pictures.ts), so drawing it never holds up the person's
@@ -2515,7 +2518,7 @@ Under a canvas's asset key:
 | `assets/<name>` | a file of the canvas, as markup references it |
 | `previews/<seq>-light.png`, `previews/<seq>-dark.png` | the previews of `canvases.preview_seq` |
 | `exports/<upload id>-<name>` | a file an export link reaches |
-| `comments/<message id>-<theme>-<random>.webp` | the picture of where a comment was left, in each theme |
+| `comments/<message id>-<theme>-<random>.webp` (`.png` from the iPhone) | the picture of where a comment was left, in each theme |
 
 At the bucket's root, `pull-requests/<key>/light.png` and `dark.png` are a pull request's
 picture, copied from the previews when it opens, under a random key that opens nothing else
@@ -2856,7 +2859,8 @@ person and install. An iPhone (`ios`) sends `pushToken`, its Expo push token exa
 APNs key. A Mac (`macos`) sends neither, and a 400 refuses one that does: it shows its own
 notifications while the app runs. The database holds the same rule (an iPhone row has a token,
 a Mac row has none). The iPhone registers after the person turns notifications on, and again
-at each launch, which updates the row in place and keeps `lastSeenAt`; a new token from the
+at each launch, which updates the row in place and keeps `lastSeenAt`; it asks, registers and
+reports nothing while `GET /v1/me` says `features.push` is false (docs/mobile.md, "Pings"); a new token from the
 same install replaces the old one on the same row. `installId` is the app's own random id for
 the install (16 to 64 letters, digits or dashes), made once and kept (in the Keychain on the
 phone), and never returned. A token another person
@@ -3274,6 +3278,14 @@ them as Canvases, Boards, Comments, Messages, Pull requests and People. A result
 is: a board or page on the canvas, a comment at its pin, a message in the thread's rail (paged
 back to, at most 20 pages, and marked a moment), a pull request on its tab, and a person as the
 sidebar's filter. apps/studio/src/cloud/README.md "Search" has the details.
+
+**On the iPhone.** The Search tab asks for canvases, boards, comments and messages, and shows
+them as Canvases, Boards and Threads (comments and messages together, newest first, at most 8). A
+board opens in focus on its page, a comment at its pin with its thread open, and a message with
+the chat sheet up at it. Until the answer comes, and whenever the API can't give one (no network,
+an error, or a 404 from an API without this route), the phone matches the canvases it already
+holds by name with the same text rules, and Boards and Threads don't show. docs/mobile.md
+"Search" has the details.
 
 ## Clients
 

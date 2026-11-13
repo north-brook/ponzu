@@ -1,5 +1,6 @@
 # Flows run in this order: a fresh launch first, then signing in, then setup,
-# then the canvases list, then a new canvas, then a canvas and its comments.
+# then the canvases list, then a new canvas, then a canvas, its comments and
+# its chat.
 flows:
   - "*.yaml"
 executionOrder:
@@ -13,3 +14,7 @@ executionOrder:
     - canvas
     - comment
     - comment-modes
+    - chat
+    - needs-you
+    - pull-request
+    - pings
