@@ -3,7 +3,7 @@ import * as core from "micromark-core-commonmark";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
-import { linearEmphasis } from "./emphasis.ts";
+import { linearEmphasis, work as pairing } from "./emphasis.ts";
 import {
   blocks,
   PROSE_LIMIT,
@@ -190,12 +190,13 @@ test("strikethrough and bare addresses, as GitHub writes them", () => {
  * `parseable` lets through (the whole limit, or 4,096 characters for text dense with marks) and
  * eight times at an eighth of that: the same work if its cost grows with its length, eight times
  * as much if with the square. The long draw may do at most one and a half times the work of the
- * eight short ones; every shape here measures 1.00 to 1.02, and `abc* ` measured 7.9 before.
+ * eight short ones; every shape here measures about 1 or less, and `abc* ` measured 7.9 before.
  *
  * Work is counted, never timed, so a slow or busy machine can't move it: every character
  * micromark's own constructs consume (so one that backs up and reads text again counts it again),
- * and every read and write of the events each of its resolvers is handed, which is where the
- * square was. Not counted: GitHub's table, task list and bare address constructs, which are made
+ * every read and write of the events each of its resolvers is handed, which is where the square
+ * was, and every step of emphasis.ts's own pairing, which reads no events while it searches its
+ * stack of openers (without its floors, `_a b* ` measured 7.6 here). Not counted: GitHub's table, task list and bare address constructs, which are made
  * anew for each parse, and the stages after micromark (the tree's plugins, the markup, React),
  * which visit each node a fixed number of times; `parseable` keeps out what made those slow.
  */
@@ -232,6 +233,12 @@ const hostile: [(n: number) => string, number?][] = [
   [(n) => fill("abc_ ", n)],
   [(n) => fill("abcdefgh~~ ", n)],
   [(n) => fill("abcdefgh~ ", n)],
+  // Openers of one kind and closers of another, which every closer would search past without
+  // emphasis.ts's floors.
+  [(n) => fill("_a b* ", n)],
+  [(n) => fill("a*_b ", n)],
+  [(n) => fill("_a*_b* ", n)],
+  [(n) => fill("~a b~~ ", n)],
   [(n) => fill("a**** b* ", n)],
   [(n) => fill("*a **b c* ", n)],
   [(n) => fill("**a *b ~~c* d** ", n)],
@@ -338,12 +345,13 @@ function counted(draw: () => void, most = Infinity): number {
         },
     );
   }
+  const paired = pairing.steps;
   try {
     draw();
   } finally {
     for (const put of undo) put();
   }
-  return work;
+  return work + pairing.steps - paired;
 }
 
 /** The most of a shape `parseable` lets through: all it may be, or as much as dense marks may. */

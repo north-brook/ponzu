@@ -11,7 +11,8 @@
  * open, with a floor for each kind of closing mark below which nothing on the stack can open it,
  * so no mark is passed over twice for the same reason. The events are written once, at the end.
  * What they make is what micromark makes, tree for tree and position for position:
- * emphasis.test.ts compares the two on a hundred thousand generated texts.
+ * emphasis.test.ts compares the two on 20,000 generated texts each run (millions when it was
+ * written).
  *
  * The rules of micromark's that this keeps:
  *

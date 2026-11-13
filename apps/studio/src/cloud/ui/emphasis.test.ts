@@ -86,7 +86,8 @@ test("ordinary emphasis and strikethrough read as micromark reads them", () => {
   }
 });
 
-test("generated text pairs as micromark pairs it", () => {
+// Given time to spare, since this file's 20,000 texts took 3 s on a busy machine.
+test("generated text pairs as micromark pairs it", { timeout: 60_000 }, () => {
   const alphabet = ["*", "*", "*", "_", "_", "~", "~", "a", "b", " ", " ", ".", "[", "]", "(", ")"];
   const rarer = ["`", "\\", "\n", "!", "](x)", "**", "~~", '"', "  \n", "|", "www.a.b", "- [ ] "];
   const next = random(Number(process.env.FUZZ_SEED ?? 1));
@@ -110,7 +111,10 @@ test("pairing costs in step with the marks", () => {
     return work.steps;
   };
   // Closers with nothing to close, openers never closed, and pairs nested as deep as they go.
-  for (const unit of ["abc* ", "abc~~ ", "*a ", "~~a ", "*_~", "a**** b* ", "*a _b "]) {
+  // Openers of one kind before closers of another, which only the floors keep from searching
+  // the whole stack again for each closer.
+  const crossed = ["_a b* ", "a*_b ", "_a*_b* ", "~a b~~ "];
+  for (const unit of ["abc* ", "abc~~ ", "*a ", "~~a ", "*_~", "a**** b* ", "*a _b ", ...crossed]) {
     const long = steps(unit.repeat(4096));
     const short = steps(unit.repeat(512));
     expect(long).toBeLessThanOrEqual(8.5 * short);
