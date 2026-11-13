@@ -651,17 +651,19 @@ export interface PeriodNumbers {
 /**
  * Freeze a period's numbers, once. A close that runs again (a retry, or two at once) gets the row
  * the first wrote, numbers and status as they are now, and never writes new ones: what is charged
- * is decided once.
+ * is decided once. `status` is `closing` for a period to settle (billing on), or `unbilled` for
+ * one frozen while billing is not on, settled in the same write so that no retry, whatever the
+ * mode by then, can ever charge it.
  */
 export async function beginPeriodClose(
   db: Db,
-  numbers: PeriodNumbers & { at: Date },
+  numbers: PeriodNumbers & { at: Date; status: "closing" | "unbilled" },
 ): Promise<{ period: BillingPeriod; created: boolean }> {
-  const { at, ...values } = numbers;
+  const { at, status, ...values } = numbers;
   const [created] = await run(
     db
       .insert(billingPeriods)
-      .values({ ...values, status: "closing", closedAt: at, updatedAt: at })
+      .values({ ...values, status, closedAt: at, updatedAt: at })
       .onConflictDoNothing()
       .returning(),
   );

@@ -108,6 +108,15 @@ describe("with billing off, as production runs today", () => {
         expect((await start(ws)).status).toBe(409);
         expect((await start(ws)).body.error.code).toBe("billing_not_set_up");
         expect((await poll(ws, "auth_nothing")).status).toBe(409);
+        // Refused before the request is read: a body or an id that would not pass is refused the
+        // same way, never with a validation error.
+        for (const refused of [
+          await start(ws, { capUsd: 0 }),
+          await poll(ws, "not-a-setup"),
+          await call(t, admin(ws), "POST", `/v1/workspaces/${"x".repeat(80)}/billing/portal`),
+        ]) {
+          expect([refused.status, refused.body.error.code]).toEqual([409, "billing_not_set_up"]);
+        }
         const portal = await call(t, admin(ws), "POST", `/v1/workspaces/${ws.id}/billing/portal`);
         expect(portal.status).toBe(409);
         expect(portal.body.error.code).toBe("billing_not_set_up");

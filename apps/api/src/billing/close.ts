@@ -191,6 +191,9 @@ export async function closePeriod(
   const { current } = read;
   const capCents = read.monthlyCapCents ?? current.defaultCapCents;
   const charged = chargedCredits(usage.billedCredits, capCents, current.creditMicrousd);
+  // Frozen while billing is not on, a period is settled unbilled in the same write: a close cut
+  // short here and tried again after billing is turned on must not charge it.
+  const billable = deps.features.billing === "on";
   const { period: frozen, created } = await beginPeriodClose(deps.db, {
     workspaceId,
     periodStart,
@@ -204,6 +207,7 @@ export async function closePeriod(
     people: usage.people,
     rateCardVersion: current.version,
     at: now,
+    status: billable ? "closing" : "unbilled",
   });
   if (created) {
     deps.log.info("billing_period_frozen", {
@@ -214,7 +218,15 @@ export async function closePeriod(
   }
 
   let period = frozen;
-  if (period.status === "closing") {
+  if (created && period.status === "unbilled") {
+    deps.log.info("billing_period_uncharged", {
+      workspaceId,
+      periodStart: periodStart.toISOString(),
+      status: "unbilled",
+      why: "billing_not_on",
+    });
+    capturePeriodClosed(deps, period);
+  } else if (period.status === "closing") {
     period = await settle(deps, workspace, period, read.cards);
     if (period.status !== "closing") capturePeriodClosed(deps, period);
   }

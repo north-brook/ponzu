@@ -1,5 +1,5 @@
 import { getWorkspace, readCardSetup, takeWebhookDelivery } from "@ponzu/db";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { requireWorkspace } from "../auth/authorize.ts";
@@ -74,6 +74,24 @@ const ReturnQuery = z.object({
   kind: z.literal("portal").optional().catch(undefined),
 });
 
+/**
+ * Refuses unless billing is on, before the route reads its request: right after the route's
+ * access declaration, which must come first (`auth/access.ts`), and before any validation.
+ */
+const cardsOn: MiddlewareHandler<AppEnv> = async (c, next) => {
+  requireBillingOn(c.var.deps);
+  await next();
+};
+
+/** The same for the addresses no app calls (Stripe's return and webhook): 404 until it is on. */
+const addressOn: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const { deps } = c.var;
+  if (deps.features.billing !== "on" || !deps.payments.enabled) {
+    throw new ApiError(404, "not_found", "There is nothing at this address.");
+  }
+  await next();
+};
+
 export const billing = new Hono<AppEnv>()
   /**
    * Begin adding the workspace's card: admins only. Answers Stripe's Checkout page to open in
@@ -84,11 +102,11 @@ export const billing = new Hono<AppEnv>()
   .post(
     "/workspaces/:id/billing/card-setups",
     access.user,
+    cardsOn,
     validate("param", WorkspaceParam),
     validate("json", StartBody),
     async (c) => {
       const { deps } = c.var;
-      requireBillingOn(deps);
       const workspace = await requireWorkspace(c, c.req.valid("param").id, "admin");
       const body = c.req.valid("json");
       const started = await startCardSetup(
@@ -110,27 +128,29 @@ export const billing = new Hono<AppEnv>()
    * How a card setup this person started stands: what the app asks every two seconds while
    * Checkout is open, so it hears the card without the return page's link.
    */
-  .get("/billing/card-setups/:id", access.user, validate("param", SetupParam), async (c) => {
-    const { deps } = c.var;
-    requireBillingOn(deps);
-    const status = await cardSetupStatus(
-      { ...deps, log: c.var.log },
-      { id: c.req.valid("param").id, userId: c.var.actor.user.id },
-    );
-    if (!status) throw new ApiError(404, "not_found", "There is no such card setup.");
-    return c.json(SetupState.parse(status));
-  })
+  .get(
+    "/billing/card-setups/:id",
+    access.user,
+    cardsOn,
+    validate("param", SetupParam),
+    async (c) => {
+      const { deps } = c.var;
+      const status = await cardSetupStatus(
+        { ...deps, log: c.var.log },
+        { id: c.req.valid("param").id, userId: c.var.actor.user.id },
+      );
+      if (!status) throw new ApiError(404, "not_found", "There is no such card setup.");
+      return c.json(SetupState.parse(status));
+    },
+  )
 
   /**
    * Where Checkout and the customer portal send the browser back. It has no bearer token: the
    * setup's id only picks the row, and what happened is read from Stripe. The answer is a page
    * for a person, and every outcome is one.
    */
-  .get("/billing/return", access.public, validate("query", ReturnQuery), async (c) => {
+  .get("/billing/return", access.public, addressOn, validate("query", ReturnQuery), async (c) => {
     const { deps } = c.var;
-    if (deps.features.billing !== "on" || !deps.payments.enabled) {
-      throw new ApiError(404, "not_found", "There is nothing at this address.");
-    }
     const query = c.req.valid("query");
     let page: ReturnPage;
     if (query.kind === "portal") {
@@ -172,10 +192,10 @@ export const billing = new Hono<AppEnv>()
   .post(
     "/workspaces/:id/billing/portal",
     access.user,
+    cardsOn,
     validate("param", WorkspaceParam),
     async (c) => {
       const { deps } = c.var;
-      requireBillingOn(deps);
       const member = await requireWorkspace(c, c.req.valid("param").id, "admin");
       const workspace = await getWorkspace(deps.db, member.id);
       if (!workspace?.stripeCustomerId) {
@@ -199,11 +219,8 @@ export const billing = new Hono<AppEnv>()
    * acknowledged and dropped, as is one seen before; one this API acts on is recorded as a job,
    * answered, and its work done after (`billing/webhook.ts`).
    */
-  .post("/stripe/webhook", access.public, async (c) => {
+  .post("/stripe/webhook", access.public, addressOn, async (c) => {
     const { deps } = c.var;
-    if (!deps.payments.enabled || deps.features.billing !== "on") {
-      throw new ApiError(404, "not_found", "There is nothing at this address.");
-    }
     const raw = await c.req.text();
     const signature = c.req.header("stripe-signature");
     if (!signature) {

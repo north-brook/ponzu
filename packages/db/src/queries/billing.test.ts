@@ -390,7 +390,11 @@ describe("the period close", () => {
 
   test("freezes a period's numbers once, and keeps them on a second close", async () => {
     const workspace = await seedWorkspace(db, "close");
-    const first = await beginPeriodClose(db, { ...numbers(workspace.id, start, end), at: now });
+    const first = await beginPeriodClose(db, {
+      ...numbers(workspace.id, start, end),
+      at: now,
+      status: "closing",
+    });
     expect(first).toMatchObject({
       created: true,
       period: { status: "closing", chargedCents: 4_000, closedAt: now, stripeInvoiceId: null },
@@ -400,6 +404,7 @@ describe("the period close", () => {
       chargedCredits: 1,
       chargedCents: 10,
       at: later(5),
+      status: "closing",
     });
     expect(second).toMatchObject({
       created: false,
@@ -407,9 +412,29 @@ describe("the period close", () => {
     });
   });
 
+  test("a period frozen unbilled stays unbilled when a later close asks to settle it", async () => {
+    const workspace = await seedWorkspace(db, "frozen-unbilled");
+    const first = await beginPeriodClose(db, {
+      ...numbers(workspace.id, start, end),
+      at: now,
+      status: "unbilled",
+    });
+    expect(first).toMatchObject({ created: true, period: { status: "unbilled" } });
+    const second = await beginPeriodClose(db, {
+      ...numbers(workspace.id, start, end),
+      at: later(5),
+      status: "closing",
+    });
+    expect(second).toMatchObject({ created: false, period: { status: "unbilled" } });
+  });
+
   test("stores one invoice a period, never a second", async () => {
     const workspace = await seedWorkspace(db, "invoice");
-    await beginPeriodClose(db, { ...numbers(workspace.id, start, end), at: now });
+    await beginPeriodClose(db, {
+      ...numbers(workspace.id, start, end),
+      at: now,
+      status: "closing",
+    });
     const key = { workspaceId: workspace.id, periodStart: start };
     expect(await setPeriodInvoice(db, { ...key, stripeInvoiceId: "in_1", at: now })).toBe(true);
     expect(await setPeriodInvoice(db, { ...key, stripeInvoiceId: "in_1", at: now })).toBe(true);
@@ -528,7 +553,11 @@ describe("the period close", () => {
 
   test("charged nothing settles only a closing period with no invoice", async () => {
     const workspace = await seedWorkspace(db, "uncharged");
-    await beginPeriodClose(db, { ...numbers(workspace.id, start, end), at: now });
+    await beginPeriodClose(db, {
+      ...numbers(workspace.id, start, end),
+      at: now,
+      status: "closing",
+    });
     const key = { workspaceId: workspace.id, periodStart: start, at: now };
     expect(await settleUncharged(db, { ...key, status: "waived" })).toMatchObject({
       status: "waived",
@@ -537,7 +566,7 @@ describe("the period close", () => {
       status: "waived",
     });
     const charging = await seedWorkspace(db, "charging");
-    await beginPeriodClose(db, { ...numbers(charging.id, start, end), at: now });
+    await beginPeriodClose(db, { ...numbers(charging.id, start, end), at: now, status: "closing" });
     await setPeriodInvoice(db, {
       workspaceId: charging.id,
       periodStart: start,
@@ -551,7 +580,11 @@ describe("the period close", () => {
 
   test("an invoice's state moves its period forward only, and a first failure is said once", async () => {
     const workspace = await seedWorkspace(db, "invoicestate");
-    await beginPeriodClose(db, { ...numbers(workspace.id, start, end), at: now });
+    await beginPeriodClose(db, {
+      ...numbers(workspace.id, start, end),
+      at: now,
+      status: "closing",
+    });
     await setPeriodInvoice(db, {
       workspaceId: workspace.id,
       periodStart: start,
@@ -592,7 +625,11 @@ describe("the period close", () => {
       [start, end, "in_pd1"],
       [second, third, "in_pd2"],
     ] as const) {
-      await beginPeriodClose(db, { ...numbers(workspace.id, from, to), at: now });
+      await beginPeriodClose(db, {
+        ...numbers(workspace.id, from, to),
+        at: now,
+        status: "closing",
+      });
       await setPeriodInvoice(db, {
         workspaceId: workspace.id,
         periodStart: from,

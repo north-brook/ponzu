@@ -307,6 +307,28 @@ describe("closing a period", () => {
     expect(t.payments.calls.length).toBe(before);
   });
 
+  test("a period frozen in observe is never charged, even when its close is cut short and billing turns on before the retry", async () => {
+    const ws = await billedTeam();
+    // The close stops right after it freezes the numbers, before anything settles the period.
+    const { log } = t.deps;
+    const info = log.info;
+    log.info = (event, fields) => {
+      if (event === "billing_period_frozen") throw new Error("the close was cut short");
+      return info.call(log, event, fields);
+    };
+    try {
+      await expect(withBilling("observe", () => closePeriod(t.deps, december(ws)))).rejects.toThrow(
+        "the close was cut short",
+      );
+    } finally {
+      log.info = info;
+    }
+    const before = t.payments.calls.length;
+    const period = await withBilling("on", () => closePeriod(t.deps, december(ws)));
+    expect(period).toMatchObject({ status: "unbilled", stripeInvoiceId: null });
+    expect(t.payments.calls.length).toBe(before);
+  });
+
   test("under a dollar is waived, and so is a period with no card; neither asks Stripe", async () => {
     const small = await team();
     await addCard(small);
