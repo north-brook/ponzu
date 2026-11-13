@@ -21,7 +21,7 @@ export function blockNetwork(): void {
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] },
     (details, callback) => {
-      console.error(`smoke: refused ${details.url}`);
+      console.error(`No network in this launch: refused ${details.url}`);
       callback({ cancel: true });
     },
   );
