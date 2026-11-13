@@ -206,6 +206,52 @@ describe("sealing and renewing", () => {
   });
 });
 
+describe("a fresh result", () => {
+  const line = (id: string, seq: number, text: string) => ({
+    id,
+    seq: String(seq),
+    created_at: "2026-11-13T09:00:00.000Z",
+    streaming: false,
+    kind: "assistant",
+    payload: { text },
+  });
+
+  test("keeps every row that didn't change as the object it was", async () => {
+    const h = harness();
+    const watched = h.watch("canvas.thread");
+    h.tables["canvas.thread"] = [line("a", 1, "One"), line("b", 2, "Two")];
+    await h.clock.advance(0);
+    const [a, b] = watched.last()!.rows as object[];
+
+    // Realtime sends the whole result again, every row a new object: one row changed, one came.
+    h.tables["canvas.thread"] = [
+      line("a", 1, "One"),
+      line("b", 2, "Two, edited"),
+      line("c", 3, "Three"),
+    ];
+    h.realtime.refresh();
+    const rows = watched.last()!.rows as { payload: { text: string } }[];
+    expect(rows[0]).toBe(a as never);
+    expect(rows[1]).not.toBe(b as never);
+    expect(rows.map((row) => row.payload.text)).toEqual(["One", "Two, edited", "Three"]);
+  });
+
+  test("that changed nothing hands back the same list of rows", async () => {
+    const h = harness();
+    const watched = h.watch("canvas.thread");
+    h.tables["canvas.thread"] = [line("a", 1, "One"), line("b", 2, "Two")];
+    await h.clock.advance(0);
+    const before = watched.last()!;
+
+    // Dropped and back: Realtime sends the whole result again, the same as before.
+    h.realtime.disconnect();
+    h.realtime.reconnect();
+    const after = watched.last()!;
+    expect(after.status).toBe("live");
+    expect(after.rows).toBe(before.rows);
+  });
+});
+
 describe("one query failing", () => {
   test("no access ends that query alone, and it is not asked for again", async () => {
     const h = harness();

@@ -2,8 +2,17 @@ import { Canvas, type CanvasProps } from "@ponzu/canvas";
 import { type CanvasHeadRow, DocCache, type LiveRows, presentNow } from "@ponzu/client";
 import { CloudSource, type Unsaved } from "@ponzu/client/canvas";
 import { useLiveQuery } from "@ponzu/client/react";
-import { type Actor, newId } from "@ponzu/core";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { type Actor, type Doc, newId } from "@ponzu/core";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { ResetFileLinksDialog } from "../cloud/dialogs/reset-file-links.tsx";
 import type {
   Attachment,
@@ -32,6 +41,7 @@ import { branchMoment, steerGate } from "./thread-map.ts";
 import { ThreadStore } from "./thread-store.ts";
 import { Uploads } from "./uploads.ts";
 import { useOnReturn } from "./use-answer.ts";
+import { useHandlers, useKeptElement } from "./use-kept.ts";
 import { useSnapshot } from "./use-snapshot.ts";
 
 /*
@@ -207,11 +217,43 @@ function openCanvas({
   };
 }
 
-export function useSourceState(source: CloudSource) {
-  return useSyncExternalStore(
-    (changed) => source.subscribe(changed),
-    () => source.getState(),
-  );
+/**
+ * One thing read from the source's state, drawn again only when it changes. `select` returns a
+ * primitive, or the same object for the same state, so an op that leaves it as it was (a comment,
+ * for what reads the pages) draws nothing.
+ */
+export function useSourceSelect<T>(
+  source: CloudSource,
+  select: (state: ReturnType<CloudSource["getState"]>) => T,
+): T {
+  // The same subscribe function while the source is the same, so React doesn't let go of the
+  // source and subscribe again on every render.
+  const subscribe = useCallback((changed: () => void) => source.subscribe(changed), [source]);
+  return useSyncExternalStore(subscribe, () => select(source.getState()));
+}
+
+const shapes = new WeakMap<object, string>();
+
+/**
+ * The document's pages as the window around the boards reads them, as one string: each page's
+ * id, name and icon, and its boards' ids and names. The same while ops change only what is on
+ * the boards or in the comments; null until there is a document.
+ */
+export function docShape(doc: Doc | null): string | null {
+  if (!doc) return null;
+  let shape = shapes.get(doc.pages);
+  if (shape === undefined) {
+    shape = JSON.stringify(
+      doc.pages.map((page) => [
+        page.id,
+        page.name,
+        page.icon ?? null,
+        page.artboards.map((board) => [board.id, board.name ?? null]),
+      ]),
+    );
+    shapes.set(doc.pages, shape);
+  }
+  return shape;
 }
 
 /**
@@ -219,18 +261,24 @@ export function useSourceState(source: CloudSource) {
  * Null until then, so nothing offers to steer that can't, or hides what can.
  */
 export function useAccess(open: OpenCanvas): "read" | "write" | null {
-  const state = useSourceState(open.source);
+  const said = useSourceSelect(open.source, (state) =>
+    state.status === "ready" ? (open.source.writable ? "write" : "read") : null,
+  );
   // The API's word arrives with the replica, and holds while the network comes and goes; a copy
   // shown offline before it doesn't carry it.
   const known = useRef<{ id: string; access: "read" | "write" } | null>(null);
-  if (state.status === "ready") {
-    known.current = { id: open.id, access: open.source.writable ? "write" : "read" };
+  if (said) {
+    known.current = { id: open.id, access: said };
   }
   return known.current?.id === open.id ? known.current.access : (open.fresh?.access ?? null);
 }
 
-/** The chrome past the left block for an open canvas. */
-export function CanvasChromeSlot({
+/**
+ * The chrome past the left block for an open canvas. Drawn again when what it shows changes, not
+ * with every op: the pages it reads are the document's shape (docShape), and the window around it
+ * hands it the same props until they change.
+ */
+export const CanvasChromeSlot = memo(function CanvasChromeSlot({
   open,
   summary,
   me,
@@ -272,7 +320,8 @@ export function CanvasChromeSlot({
   /** A sentence over the window: whether the reset went. */
   say: (notice: string) => void;
 }) {
-  const state = useSourceState(open.source);
+  const shape = useSourceSelect(open.source, (state) => docShape(state.doc));
+  const docName = useSourceSelect(open.source, (state) => state.doc?.name ?? null);
   // Share's "Reset file links" asks first; busy while the API copies the files across.
   const [resetting, setResetting] = useState<"asking" | "busy" | null>(null);
   const confirmReset = () => {
@@ -296,8 +345,12 @@ export function CanvasChromeSlot({
   const pull = useSnapshot(open.pullRequest);
   const access = useAccess(open);
   const now = useNow();
-  const doc = state.doc;
-  const pages = doc ? pageTabs(doc.pages, head?.agentArtboards ?? []) : [];
+  const agentArtboards = head?.agentArtboards;
+  // Made again when the pages change (`shape` says so), not each time the boards do.
+  const pages = useMemo(() => {
+    const doc = open.source.getState().doc;
+    return doc ? pageTabs(doc.pages, agentArtboards ?? []) : [];
+  }, [open.source, shape, agentArtboards]);
   const project = summary?.project ?? null;
   const repo = project?.kind === "repo" ? project.repo : null;
   usePullRequestReads(open, repo !== null, head, thread.items);
@@ -336,56 +389,66 @@ export function CanvasChromeSlot({
     },
     unseen,
   );
+  // What the chrome's controls do: the same functions every time, so the chrome below is drawn
+  // again only when what it shows changes (`useKeptElement`), not with every update to the
+  // canvas's row, its thread or its head.
+  const does = useHandlers({
+    selectPage: (id: string) => {
+      if (prTab.open) prTab.onToggle();
+      onPage(id);
+    },
+    addPage: () => {
+      const doc = open.source.getState().doc;
+      if (!doc) return;
+      const id = newId("pg");
+      open.source.apply({
+        op: "page.create",
+        index: doc.pages.length,
+        page: { id, name: `Page ${doc.pages.length + 1}` },
+      });
+      onPage(id);
+    },
+    openRepo: () => {
+      if (project?.kind === "repo") onOpenRepo(`${project.repo.owner}/${project.repo.name}`);
+    },
+    askReset: () => setResetting("asking"),
+    toggleTab: () => prTab.onToggle(),
+    toggleRail: () => rail.onToggle(),
+    run: (action: Parameters<OpenCanvas["pullRequest"]["run"]>[0]) => open.pullRequest.run(action),
+  });
+  const chrome = useKeptElement(CanvasChrome, {
+    name: head?.name ?? summary?.name ?? docName ?? open.fresh?.name ?? "",
+    sidebarOpen,
+    pages,
+    activePageId: prTab.open ? null : (page ?? pages[0]?.id ?? null),
+    onSelectPage: does.selectPage,
+    onAddPage: shape !== null && access === "write" ? does.addPage : null,
+    team:
+      workspaceKind === "org" && project?.kind === "repo"
+        ? {
+            meId: me.id,
+            contributors: contributors(presentNow(presence, now), me, worked),
+            repo: project.repo,
+            members,
+            onOpenRepo: does.openRepo,
+            onResetLinks: resetLinks ? does.askReset : null,
+          }
+        : null,
+    pullRequest: repo && pr ? { pr, tabOpen: prTab.open, onToggleTab: does.toggleTab } : null,
+    action: kind
+      ? {
+          kind,
+          busy: pull.busy !== null,
+          blocked: actionBlock(kind, gate, me.id) ?? (pull.asked === kind ? ASKED : null),
+          onRun: does.run,
+        }
+      : null,
+    rail: { open: rail.open, signal, onToggle: does.toggleRail },
+    actionExpected: expected,
+  });
   return (
     <>
-      <CanvasChrome
-        name={head?.name ?? summary?.name ?? doc?.name ?? open.fresh?.name ?? ""}
-        sidebarOpen={sidebarOpen}
-        pages={pages}
-        activePageId={prTab.open ? null : (page ?? pages[0]?.id ?? null)}
-        onSelectPage={(id) => {
-          if (prTab.open) prTab.onToggle();
-          onPage(id);
-        }}
-        onAddPage={
-          doc && access === "write"
-            ? () => {
-                const id = newId("pg");
-                open.source.apply({
-                  op: "page.create",
-                  index: doc.pages.length,
-                  page: { id, name: `Page ${doc.pages.length + 1}` },
-                });
-                onPage(id);
-              }
-            : null
-        }
-        team={
-          workspaceKind === "org" && project?.kind === "repo"
-            ? {
-                meId: me.id,
-                contributors: contributors(presentNow(presence, now), me, worked),
-                repo: project.repo,
-                members,
-                onOpenRepo: () => onOpenRepo(`${project.repo.owner}/${project.repo.name}`),
-                onResetLinks: resetLinks ? () => setResetting("asking") : null,
-              }
-            : null
-        }
-        pullRequest={repo && pr ? { pr, tabOpen: prTab.open, onToggleTab: prTab.onToggle } : null}
-        action={
-          kind
-            ? {
-                kind,
-                busy: pull.busy !== null,
-                blocked: actionBlock(kind, gate, me.id) ?? (pull.asked === kind ? ASKED : null),
-                onRun: (action) => open.pullRequest.run(action),
-              }
-            : null
-        }
-        rail={{ open: rail.open, signal, onToggle: rail.onToggle }}
-        actionExpected={expected}
-      />
+      {chrome}
       <ResetFileLinksDialog
         open={resetting !== null}
         busy={resetting === "busy"}
@@ -394,7 +457,7 @@ export function CanvasChromeSlot({
       />
     </>
   );
-}
+});
 
 /**
  * Reads the pull request as the canvas opens (at once, not waiting for its head), and again
@@ -467,8 +530,12 @@ function threadPeople(items: readonly RunnerItem[]): { id: string; at: string }[
   return [...last].map(([id, at]) => ({ id, at }));
 }
 
-/** The main pane for an open canvas, with what can go wrong said over it. */
-export function BoardsView({
+/**
+ * The main pane for an open canvas, with what can go wrong said over it. The boards themselves
+ * follow the source on their own (Canvas): this is drawn again only when whether there is a
+ * document, or how the source stands, changes.
+ */
+export const BoardsView = memo(function BoardsView({
   host,
   open,
   me,
@@ -491,21 +558,22 @@ export function BoardsView({
   onClose: () => void;
 }) {
   const { source, id } = open;
-  const state = useSourceState(source);
+  const status = useSourceSelect(source, (state) => state.status);
+  const held = useSourceSelect(source, (state) => state.doc !== null);
   const theme = useColorScheme();
   const head = useLiveQuery("canvas.head", { canvasId: id });
   const seq = head.rows?.[0]?.seq;
   // A canvas you can open always has its head row: none, live, is one deleted or taken away.
-  const gone = state.status === "error" || (head.status === "live" && head.rows?.length === 0);
+  const gone = status === "error" || (head.status === "live" && head.rows?.length === 0);
   const unsaved = useUnsaved(source);
   const analytics = useAnalytics();
 
   // The person has seen it as it stands: the sidebar's dot goes.
   useEffect(() => {
-    if (seq === undefined || state.status !== "ready") return;
+    if (seq === undefined || status !== "ready") return;
     const timer = setTimeout(() => void host.api.canvases.seen(id).catch(() => {}), 1000);
     return () => clearTimeout(timer);
-  }, [host, id, seq, state.status]);
+  }, [host, id, seq, status]);
 
   // The page each tab shows is the chrome's; the others hear it through presence.
   useEffect(() => {
@@ -518,15 +586,15 @@ export function BoardsView({
   // person themself, say), isn't news to announce.
   const linkThread = link?.thread;
   const linkKey = linkThread ? `${linkThread}:${link?.at ?? ""}` : null;
-  const doc = state.doc;
   const judged = useRef<string | null>(null);
   useEffect(() => {
+    const doc = source.getState().doc;
     if (!linkThread || !linkKey || !doc || judged.current === linkKey) return;
     judged.current = linkKey;
     if (!doc.threads.some((t) => t.id === linkThread)) {
       say?.("That comment was deleted. This is where it was.");
     }
-  }, [linkThread, linkKey, doc, say]);
+  }, [source, linkThread, linkKey, held, say]);
 
   // The network is back: don't wait out the retry.
   useEffect(() => {
@@ -534,6 +602,33 @@ export function BoardsView({
     window.addEventListener("online", online);
     return () => window.removeEventListener("online", online);
   }, [source]);
+
+  // The boards follow the source themselves: the head moving on with every op (`seq`, read
+  // above) hands them the same element, so they aren't drawn again for it.
+  const readOnly = !source.writable;
+  const boards = useMemo(
+    () => (
+      <Canvas
+        source={source}
+        me={{
+          kind: "user",
+          id: me.id,
+          name: me.name,
+          ...(me.avatarUrl ? { avatarUrl: me.avatarUrl } : {}),
+        }}
+        theme={theme}
+        readOnly={readOnly}
+        pageBar={false}
+        {...(page ? { page } : {})}
+        onPageChange={onPage}
+        {...(link ? { link } : {})}
+        onModeChange={(mode) => {
+          if (mode === "comment") analytics.capture("comment mode entered", { canvas_id: id });
+        }}
+      />
+    ),
+    [source, me, theme, readOnly, page, onPage, link, analytics, id],
+  );
 
   if (gone) {
     return (
@@ -544,8 +639,8 @@ export function BoardsView({
       />
     );
   }
-  if (!state.doc) {
-    return state.status === "offline" ? (
+  if (!held) {
+    return status === "offline" ? (
       <PaneMessage
         title="Can't reach Ponzu"
         body="This canvas opens as soon as you're back online."
@@ -558,32 +653,15 @@ export function BoardsView({
   }
   return (
     <>
-      <Canvas
-        source={source}
-        me={{
-          kind: "user",
-          id: me.id,
-          name: me.name,
-          ...(me.avatarUrl ? { avatarUrl: me.avatarUrl } : {}),
-        }}
-        theme={theme}
-        readOnly={!source.writable}
-        pageBar={false}
-        {...(page ? { page } : {})}
-        onPageChange={onPage}
-        {...(link ? { link } : {})}
-        onModeChange={(mode) => {
-          if (mode === "comment") analytics.capture("comment mode entered", { canvas_id: id });
-        }}
-      />
-      {state.status === "offline" ? (
+      {boards}
+      {status === "offline" ? (
         <Banner>You're offline. Your changes are kept here and sent when you're back.</Banner>
       ) : unsaved ? (
         <Banner>{unsaved.reason}</Banner>
       ) : null}
     </>
   );
-}
+});
 
 /** The last edit that didn't make it, shown for a few seconds. */
 function useUnsaved(source: CloudSource): Unsaved | null {
