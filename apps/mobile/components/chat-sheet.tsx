@@ -1,6 +1,7 @@
 import type { CanvasHeadRow } from "@ponzu/client";
 import {
   type AskAnswer,
+  driverNoticeLine,
   ERROR_COPY,
   ERROR_DETAIL,
   type LocalPicture,
@@ -817,6 +818,8 @@ function NoticeLine({
     }
     case "owner_changed":
       return said(ownerChangedLine(notice.by, meId));
+    case "driver":
+      return said(driverNoticeLine(notice, meId));
     case "model_changed":
       return said(modelChangedLine(notice, meId));
     default:

@@ -4,6 +4,7 @@
  * "Monday 9:00" read the same in any time zone.
  */
 import type { ClaudeConnection, ClaudeLimit } from "../claude.ts";
+import type { ConnectedAgent } from "../settings/agents.tsx";
 import type { Card, PersonUsage, Usage } from "../settings/billing.ts";
 import type { RepoEnvironment } from "../settings/environments.ts";
 import type { Installation } from "../settings/github.tsx";
@@ -101,6 +102,31 @@ export const manyAccounts: GithubAccount[] = [
 export const suspendedAccounts: GithubAccount[] = [
   { ...personalAccount, status: "ready", workspaceId: "ws_ada" },
   { ...accounts[2]!, suspended: true },
+];
+
+/** The person's own agents, connected through Ponzu's MCP (Settings › Agents). */
+export const connectedAgents: ConnectedAgent[] = [
+  {
+    id: "agt_claude",
+    name: "Claude Code",
+    client: "claude-code/2.1.0",
+    createdAt: local(11, 2, 10, 14),
+    lastUsedAt: new Date(NOW - 3 * 3_600_000).toISOString(),
+  },
+  {
+    id: "agt_codex",
+    name: "Codex",
+    client: "codex-mcp-client/0.167.0",
+    createdAt: local(11, 6, 9, 30),
+    lastUsedAt: new Date(NOW - 2 * 86_400_000).toISOString(),
+  },
+  {
+    id: "agt_cursor",
+    name: "Cursor",
+    client: null,
+    createdAt: local(11, 9, 17, 5),
+    lastUsedAt: null,
+  },
 ];
 
 export const claudeMax: ClaudeConnection = {

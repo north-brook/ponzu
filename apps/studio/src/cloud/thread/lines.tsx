@@ -4,6 +4,7 @@ import {
   GitPullRequestClosedIcon,
   GitPullRequestIcon,
 } from "@hugeicons/core-free-icons";
+import { driverNoticeLine } from "@ponzu/client/model/driver";
 import { memo, type ReactNode, useState } from "react";
 import type {
   AgentPrAction,
@@ -498,6 +499,15 @@ function NoticeLine({
         <div className={quiet}>
           <span aria-hidden className="size-[7px] shrink-0 rounded-pill bg-dry" />
           <span className="min-w-0">{ownerChangedLine(notice.by, meId)}</span>
+        </div>
+      );
+    case "driver":
+      // The person's own agent took the canvas to drive it, or stopped (docs/cloud.md, "Your
+      // own agent").
+      return (
+        <div className={quiet}>
+          <span aria-hidden className="size-[7px] shrink-0 rounded-pill bg-dry" />
+          <span className="min-w-0">{driverNoticeLine(notice, meId)}</span>
         </div>
       );
     case "model_changed":

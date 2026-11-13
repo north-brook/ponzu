@@ -80,6 +80,14 @@ export const SETUP_COMPOSITIONS: Composition[] = [
     ...WINDOW,
     masks: BEHIND_SETTINGS,
   },
+  {
+    // Not drawn: "Your own agent", Ponzu's MCP and how each coding agent adds it, then the
+    // agents connected (docs/cloud.md, "Your own agent").
+    id: "settings-agents-own",
+    title: "Settings · Agents, your own agent",
+    ...WINDOW,
+    masks: BEHIND_SETTINGS,
+  },
   settings("settings-notifications", "Settings · Notifications", "notifications.html"),
   settings("settings-members", "Settings · Members", "members.html"),
   {
