@@ -67,9 +67,13 @@ export const CRON_STALE_MS = 5 * 60_000;
  *   active but whose runs are all refused (a `CRON_SECRET` that does not match, a route that
  *   protection hides) records nothing, so nothing else would notice; the selfcheck that would
  *   say `never_ran` runs hourly inside that same minute.
- * - An answer without `cron`, or with something else in it, is down: production always has it.
+ * - An answer with no `cron` at all is not judged: it comes from an API deployed before the
+ *   field existed, which is what production serves between this file reaching main (uptime.yml
+ *   runs from main) and the next production deploy. Judging it would open a false outage.
+ * - A `cron` without a readable `lastRanAt` is down.
  */
 export function cronProblemOf(health: Record<string, unknown>, now: number): string | null {
+  if (!("cron" in health)) return null;
   const cron = health.cron as { lastRanAt?: unknown } | undefined;
   if (!cron || typeof cron !== "object" || !("lastRanAt" in cron))
     return "the answer has no cron.lastRanAt";

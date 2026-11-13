@@ -912,7 +912,9 @@ nothing.
   still answers. `lastRanAt` null (the minute has never run on production's database) is down
   too: right after the first production deploy it lasts a minute or two, and the rule below
   that one failing run opens nothing is the grace for it. Counted as up, it would hide for good a
-  schedule whose every run is refused, which records nothing. The
+  schedule whose every run is refused, which records nothing. An answer with no `cron` at all
+  is not judged on the minute: it is an API deployed before health reported it, which is what
+  production serves until its first deploy after this rule reached `main`. The
   commit, image and migration count are the deploy's own check, not this one, because a merged
   commit waits for the founder's approval before it deploys.
 - A run that finds production down fails. The next run reads that conclusion back from the

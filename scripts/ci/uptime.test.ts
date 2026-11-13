@@ -79,20 +79,28 @@ describe("the minute, from health's cron.lastRanAt", () => {
     expect(problemOf(200, ago(-30_000), NOW)).toBeNull();
   });
 
-  test("null, a missing field and an unreadable one are all down", () => {
+  test("null, an empty cron and an unreadable one are all down", () => {
     // Null: the minute has never run on production's database. Right after the first deploy
     // that lasts a minute or two, and one failing run opens no issue (`check`), so that is the
     // grace; past it, a schedule whose every run is refused would otherwise pass for ever.
     expect(problemOf(200, { ...UP, cron: { lastRanAt: null } }, NOW)).toBe(
       "cron.lastRanAt is null: the minute has never run on production's database",
     );
-    const { cron: _, ...without } = UP;
-    expect(problemOf(200, without, NOW)).toBe("the answer has no cron.lastRanAt");
     expect(problemOf(200, { ...UP, cron: {} }, NOW)).toBe("the answer has no cron.lastRanAt");
     expect(problemOf(200, { ...UP, cron: { lastRanAt: "soon" } }, NOW)).toBe(
       'cron.lastRanAt is "soon"',
     );
     expect(cronProblemOf({ cron: { lastRanAt: 12 } }, NOW)).toBe("cron.lastRanAt is 12");
+  });
+
+  test("an answer with no cron at all is up: the API deployed before the field existed", () => {
+    // uptime.yml runs from main as soon as this merges, while production still serves an API
+    // built before `cron` was in its health. Counting that as down would open a false
+    // production-down issue within ten minutes. Once production serves the field, a minute that
+    // stops is judged by the rules above.
+    const { cron: _, ...without } = UP;
+    expect(problemOf(200, without, NOW)).toBeNull();
+    expect(cronProblemOf(without, NOW)).toBeNull();
   });
 
   test("is judged only on an answer that is otherwise production's", () => {
