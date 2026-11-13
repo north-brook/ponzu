@@ -368,6 +368,13 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
+    // Not drawn: the person's own agent drives the canvas, so the rail is closed and the toggle
+    // is its mark (docs/cloud.md, "Your own agent").
+    id: "driven-by-own-agent",
+    title: "Window · your own agent drives the canvas",
+    ...WINDOW,
+  },
+  {
     id: "thread-model-changed",
     title: "Thread · the canvas's model is no longer offered",
     ...WINDOW,

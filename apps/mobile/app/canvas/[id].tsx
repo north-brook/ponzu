@@ -1,4 +1,4 @@
-import type { Person } from "@ponzu/client/model";
+import { drivingLine, drivingTitle, type Person, takeBackWords } from "@ponzu/client/model";
 import { useSessionState } from "@ponzu/client/react";
 import { linkTarget, type Thread } from "@ponzu/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -7,7 +7,7 @@ import { onlineManager } from "@tanstack/react-query";
 import { type Href, router, useLocalSearchParams, useNavigation } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Linking, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { Alert, AppState, Linking, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
   Easing,
@@ -559,6 +559,34 @@ export default function CanvasScreen() {
     setChatFocus(true);
     setChat(true);
   };
+  /**
+   * The person's own agent driving the canvas in place of Ponzu's (docs/cloud.md, "Your own
+   * agent"): Chat is its mark and doesn't open the chat; pressed, it says who drives and since
+   * when, with Take back for someone who may change the canvas.
+   */
+  const driver = head?.driver ?? null;
+  const showDriver = () => {
+    if (!driver) return;
+    tick();
+    const takeBack = () =>
+      backend.api.canvases
+        .takeBack(canvasId)
+        .catch(() =>
+          Alert.alert(`The canvas couldn't be taken back from ${driver.name}. Try again.`),
+        );
+    Alert.alert(drivingTitle(driver), drivingLine(driver, Date.now()), [
+      { text: writable ? "Cancel" : "OK", style: "cancel" },
+      ...(writable
+        ? [
+            {
+              text: takeBackWords(driver).confirm,
+              style: "destructive" as const,
+              onPress: takeBack,
+            },
+          ]
+        : []),
+    ]);
+  };
   /** Chat pressed with the chat docked: it goes (ChatSheet `closing`), read as far as it held. */
   const closeDockedChat = () => {
     tick();
@@ -932,6 +960,8 @@ export default function CanvasScreen() {
           onPullRequest={openPullRequest}
           chat={status.chat}
           onChat={chatDocked ? closeDockedChat : openChat}
+          driver={driver}
+          onDriver={showDriver}
           commenting={placing}
           commentHint={readOnly}
           onComment={
@@ -1034,7 +1064,8 @@ export default function CanvasScreen() {
           }}
         />
       )}
-      {chat && chatMe && (
+      {/* Not while the person's own agent drives it: the chat is that agent's then. */}
+      {chat && chatMe && !driver && (
         <ChatSheet
           canvasId={canvasId}
           head={head}

@@ -666,7 +666,9 @@ function WorkspaceWindow({
         // canvas as it is (its page) and shows over or beside it. Anything else opens the canvas
         // there, as a link does.
         if (!(at.canvasId === openId && (at.item || at.tab))) openCanvas(at.canvasId, "search");
-        if (at.item) {
+        // While the person's own agent drives the canvas open, its rail can't open: the
+        // person's choice of it is left as it was.
+        if (at.item && !(at.canvasId === openId && panes?.driven)) {
           // Opened for reading, not to type: the keyboard stays where it was. From the create
           // page the pane comes with the canvas and never takes the keyboard, so nothing is held
           // there (a hold left over would swallow the next ⌥⌘B's).

@@ -6,7 +6,7 @@ import { Juice } from "../lib/slice";
 import { useTheme } from "../lib/theme";
 import { brand, font } from "../lib/tokens";
 import { BarButton } from "./chrome";
-import { ChatIcon, CommentIcon, PullRequestIcon } from "./icons";
+import { AgentMark, ChatIcon, CommentIcon, PullRequestIcon } from "./icons";
 
 /**
  * The canvas's floating stack, bottom right, top to bottom (iPhone design §7): the pull request,
@@ -19,6 +19,10 @@ import { ChatIcon, CommentIcon, PullRequestIcon } from "./icons";
  * composer slot (needs-you.tsx).
  * Comment on a canvas the person may only look at is shown and said to be unavailable, not
  * hidden, so the stack never jumps.
+ *
+ * While the person's own agent drives the canvas (`driver`, docs/cloud.md "Your own agent"),
+ * Chat is that agent's mark and doesn't open the chat: a tap or a long press says who drives it,
+ * with Take back (`onDriver`), as the Mac's thread toggle does.
  */
 export function CanvasStack({
   bottom,
@@ -31,6 +35,8 @@ export function CanvasStack({
   onChat,
   commenting = false,
   commentHint = null,
+  driver = null,
+  onDriver,
 }: {
   /** From the screen's bottom and right edges. */
   bottom: number;
@@ -46,10 +52,14 @@ export function CanvasStack({
   commenting?: boolean;
   /** Why Comment is unavailable, for VoiceOver (the read-only line). */
   commentHint?: string | null;
+  /** The person's own agent driving the canvas in place of Ponzu's: its mark, and its name. */
+  driver?: { client: string; name: string } | null;
+  /** Says who drives, with Take back (an alert). */
+  onDriver?: () => void;
 }) {
   const { color } = useTheme();
-  const needsYou = typeof chat === "object" ? chat.needsYou : 0;
-  const busy = chat === "working";
+  const needsYou = driver ? 0 : typeof chat === "object" ? chat.needsYou : 0;
+  const busy = !driver && chat === "working";
   const chatLabel =
     needsYou > 0 ? NEEDS_YOU.chat(needsYou) : busy ? "Chat, Ponzu is working" : "Chat";
   return (
@@ -105,15 +115,26 @@ export function CanvasStack({
       >
         <CommentIcon color={color.ink} />
       </Control>
-      <Control testID="stack-chat" label={chatLabel} onPress={onChat}>
-        {busy ? (
-          <View testID="stack-chat-working">
-            <Juice size={20} color={color.ink} />
-          </View>
-        ) : (
-          <ChatIcon color={color.ink} />
-        )}
-      </Control>
+      {driver ? (
+        <Control
+          testID="stack-chat-driver"
+          label={`${driver.name} is driving this canvas`}
+          onPress={onDriver ?? (() => {})}
+          onLongPress={onDriver}
+        >
+          <AgentMark client={driver.client} size={20} color={color.ink} />
+        </Control>
+      ) : (
+        <Control testID="stack-chat" label={chatLabel} onPress={onChat}>
+          {busy ? (
+            <View testID="stack-chat-working">
+              <Juice size={20} color={color.ink} />
+            </View>
+          ) : (
+            <ChatIcon color={color.ink} />
+          )}
+        </Control>
+      )}
       {needsYou > 0 && (
         // On Chat's top-right edge. Its count is in Chat's own label for VoiceOver.
         <View
@@ -153,6 +174,7 @@ function Control({
   testID,
   label,
   onPress,
+  onLongPress,
   held = false,
   hint,
   children,
@@ -160,6 +182,7 @@ function Control({
   testID: string;
   label: string;
   onPress?: () => void;
+  onLongPress?: () => void;
   held?: boolean;
   hint?: string;
   children: ReactNode;
@@ -171,6 +194,7 @@ function Control({
       hint={hint}
       held={held}
       onPress={onPress}
+      onLongPress={onLongPress}
       disabled={!onPress}
     >
       <View style={{ opacity: onPress ? 1 : 0.4 }}>{children}</View>

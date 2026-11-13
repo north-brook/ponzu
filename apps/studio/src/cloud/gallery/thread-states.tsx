@@ -175,6 +175,11 @@ export function ThreadStates({
         />
         <Rail canvasId="owner-left-taken" thread={t.takenOverThread} label="Maya took it over" />
         <Rail
+          canvasId="driven-taken-back"
+          thread={t.drivenThread}
+          label="your own agent drove it, and Maya took it back"
+        />
+        <Rail
           canvasId="busy"
           agent={{ state: "waking", status: null, sandbox: "busy" }}
           label="waiting for a free machine"

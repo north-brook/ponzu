@@ -165,6 +165,8 @@ describe("getCanvasHead", () => {
       "agentStatus",
       // When its file links were last reset, never the key itself.
       "assetKeyRotatedAt",
+      // Who drives it, when a person's own agent does: a mark, a name, an app and a time.
+      "driver",
       "icon",
       "id",
       "lastActivityAt",

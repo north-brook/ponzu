@@ -47,7 +47,7 @@ const CANVAS_ID = /^(?:cnv|des)_[0-9a-z]{16}$/;
  */
 export function canvasRef(ref: string): string {
   const trimmed = ref.trim();
-  const match = /\/(?:canvases|designs)\/((?:cnv|des)_[0-9a-z]{16})/.exec(trimmed);
+  const match = /\/canvases\/((?:cnv|des)_[0-9a-z]{16})/.exec(trimmed);
   if (match) return match[1]!;
   if (CANVAS_ID.test(trimmed)) return trimmed;
   return encodeURIComponent(trimmed);

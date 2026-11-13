@@ -14,6 +14,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { ResetFileLinksDialog } from "../cloud/dialogs/reset-file-links.tsx";
+import { TakeBackDialog } from "../cloud/dialogs/take-back.tsx";
 import type {
   Attachment,
   CanvasMember,
@@ -296,6 +297,7 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
   seenThreadSeq,
   onOpenRepo,
   resetLinks = null,
+  takeBack = null,
   say,
 }: {
   open: OpenCanvas;
@@ -320,7 +322,12 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
    * admins, who are the only ones the API lets; null for everyone else, and the foot is not shown.
    */
   resetLinks?: (() => Promise<unknown>) | null;
-  /** A sentence over the window: whether the reset went. */
+  /**
+   * Takes the canvas back from the person's own agent driving it (`api.canvases.takeBack`),
+   * offered in the rail toggle's popover to those who may change the canvas.
+   */
+  takeBack?: (() => Promise<unknown>) | null;
+  /** A sentence over the window: whether the reset, or taking it back, went. */
   say: (notice: string) => void;
 }) {
   const shape = useSourceSelect(open.source, (state) => docShape(state.doc));
@@ -342,6 +349,21 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
     );
   };
   const head = useLiveQuery("canvas.head", { canvasId: open.id }).rows?.[0];
+  // The person's own agent driving it: the rail stays closed (canvas-panes.tsx) and the toggle
+  // is its mark, with Take back, asked first.
+  const driver = head?.driver ?? null;
+  const [takingBack, setTakingBack] = useState<"asking" | "busy" | null>(null);
+  const confirmTakeBack = () => {
+    if (!takeBack || takingBack === "busy") return;
+    setTakingBack("busy");
+    takeBack().then(
+      () => setTakingBack(null),
+      () => {
+        setTakingBack(null);
+        say(`The canvas couldn't be taken back from ${driver?.name ?? "the agent"}. Try again.`);
+      },
+    );
+  };
   const presence = useLiveQuery("canvas.presence", { canvasId: open.id }).rows ?? [];
   const meRow = useLiveQuery("me", {}).rows?.[0];
   const thread = useSnapshot(open.thread);
@@ -421,6 +443,7 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
     askReset: () => setResetting("asking"),
     toggleTab: () => prTab.onToggle(),
     toggleRail: () => rail.onToggle(),
+    askTakeBack: () => setTakingBack("asking"),
     run: (action: Parameters<OpenCanvas["pullRequest"]["run"]>[0]) => open.pullRequest.run(action),
   });
   const chrome = useKeptElement(CanvasChrome, {
@@ -452,7 +475,20 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
           onRun: does.run,
         }
       : null,
-    rail: { open: rail.open, signal, onToggle: does.toggleRail },
+    rail: {
+      open: rail.open,
+      signal,
+      onToggle: does.toggleRail,
+      driver: driver
+        ? {
+            client: driver.client,
+            name: driver.name,
+            host: driver.host,
+            since: driver.since,
+            onTakeBack: takeBack && access === "write" ? does.askTakeBack : null,
+          }
+        : null,
+    },
     actionExpected: expected,
   });
   return (
@@ -463,6 +499,13 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
         busy={resetting === "busy"}
         onCancel={() => setResetting(null)}
         onConfirm={confirmReset}
+      />
+      <TakeBackDialog
+        agent={driver?.name ?? "the agent"}
+        open={takingBack !== null && driver !== null}
+        busy={takingBack === "busy"}
+        onCancel={() => setTakingBack(null)}
+        onConfirm={confirmTakeBack}
       />
     </>
   );

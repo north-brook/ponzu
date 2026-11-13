@@ -161,6 +161,32 @@ export const takenOverThread: ThreadItem[] = [
   said(maya, "Carry on with the picks screen, please."),
 ];
 
+/**
+ * The person's own agent drove the canvas (docs/cloud.md, "Your own agent"): Claude Code took it
+ * in T3 Code, Sam's comment went to it, and Maya took it back.
+ */
+export const drivenThread: ThreadItem[] = [
+  said(ada, "I'd like to iterate on the onboarding flow"),
+  reply("Rebuilding onboarding from the app's code. Light and Water are in."),
+  notice({
+    type: "driver",
+    action: "took",
+    agent: "Claude Code",
+    host: "T3 Code",
+    owner: maya,
+    by: null,
+  }),
+  comment(sam, "The photo should lead here, not the headline."),
+  notice({
+    type: "driver",
+    action: "taken_back",
+    agent: "Claude Code",
+    host: "T3 Code",
+    owner: maya,
+    by: maya,
+  }),
+];
+
 /** Together on a canvas: three people steer one run. */
 export const teamThread: ThreadItem[] = [
   said(ada, ASK),
