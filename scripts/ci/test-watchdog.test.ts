@@ -148,6 +148,12 @@ describe("the watchdog", () => {
     const passed = await watch(dir, future()).done();
     expect(passed.code).toBe(0);
     expect(passed.stdout + passed.stderr).not.toContain("::error");
+    // Every worker's last file ended, so none of them would be named had it lived on idle.
+    const traces = readdirTraces(join(dir, "trace"));
+    expect(traces.length).toBeGreaterThan(0);
+    expect(traces.map((t) => [t.file, t.stage, t.begun, t.ended])).toEqual(
+      traces.map((t) => [t.file, "done", 1, 1]),
+    );
 
     await writeFile(
       join(dir, "t", "bad.test.ts"),
