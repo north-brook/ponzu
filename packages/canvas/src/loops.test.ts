@@ -74,6 +74,21 @@ test("placeholders take the board's own plain background", () => {
       ),
     ),
   ).toBe("#fff");
+  // Without pictures a placeholder shows for a frame or two: one of unknown colour is clear.
+  const pair = board(
+    `<section data-artboard data-id="ab_ld" style="width:10px;height:10px;background:light-dark(#f3efe6, rgb(28, 33, 27))"></section>`,
+  );
+  expect(placeholderFill(pair)).toBe("#f3efe6");
+  expect(placeholderFill(pair, "dark")).toBe("rgb(28, 33, 27)");
+  expect(
+    placeholderFill(
+      board(
+        `<section data-artboard data-id="ab_v" style="width:10px;height:10px;background:var(--paper)"></section>`,
+      ),
+      "dark",
+      "transparent",
+    ),
+  ).toBe("transparent");
 });
 
 test("a server error or no server is asked again; only an answer, or none, is kept", async () => {

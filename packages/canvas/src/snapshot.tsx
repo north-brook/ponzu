@@ -23,6 +23,11 @@
  * cheap; or shows a skeleton of its DOM) until its picture comes. Each picture
  * is decoded before it's shown, and the outgoing representation goes a frame
  * after the incoming one is drawn, so nothing pops.
+ *
+ * Without pictures (Ponzu Cloud has no renderer), the open is staged all the
+ * same: every board starts pending, a board on screen goes live through the
+ * thaw queue (nearest first, THAW_BUDGET elements a frame), and a board's DOM
+ * isn't built until it first goes live, unless its height has to be measured.
  */
 
 import { boardVersion } from "@ponzu/core";
@@ -302,13 +307,19 @@ export const THAW_BUDGET = 4000;
 
 interface Thaw {
   go: () => void;
-  /** Lower first: distance from the middle of the view. */
+  /** Lower first: distance from the middle of the view, as of the frame it's taken in. */
   rank: number;
+  rankOf: () => number;
   cost: number;
 }
 
 const thawing: Thaw[] = [];
 let thawFrame = 0;
+
+/** Boards waiting to go live, for tests to wait on: none queued means the page has all thawed. */
+export function thawsQueued(): number {
+  return thawing.length;
+}
 
 /** Which queued thaws run this frame: nearest first, up to the budget, always at least one. */
 export function takeThaws<T extends { rank: number; cost: number }>(
@@ -325,13 +336,16 @@ export function takeThaws<T extends { rank: number; cost: number }>(
 
 function thawTick() {
   thawFrame = 0;
+  // Ranked again now: a board queued on a cold open was queued before the page's camera fit, and
+  // the camera may have moved since any was queued.
+  for (const t of thawing) t.rank = t.rankOf();
   for (const t of takeThaws(thawing, THAW_BUDGET)) t.go();
   if (thawing.length) thawFrame = requestAnimationFrame(thawTick);
 }
 
 /** Run `go` in a coming frame, nearest first, within a frame's budget. Returns a cancel. */
 function thawSlot(go: () => void, rank: () => number, cost: number): () => void {
-  const t = { go, rank: rank(), cost };
+  const t = { go, rank: 0, rankOf: rank, cost };
   thawing.push(t);
   if (!thawFrame) thawFrame = requestAnimationFrame(thawTick);
   return () => {
@@ -423,10 +437,12 @@ function useTier(opts: {
   // Every board starts hidden, and goes live a frame later if it's big enough.
   // The page fits its camera in between, so a board that opens small never
   // pays for images, layers and raster nobody can see: it waits, hidden, for
-  // its picture.
-  const [tier, setTier] = useState<Tier | "pending">(() =>
-    snapshotUrl && !attention ? "pending" : "live",
-  );
+  // its picture. Without pictures (Ponzu Cloud), a board on screen goes live
+  // through the thaw queue, nearest first, a frame's budget at a time, so a
+  // page doesn't build and draw every board in its first frame.
+  const [tier, setTier] = useState<Tier | "pending">(() => (attention ? "live" : "pending"));
+  /** The host draws pictures of boards (the local runtime); Ponzu Cloud doesn't. */
+  const drawsPictures = !!snapshotUrl;
   const [held, setPicture] = useState<Picture | null>(null);
   // Only a picture of the board as it is now: after an edit, the one it had shows what was undone.
   const now = snapshotUrl ? versionIn(snapshotUrl(id, 1)) : "";
@@ -544,7 +560,9 @@ function useTier(opts: {
       return;
     // Leaving "pending" waits out the page's first camera fit, so a board that
     // opens small doesn't go live for a frame and start loading everything.
-    if (tier === "pending") {
+    // Without pictures there's nothing else to show: it queues to go live at
+    // once, and the queue ranks it when its frame comes, after the fit.
+    if (tier === "pending" && drawsPictures) {
       const timer = setTimeout(() => setTier(want), OPEN_SETTLE_MS);
       return () => clearTimeout(timer);
     }
@@ -568,7 +586,7 @@ function useTier(opts: {
     }
     const raf = requestAnimationFrame(() => setTier(want));
     return () => cancelAnimationFrame(raf);
-  }, [want, tier, picture, loopState, loopsUrl, attention, moving]);
+  }, [want, tier, picture, loopState, loopsUrl, attention, moving, drawsPictures]);
   // The picture this board has stays decoded while it has it.
   const pictureUrl = picture?.url;
   useEffect(() => (pictureUrl ? holdPicture(pictureUrl) : undefined), [pictureUrl]);
@@ -657,10 +675,33 @@ export function TieredBoard(props: {
   skeleton?: boolean;
   /** What a placeholder fills with. */
   fill?: string;
+  /**
+   * Its DOM is needed before it shows, to measure a fit-content height: built at once, but not
+   * drawn until its turn to go live.
+   */
+  build?: boolean;
+  /** Its DOM was built after it mounted: what was measured without it can be measured now. */
+  onBuilt?: () => void;
   children: (hidden: boolean) => ReactNode;
 }) {
   const intent = useIntent(props.moving);
   const { tier, picture, loops, missing } = useTier({ ...props, intent: intent.on });
+  // Without pictures, a board's DOM isn't built until it first goes live (or is needed sooner):
+  // a board off screen on a cold open costs no DOM, style or layout until it comes near. Once
+  // built it stays built: a board that was drawn never goes blank to be built again.
+  const needed = !!props.snapshotUrl || !!props.build || tier === "live";
+  const [built, setBuilt] = useState(needed);
+  if (needed && !built) setBuilt(true);
+  const builtLate = useRef(false);
+  const onBuilt = useRef(props.onBuilt);
+  onBuilt.current = props.onBuilt;
+  useLayoutEffect(() => {
+    if (!built) builtLate.current = true;
+    else if (builtLate.current) {
+      builtLate.current = false;
+      onBuilt.current?.();
+    }
+  }, [built]);
   const host = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement | null>(null);
   const want: Shown =
@@ -804,7 +845,7 @@ export function TieredBoard(props: {
           containIntrinsicSize: `${props.w}px ${props.h}px`,
         }}
       >
-        {props.children(hidden)}
+        {built && props.children(hidden)}
       </div>
       {shown === "pending" && !skeleton && (
         <div

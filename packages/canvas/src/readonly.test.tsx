@@ -65,9 +65,10 @@ test("a host can pick the page", () => {
   const source = new MemorySource(d);
   const first = renderToStaticMarkup(<Canvas source={source} footer={false} />);
   const second = renderToStaticMarkup(<Canvas source={source} footer={false} page="pg_b" />);
-  expect(first).toContain('data-artboard-host="ab_a"');
-  expect(second).toContain('data-artboard-host="ab_b"');
-  expect(second).not.toContain('data-artboard-host="ab_a"');
+  // Boards' content builds as each goes live, in the browser: the page shows its own boards.
+  expect(first).toContain('data-pz-board="ab_a"');
+  expect(second).toContain('data-pz-board="ab_b"');
+  expect(second).not.toContain('data-pz-board="ab_a"');
   // Without the footer, no page tabs.
   expect(second).not.toContain('aria-label="Pages"');
 });

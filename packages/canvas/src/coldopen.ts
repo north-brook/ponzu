@@ -85,13 +85,26 @@ export function coldLive(boards: Artboard[]): Set<string> {
   return out;
 }
 
-/** The colour a placeholder fills with: the board's own background, or white. */
-export function placeholderFill(ab: Artboard): string {
+const PLAIN = /^(#[0-9a-f]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-z]+)$/i;
+
+/**
+ * The colour a placeholder fills with: the board's own background, or `otherwise`. A
+ * `light-dark()` of two plain colours takes the one for the board's scheme.
+ */
+export function placeholderFill(
+  ab: Artboard,
+  scheme: "light" | "dark" = "light",
+  otherwise = "#fff",
+): string {
   const s = ab.root.style;
-  const bg = s["background-color"] ?? s.background ?? "";
+  const bg = (s["background-color"] ?? s.background ?? "").trim();
   // A plain colour only: gradients and images are what the picture is for.
-  if (/^(#[0-9a-f]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-z]+)$/i.test(bg.trim())) return bg.trim();
-  return "#fff";
+  if (PLAIN.test(bg)) return bg;
+  const pair = /^light-dark\(\s*([^,()]+(?:\([^)]*\))?)\s*,\s*([^,()]+(?:\([^)]*\))?)\s*\)$/i.exec(
+    bg,
+  );
+  const pick = pair?.[scheme === "dark" ? 2 : 1]?.trim();
+  return pick && PLAIN.test(pick) ? pick : otherwise;
 }
 
 /** Elements skeletons may add up to on a cold page, after the cheap boards. */
