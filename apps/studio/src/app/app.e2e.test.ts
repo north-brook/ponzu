@@ -19,7 +19,7 @@ import {
   sampleToggle,
 } from "../../scripts/visual-lib.ts";
 import { nameFor } from "./create.tsx";
-import { buildApp, serve, waitUntil } from "./e2e-lib.ts";
+import { buildApp, explained, serve, waitUntil } from "./e2e-lib.ts";
 import { KETTLE_IDEAS } from "./fake-host.ts";
 
 setDefaultTimeout(60_000);
@@ -60,7 +60,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     page = await browser.newPage();
     await page.setViewportSize({ width: 1440, height: 900 });
     page.on("pageerror", (error) => errors.push(String(error)));
-    await page.goto(server.url);
+    // The beat after a send from the create page ends when a test says (`beats`), not 1.4 s on:
+    // what a test does inside it can't then be outrun by a slow machine.
+    await page.goto(`${server.url}?beat=held`);
   });
   afterAll(async () => {
     await browser?.close();
@@ -84,6 +86,36 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
         })),
       };
     }, NAME);
+
+  /**
+   * The canvas the create page made, open with its first board drawn and the thread's pane
+   * open, everything at rest: where each test after the one that makes it starts. Where that
+   * test got so far, this changes nothing; where it failed part way, the next test still starts
+   * where it should, and a failure stays its own.
+   */
+  const atTheCanvas = async () => {
+    const { id } = await made();
+    const board = page.locator('[data-board-name][title="Three plans"]');
+    if ((await board.count()) === 0) {
+      await page.evaluate((canvasId) => {
+        const world = window.ponzuFake!;
+        const drawn = world.backend
+          .canvas(canvasId)
+          .sequencer.doc.pages[0]!.artboards.some((a) => a.name === "Three plans");
+        if (!drawn) world.drawBoard(canvasId, "Three plans");
+        world.link({ kind: "canvas", canvasId });
+      }, id);
+      await board.waitFor();
+    }
+    const toggle = page.locator('button[aria-controls="thread"]');
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+    await page.locator('button[aria-controls="thread"][aria-expanded="true"]').waitFor();
+    await waitUntil(() =>
+      page.evaluate(
+        () => !document.querySelector("[data-flight], [data-pane-motion], [data-composer-flight]"),
+      ),
+    );
+  };
 
   /** Whether the caret is in the create page's composer. */
   const caretInCreate = () =>
@@ -118,26 +150,57 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     const button = page.getByRole("button", { name: "Continue with GitHub" });
     const busy = () => button.getAttribute("aria-busy");
     await page.evaluate(() => window.ponzuFake!.holdSignIn());
-    const pressed = Date.now();
-    await button.click();
-    expect(await busy()).toBe("true");
-    await shoot("1-sign-in-waiting");
-    // No Cancel any more, and a press while it waits starts nothing.
-    expect(await page.getByRole("button", { name: "Cancel" }).count()).toBe(0);
-    await button.click({ force: true });
-    expect(await page.evaluate(() => window.ponzuFake!.signInsStarted)).toBe(1);
-
-    // Back in the window while the browser is still out: past the old 1.5 s grace, nothing ends.
+    // Timed in the page, on its own clock: when the press landed, and every time the button
+    // changed between waiting and ready after it, however long the test's round trips take.
+    // The moment it is waiting, still in the page and so inside the cooldown however slow the
+    // machine, it is pressed again, and the window comes back from the browser.
+    interface SignInSeen {
+      pressed: number;
+      changes: { at: number; busy: boolean }[];
+      /** How many sign-ins had started once the press while it waited had landed. */
+      startedAfterSecondPress: number;
+    }
     await page.evaluate(() => {
-      window.dispatchEvent(new Event("blur"));
-      window.dispatchEvent(new Event("focus"));
+      const el = [...document.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("Continue with GitHub"),
+      )!;
+      const seen: SignInSeen = { pressed: -1, changes: [], startedAfterSecondPress: -1 };
+      (window as { signInSeen?: SignInSeen }).signInSeen = seen;
+      el.addEventListener("click", () => {
+        if (seen.pressed < 0) seen.pressed = performance.now();
+      });
+      let was = el.getAttribute("aria-busy") === "true";
+      new MutationObserver(() => {
+        const now = el.getAttribute("aria-busy") === "true";
+        if (now === was) return;
+        was = now;
+        seen.changes.push({ at: performance.now(), busy: now });
+        if (!now || seen.changes.length > 1) return;
+        // A press while it waits starts nothing.
+        el.click();
+        seen.startedAfterSecondPress = window.ponzuFake!.signInsStarted;
+        // Back in the window while the browser is still out: nothing ends at the old 1.5 s
+        // grace from then, only once the cooldown is out.
+        window.dispatchEvent(new Event("blur"));
+        window.dispatchEvent(new Event("focus"));
+      }).observe(el, { attributes: true, attributeFilter: ["aria-busy"] });
     });
-    await page.waitForTimeout(2_000);
-    expect(await busy()).toBe("true");
+    await button.click();
+    await waitUntil(() =>
+      page.evaluate(() => (window as { signInSeen?: SignInSeen }).signInSeen!.changes.length > 0),
+    );
+    await shoot("1-sign-in-waiting");
+    // No Cancel any more.
+    expect(await page.getByRole("button", { name: "Cancel" }).count()).toBe(0);
+    await waitUntil(async () => (await busy()) === null);
     // The attempt is still out in the browser: nothing the window did ended it.
     expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(0);
-    await waitUntil(async () => (await busy()) === null);
-    expect(Date.now() - pressed).toBeGreaterThanOrEqual(3_900);
+    const seen = await page.evaluate(() => (window as { signInSeen?: SignInSeen }).signInSeen!);
+    expect(seen.startedAfterSecondPress).toBe(1);
+    // Waiting from the press, then ready once: never ready in between.
+    expect(seen.changes.map((c) => c.busy)).toEqual([true, false]);
+    // Ready no sooner than the cooldown (COOLDOWN_MS, 4 s, less a frame) after the press.
+    expect(seen.changes[1]!.at - seen.pressed).toBeGreaterThanOrEqual(3_900);
     await shoot("1-sign-in-ready-again");
 
     // A second press starts another attempt beside the first; the first tab back signs in.
@@ -239,13 +302,30 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   });
 
   test("Fresh start makes one canvas however often send is pressed, and opens it", async () => {
-    await page.getByPlaceholder(/Describe what you want to make/).fill("A quieter checkout");
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("Enter");
-    // The composer travels to the thread: one, however often it was pressed.
-    expect(await page.locator('[data-flight="surface"]').count()).toBeLessThanOrEqual(1);
-    await page.locator("#sidebar").waitFor();
-    await page.getByRole("button", { name: /Quieter checkout/ }).waitFor();
+    // A busy CI machine has, rarely, never shown the canvas's row here (not seen anywhere
+    // else yet): a failure says what the page showed instead.
+    await explained(
+      page,
+      async () => {
+        await page.getByPlaceholder(/Describe what you want to make/).fill("A quieter checkout");
+        await page.keyboard.press("Enter");
+        await page.keyboard.press("Enter");
+        // The composer travels to the thread: one, however often it was pressed.
+        expect(await page.locator('[data-flight="surface"]').count()).toBeLessThanOrEqual(1);
+        await page.locator("#sidebar").waitFor();
+        await page.getByRole("button", { name: /Quieter checkout/ }).waitFor();
+      },
+      () =>
+        page.evaluate(() => ({
+          canvases: [...window.ponzuFake!.backend.canvases.values()].map((d) => ({
+            name: d.sequencer.doc.name,
+            workspaceId: d.workspaceId,
+          })),
+          personalId: window.ponzuFake!.personalId,
+          answers: window.ponzuFake!.answers,
+          flights: document.querySelectorAll("[data-flight]").length,
+        })),
+    );
     // The words are the thread's first line, the composer there is empty and has the caret,
     // and after the beat, untouched, the thread's pane closes, and stays closed.
     await page.locator("#thread").getByText("A quieter checkout").waitFor();
@@ -257,6 +337,11 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.locator("#thread").getByPlaceholder("Steer, or ask more").inputValue()).toBe(
       "",
     );
+    // Landed, the beat is under way, and the pane stays open through it…
+    await waitUntil(() => page.evaluate(() => window.ponzuFake!.beats!.waiting === 1));
+    expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe("true");
+    // …and once it is out, untouched, it closes.
+    await page.evaluate(() => window.ponzuFake!.beats!.end());
     await page.locator('button[aria-controls="thread"][aria-expanded="false"]').waitFor();
     const made = await page.evaluate(() =>
       [...window.ponzuFake!.backend.canvases.values()]
@@ -451,7 +536,10 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // The first message went to the agent.
     expect(canvas.said).toEqual([PROMPT]);
     // The pointer goes to the thread before the beat is out: it stays open, and is kept open.
+    // The beat is held until a test ends it, so the pointer gets there inside it however long
+    // the moves take to arrive.
     await page.locator("#thread").getByText(PROMPT).waitFor();
+    await waitUntil(() => page.evaluate(() => window.ponzuFake!.beats!.waiting === 1));
     await page.mouse.move(1300, 500);
     await page.mouse.move(1310, 520);
     await waitUntil(() =>
@@ -463,6 +551,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
         ),
       ),
     );
+    // Going to the pane ended the beat: nothing is left to close it.
+    expect(await page.evaluate(() => window.ponzuFake!.beats!.waiting)).toBe(0);
 
     await page.evaluate((id) => window.ponzuFake!.drawBoard(id, "Three plans"), canvas.id);
     await page.locator('[data-board-name][title="Three plans"]').waitFor();
@@ -477,6 +567,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   });
 
   test("a pane opening or closing slides over still boards, on either side, every frame", async () => {
+    await atTheCanvas();
     await page.mouse.move(700, 500);
     for (const pane of ["sidebar", "thread", "thread", "sidebar"]) {
       const { frames, clocks } = await sampleToggle(page, `button[aria-controls="${pane}"]`);
@@ -496,6 +587,10 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
         expect(f.boardY).toBe(frames[0]!.boardY);
       }
     }
+    // The thread opened last, with the caret in its composer.
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+      "Message",
+    );
     if (!SHOTS) return;
     // A frame sequence of each, slowed down to be seen.
     mkdirSync(SHOTS, { recursive: true });
@@ -514,10 +609,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   });
 
   test("a comment left on a board reaches the canvas, and a teammate's reply comes back", async () => {
-    // The thread opened last, with the caret in its composer: back to the canvas's keys first.
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
-      "Message",
-    );
+    await atTheCanvas();
+    // Back to the canvas's keys first, from wherever the caret is (the thread's composer).
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("c");
     // Into the board, below its title.
@@ -545,6 +638,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   const rail = () => page.locator("#thread");
 
   test("a message, a reply that streams while the agent draws, a question, and a merge", async () => {
+    await atTheCanvas();
     const { id } = await made();
     await page.keyboard.press("Escape");
     const field = rail().getByPlaceholder("Steer, or ask more");
@@ -723,6 +817,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
 
   test("a workspace switched to from the sidebar takes the caret to its create page, and not where it opens on a canvas", async () => {
     // From Northbrook, with the canvas open, to Personal, which opens on its create page.
+    await atTheCanvas();
     await page
       .locator("[data-artboard-host]")
       .first()

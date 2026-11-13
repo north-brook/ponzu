@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prebuilt } from "../../scripts/prebuilt.ts";
-import { STUDIO } from "../../scripts/visual-lib.ts";
+import { type Page, STUDIO } from "../../scripts/visual-lib.ts";
 
 /**
  * Builds the app as the desktop package does, into a fresh directory. `e2e` keeps Ponzu Cloud in
@@ -44,6 +44,36 @@ export function serve(dir: string) {
     },
   });
   return { url: `http://127.0.0.1:${server.port}/`, stop: () => server.stop(true) };
+}
+
+/**
+ * Runs `run`, and if it fails, says what the page showed then: its accessibility tree, where
+ * the caret was, and what `state` reads from it. For a failure seen only on a busy machine, so
+ * the run that fails says why without being run again.
+ */
+export async function explained(
+  page: Page,
+  run: () => Promise<void>,
+  state: () => Promise<unknown> = async () => null,
+): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    const said = await Promise.all([
+      page
+        .locator("body")
+        .ariaSnapshot({ timeout: 5_000 })
+        .catch((e: unknown) => `(no tree: ${e})`),
+      page
+        .evaluate(() => document.activeElement?.outerHTML.slice(0, 300) ?? null)
+        .catch(() => null),
+      state().catch((e: unknown) => `(no state: ${e})`),
+    ]);
+    if (error instanceof Error) {
+      error.message += `\n\nThe page then:\n${said[0]}\nFocused: ${said[1]}\nState: ${JSON.stringify(said[2])}`;
+    }
+    throw error;
+  }
 }
 
 export async function waitUntil(done: () => Promise<boolean>, ms = 10_000) {
