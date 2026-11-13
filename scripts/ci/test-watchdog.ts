@@ -159,21 +159,43 @@ export function parseArgs(argv: string[]) {
   return { deadline: deadline * 1000, trace, command };
 }
 
+/**
+ * Stops `root` and everything under it, and gives back their pids. Asked again until no new
+ * process turns up: one started between a look and the stop is caught by the next look, and
+ * a stopped process starts nothing.
+ */
+async function stopTree(root: number): Promise<number[]> {
+  const stopped = new Set<number>();
+  for (;;) {
+    const fresh = (await processTree(root)).filter(({ proc }) => !stopped.has(proc.pid));
+    if (fresh.length === 0) return [...stopped];
+    for (const { proc } of fresh) {
+      stopped.add(proc.pid);
+      try {
+        process.kill(proc.pid, "SIGSTOP");
+      } catch {
+        // Already gone.
+      }
+    }
+  }
+}
+
 if (import.meta.main) {
   const { deadline, trace, command } = parseArgs(process.argv.slice(2));
   mkdirSync(trace, { recursive: true });
-  const child = Bun.spawn(command, {
-    stdio: ["inherit", "inherit", "inherit"],
-    env: { ...process.env, PONZU_TEST_TRACE: trace },
-  });
   // The deadline, or the step being cancelled (Actions sends SIGINT, then SIGTERM), cuts the
-  // tests off: either way the report is printed before they are killed.
+  // tests off: either way the report is printed before they are killed. The handlers go in
+  // before bun starts, so no signal can end this first and leave the tests running unwatched.
   let timer: Timer | undefined;
   const cutOff = new Promise<number>((resolve) => {
     timer = setTimeout(() => resolve(124), Math.max(0, deadline - Date.now()));
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
       process.on(signal, () => resolve(128 + constants.signals[signal]));
     }
+  });
+  const child = Bun.spawn(command, {
+    stdio: ["inherit", "inherit", "inherit"],
+    env: { ...process.env, PONZU_TEST_TRACE: trace },
   });
   const outcome = await Promise.race([
     child.exited.then(() => ({ exited: true }) as const),
@@ -182,19 +204,19 @@ if (import.meta.main) {
   clearTimeout(timer);
   if (outcome.exited) {
     // Killed by a signal, exit the way a shell reports it.
-    process.exit(child.signalCode ? 128 + constants.signals[child.signalCode] : child.exitCode);
+    const signal = child.signalCode;
+    if (signal === null) process.exit(child.exitCode ?? 1);
+    process.exit(128 + (typeof signal === "number" ? signal : constants.signals[signal]));
   }
+  // Read before anything is stopped, so the report shows each process as it was running.
   const tree = await processTree(child.pid);
   const running = stillRunning(readTraces(trace), alive);
   for (const line of report(running, tree, Date.now())) console.log(line);
-  // Stopped first, all of them, so none starts another process while the others are killed.
-  for (const signal of ["SIGSTOP", "SIGKILL"] as const) {
-    for (const { proc } of tree) {
-      try {
-        process.kill(proc.pid, signal);
-      } catch {
-        // Already gone.
-      }
+  for (const pid of await stopTree(child.pid)) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Already gone.
     }
   }
   process.exit(outcome.code);
