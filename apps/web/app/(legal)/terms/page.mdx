@@ -1,4 +1,4 @@
-import { Mail, Open } from "@/components/legal";
+import { Mail } from "@/components/legal";
 import { ENTITY } from "@/components/site";
 import { share } from "@/components/share";
 
@@ -13,16 +13,23 @@ export const metadata = {
 };
 
 {/*
-  The product-specific clauses are written; the generic ones are marked for counsel. The facts
-  behind the written ones are in docs/legal.md ("Terms of Service"). No prices here: they live on
-  the pricing page, read from packages/db/src/rate-card.ts.
+  The facts behind these clauses are in docs/legal.md ("Terms of Service"). No prices here: they
+  live on the pricing page, read from packages/db/src/rate-card.ts. The governing law reads
+  ENTITY.state (components/site.ts); legal.test.ts fails while it is null and the terms are in
+  effect.
 */}
+
+export const STATE = ENTITY.state
+  ? `the State of ${ENTITY.state}`
+  : `the state in which ${ENTITY.name} is incorporated`;
 
 # Terms of Service
 
 ## Agreement
 
-These terms are between you and {ENTITY.name} ("we", "us"), the maker of Ponzu. By using Ponzu (the apps for Mac, Windows, Linux and iPhone, the service they talk to, and this website), you agree to them. If you use Ponzu for an organization, you accept them on its behalf. <Open who="counsel">Age and capacity to agree.</Open>
+These terms are between you and {ENTITY.name} ("we", "us"), the maker of Ponzu. By using Ponzu (the apps for Mac, Windows, Linux and iPhone, the service they talk to, and this website), you agree to them. If you use Ponzu for an organization, you accept them on its behalf and confirm you are allowed to.
+
+You must be at least 13 to use Ponzu, and at least 16 in the European Economic Area, and old enough where you live to agree to these terms. GitHub, which you sign in with, has its own minimum age.
 
 ## The service
 
@@ -31,7 +38,7 @@ Ponzu is in beta. Features change, some are not finished, and some may be taken 
 ## Accounts you connect
 
 - **GitHub.** You sign in with GitHub and install Ponzu's GitHub App on the accounts and repositories you choose. GitHub's terms govern your use of GitHub. Who can see and change a canvas follows who GitHub lets read and push to its repository.
-- **Claude.** You connect your own Claude subscription or Anthropic API key. Your use of Claude is under Anthropic's terms and your plan's limits, and turns count against your plan. Ponzu does not resell Claude. <Open who="founder">This clause depends on Anthropic's written approval for Claude subscription sign-in in Ponzu's sandboxes. If it is refused, Ponzu takes API keys only and this changes.</Open>
+- **Claude.** You connect your own Claude subscription or Anthropic API key. Your use of Claude is under Anthropic's terms and your plan's limits, and turns count against your plan. Ponzu does not resell Claude.
 
 ## What Ponzu does for you
 
@@ -52,19 +59,22 @@ Ponzu is in beta. Features change, some are not finished, and some may be taken 
 - No unlawful content, malware, or attacks on anyone, including us.
 - Don't use sandboxes to mine cryptocurrency, as proxies, or as general compute that has nothing to do with your canvases.
 - Don't get around Ponzu's limits or access rules, and don't resell the service.
-- We may stop or suspend sandboxes or accounts that break these rules. <Open who="counsel">Notice and appeal.</Open>
+- We may stop or suspend sandboxes or accounts that break these rules. When we do, we tell you why by email, at the address on your GitHub account, unless the law forbids it or telling you would help someone cause harm. If you think we got it wrong, write to <Mail to="hello" /> and a person will look at it again.
 
 ## Workspaces
 
 - A workspace is a GitHub account (a person's or an organization's) where Ponzu's GitHub App is installed. GitHub decides who is in it.
-- A workspace's admins set its members' roles and its monthly cap. The workspace pays for what is used in it.
+- A workspace's admins set its members' roles and its monthly cap. Once billing starts, the workspace pays for what is used in it.
 - When a member leaves or deletes their account, the canvases they made in a workspace others are in stay with the workspace.
 
 ## Fees
 
-- Ponzu is pay as you go, at the rates on the [pricing page](/pricing): each member's free credits every month, pooled across the workspace; a card when the free credits run out; and a monthly cap. At the cap, no new turn starts in the workspace until an admin raises the cap or the month resets; a turn that is running finishes. Payment is through Stripe.
-- Ponzu is free until billing starts. <Open who="counsel">How we tell people before billing starts.</Open>
-- <Open who="counsel">Taxes, refunds, and notice of price changes.</Open>
+- Ponzu is free until billing starts. Billing has not started.
+- Once it starts, Ponzu is pay as you go, at the rates on the [pricing page](/pricing): each member's free credits every month, pooled across the workspace; a card when the free credits run out; and a monthly cap. At the cap, no new turn starts in the workspace until an admin raises the cap or the month resets; a turn that is running finishes. Payment is through Stripe.
+- Before billing starts, we tell every workspace's admins at least 30 days ahead, by email. Nothing is charged until an admin adds a card.
+- Prices do not include taxes. Where the law requires it, we add sales tax, VAT or a similar tax to what you pay.
+- Fees are not refundable, except where the law requires a refund or we charged you by mistake.
+- We tell a workspace's admins at least 30 days before a price goes up. The new price applies from the first month that starts after that.
 
 ## Open source
 
@@ -72,16 +82,28 @@ Ponzu's code is open source under the MIT License. That license governs the code
 
 ## Ending
 
-You can delete your account at any time, in Settings › Account. Our [privacy policy](/privacy) says what is deleted and what stays. <Open who="counsel">Suspension and termination by us, and what survives termination.</Open>
+You can delete your account at any time, in the desktop app's Settings › Account. Our [privacy policy](/privacy) says what is deleted and what stays.
+
+We may suspend or close your account, or a workspace's use of Ponzu, if you break these terms, if your use puts other people or the service at risk, or if the law requires it. We tell you as described under Acceptable use. We may also stop offering Ponzu. If we do, we tell you at least 30 days ahead, so you can take what you need: your code is on GitHub, and boards export as PNG or PDF.
+
+When these terms end, what you owe us, and the sections on your content, disclaimers and liability, and governing law, still apply.
 
 ## Disclaimers, limitation of liability, indemnity
 
-<Open who="counsel">Disclaimers, limitation of liability and indemnity.</Open>
+Ponzu is provided "as is" and "as available". As far as the law allows, we make no promises about it beyond what these terms say: not that it will always work, be free of errors or keep your work safe, nor that what the agent makes will be correct or fit for any purpose. Keep your own copy of anything you cannot afford to lose; your code's copy is on GitHub.
+
+As far as the law allows, neither we nor the people who work on Ponzu are liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, revenue, data or goodwill, arising from Ponzu or these terms. Our total liability for all claims about Ponzu or these terms is limited to the greater of what you paid us for Ponzu in the twelve months before the claim, and one hundred US dollars.
+
+Some places do not allow these limits. There, they apply only as far as the law allows, and nothing in these terms limits a liability the law does not let us limit.
+
+If someone makes a claim against us because of content you put into Ponzu, or because you broke these terms or the law, you will cover our reasonable costs and losses from that claim. We tell you about the claim promptly and let you take part in answering it. If you are a consumer, this applies only as far as the law where you live allows.
 
 ## Governing law and disputes
 
-<Open who="counsel">Governing law and disputes, in {ENTITY.name}'s state of incorporation.</Open>
+These terms are governed by the laws of {STATE}, without regard to its rules on conflicts of law. Any dispute about Ponzu or these terms goes to the state or federal courts in {STATE}, and you and we agree to their jurisdiction. Before going to court, write to <Mail to="hello" /> so we can try to settle it.
+
+If you are a consumer in the European Economic Area, the UK or another place whose law gives you that right, you keep the protection of its mandatory laws and may bring a claim in its courts.
 
 ## Changes and contact
 
-When these terms change, the new version is posted here, and every change shows in the repository's history on GitHub. <Open who="counsel">Notice period for material changes.</Open> Write to us at <Mail to="hello" />.
+When these terms change, the new version is posted here, and every change shows in the repository's history on GitHub. If a change takes away a right you have or adds to what you must do, we tell you by email at least 30 days before it takes effect, unless the law or stopping abuse needs it sooner. If you keep using Ponzu after a change takes effect, you accept it; if you don't want to, delete your account. Write to us at <Mail to="hello" />.

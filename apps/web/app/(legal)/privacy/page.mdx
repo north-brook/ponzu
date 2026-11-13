@@ -1,5 +1,5 @@
 import { H2 } from "@/components/prose";
-import { Mail, Open, SubprocessorSummary } from "@/components/legal";
+import { Mail, SubprocessorSummary } from "@/components/legal";
 import { ENTITY } from "@/components/site";
 import { share } from "@/components/share";
 
@@ -17,21 +17,21 @@ export const metadata = {
 
 {/*
   Every factual sentence here is tied to the code or setting that makes it true in docs/legal.md
-  ("Privacy Policy"). Change the code, change both. A bracketed <Open> is a fact the code cannot
-  answer or a choice that is not made yet; none may remain once LEGAL_STATUS is "in-effect".
+  ("Privacy Policy"). Change the code, change both. legal.test.ts fails if an open note (the Open
+  component) comes back while LEGAL_STATUS is "in-effect".
 */}
 
 # Privacy Policy
 
 ## Who we are
 
-Ponzu is made by {ENTITY.name} ("we", "us") <Open who="founder">registered address</Open>. This policy covers the Ponzu apps for Mac, Windows and Linux, Ponzu for iPhone, the service the apps talk to at api.ponzu.design, the files it serves from ponzu.cloud, and this website. Write to us at <Mail to="privacy" />.
+Ponzu is made by {ENTITY.name}{ENTITY.address ? `, ${ENTITY.address}` : ""} ("we", "us"). This policy covers the Ponzu apps for Mac, Windows and Linux, Ponzu for iPhone, the service the apps talk to at api.ponzu.design, the files it serves from ponzu.cloud, and this website. Write to us at <Mail to="privacy" />.
 
 Ponzu is open source, so what this policy says can be checked against [the code on GitHub](https://github.com/north-brook/ponzu).
 
 ## The short version
 
-You sign in with GitHub. Ponzu keeps your canvases, threads and comments on our servers, so every device and every teammate sees the same thing. To work on them, it runs Claude Code for you in a cloud sandbox, on your own Claude account, with the access to your repositories you give Ponzu's GitHub App. We don't sell your data or show ads. You can delete your account in Settings.
+You sign in with GitHub. Ponzu keeps your canvases, threads and comments on our servers, so every device and every teammate sees the same thing. To work on them, it runs Claude Code for you in a cloud sandbox, on your own Claude account, with the access to your repositories you give Ponzu's GitHub App. We don't sell your data or show ads. You can delete your account in the desktop app's Settings.
 
 ## What we collect and why
 
@@ -44,6 +44,7 @@ When you sign in, GitHub tells us, through our sign-in provider WorkOS, your Git
 - **Your GitHub user token,** encrypted. It lasts eight hours and is refreshed. It never leaves our servers.
 - **The workspaces and repositories you can reach,** and your permission on each, as GitHub says. We ask GitHub again when an answer is old, so access follows GitHub.
 - **The people GitHub lists for each repository** where Ponzu's GitHub App is installed: their login, name, avatar and permission, including people who have never opened Ponzu. We use it to show who is in a workspace. It never grants anyone anything.
+- **What GitHub tells us** about the accounts and repositories where the App is installed: pushes, pull requests and their reviews, checks, and changes to repositories, members and teams. We keep a record of each notice for 30 days, to recognise one GitHub sends twice.
 
 ### Your work
 
@@ -52,7 +53,7 @@ When you sign in, GitHub tells us, through our sign-in provider WorkOS, your Git
 - **The canvas's history:** each change, who made it and when.
 - **What you have seen:** how far you have read each canvas and its thread, and when, so the apps can show what is new. While you have a canvas open, the people in it see that you are there.
 - **Files:** images and other files on a canvas, pictures you upload, previews of each canvas, exports, and pictures of where a comment was left.
-- **Checkpoints:** the agent's conversation transcript and your canvas's uncommitted work, saved at the end of each turn and before a sandbox sleeps, so the work survives the sandbox. Files your repository ignores, files over 5 MB, and files that look like secrets (or hold the value of one of your repository's secrets) are never saved. Checkpoints are stored under a random address that our servers hand only to the canvas's own sandbox. <Open who="founder">Before production, checkpoints move to a separate private bucket (R2_PRIVATE_BUCKET). Until then they sit in the same storage as canvas files. Do not say "private bucket" here before it is set.</Open>
+- **Checkpoints:** the agent's conversation transcript and your canvas's uncommitted work, saved at the end of each turn and before a sandbox sleeps, so the work survives the sandbox. Files your repository ignores, files over 5 MB, and files that look like secrets (or hold the value of one of your repository's secrets) are never saved. Checkpoints are kept in a storage bucket of their own that is not served on the web, under a random address that our servers hand only to the canvas's own sandbox.
 
 ### Your code
 
@@ -69,7 +70,7 @@ To suggest what to make in a repository, we send a short summary of it to Anthro
 
 You connect your own Claude account: an OAuth token from Claude's sign-in, or an Anthropic API key. We store it encrypted, with your plan's name and the account's email if Claude reports them, the last four characters of an API key, and the usage limits and models Claude reports for it, and decrypt it only to start your canvas's sandbox. There it is kept in memory, never written to the sandbox's disk or its snapshot. Each turn's prompts, files and tool output go to Anthropic under your account and your plan's terms.
 
-The credential reaches the sandbox in the command that starts it, at Vercel. Whether Vercel keeps a record of that command's environment is not documented; we have asked Vercel in writing. <Open who="founder">Update this paragraph with Vercel's answer.</Open>
+The credential reaches the sandbox in the command that starts it, at Vercel. Vercel does not document whether it keeps a record of that command's environment, so we cannot promise it does not.
 
 ### Your repository's secrets
 
@@ -79,21 +80,28 @@ A workspace admin can give a repository secrets (environment variables). We keep
 
 - How long each canvas's sandbox was awake, put down to the person who woke it, and each turn's model, token counts and what it would have cost.
 - Each workspace's free credits and monthly cap.
-- When billing starts: a Stripe customer for the workspace, and its card's brand and last four digits. Stripe holds the card itself; we never see the full number.
+- When billing starts: a Stripe customer for the workspace, and its card's brand and last four digits. Stripe holds the card itself; we never see the full number. Billing has not started.
 
-### Your iPhone
+### Notifications and your devices
 
-When you turn on notifications in Ponzu for iPhone, it registers the phone with us: its push token, a name for it, the app's version and a random id for the install. You can turn pings off for each phone. Pings are not sent yet; we keep what sending them will need.
+- **Your inbox:** what Ponzu tells you about your canvases, such as a question for you, a reply, a pull request that is ready or a teammate's comment. Each one holds ids and a sentence Ponzu writes, never words a person or the agent wrote.
+- **Your settings for them,** and your time zone as the desktop app reports it.
+- **Each computer the desktop app runs on:** a random id for the install, the computer's name, the app's version, and when you were last at it, so notifications show on the computer you are using.
+- Ponzu for iPhone does not register for notifications yet, and nothing is sent to phones or by email yet. When it is, we will keep what sending needs (a phone's push token, its name and the app's version) and say so here first.
+- Ponzu for iPhone turns a comment you dictate into text on the phone itself. The audio is not sent to us.
 
 <H2 id="analytics">Product analytics</H2>
 
 We use PostHog to understand how Ponzu is used and to fix what breaks.
 
-- **Events** about what you do in the apps and what happens on our servers, such as a canvas created or a pull request opened, identified by your Ponzu id, with your name, email address and GitHub login, and grouped by workspace (its GitHub account's name, and how many repositories Ponzu reaches there). Events never carry a canvas's name, your repository's contents or what you typed (a message is counted by its length).
-- **Errors,** with their stack traces, from the apps and the servers.
-- **Model calls:** for each call to a model that we or the agent make, the model, token counts, timing, cost, tool names and the outcome. <Open who="founder">Production either sends only this, or also the prompts and replies (PONZU_POSTHOG_AI_CONTENT). The code's default is metadata only. Say which.</Open>
-- **Recordings of app sessions:** what the screen shows, the pointer and keys. Every field you type in is masked, and anything that can show a secret (your Claude credential, a repository's secrets) is blocked from the recording. <Open who="founder">Production's replay mode. With "private" (the code's default), add: a canvas's boards, its thread, its comments and canvas names are hidden from recordings.</Open>
-- **How to turn it off:** turn off Settings › Account › Share usage data in the desktop app. The switch is on your account, so it holds on every device you sign in on. Within a minute our servers send PostHog nothing more about you (no events, profile updates or errors), the agent's turns that you start are not traced, and the desktop app stops recording and reporting at once; a turn that was already running when you turned it off may still be traced. Events about no one person, such as a sandbox going to sleep, are still counted. On a Mac you can also set `PONZU_TELEMETRY=0` or `DO_NOT_TRACK=1` in the environment Ponzu starts in, or write `{"enabled": false}` to `~/.ponzu/telemetry.json`; these turn off what that computer reports, whatever the switch says. Turning the switch off does not delete what was already sent; deleting your account does. <Open who="founder">The switch is on by default. Whether visitors in the EU or UK must opt in instead is a question for counsel. What Ponzu for iPhone reports, and how to turn it off there, is set when the cloud iPhone app's analytics land; describe it then.</Open>
+- **Events** about what you do in the desktop app and what happens on our servers, such as a canvas created or a pull request opened, identified by your Ponzu id, with your name, email address and GitHub login, and grouped by workspace (its GitHub account's name, and how many repositories Ponzu reaches there). Events never carry a canvas's name, your repository's contents or what you typed (a message is counted by its length).
+- **Clicks** in the desktop app, for heatmaps, without the text or labels of what was clicked.
+- **Errors,** with their stack traces, from the desktop app and the servers.
+- **Model calls:** for each call to a model that we or the agent make, the model, token counts, timing, cost, tool names and the outcome. Never the prompts, the replies, or what tools were given and returned.
+- **Recordings of desktop app sessions:** what the screen shows, the pointer and keys, the app's console messages, and the timing of its requests (their addresses without queries, never their contents). Every field you type in is masked, and anything that can show a secret (your Claude credential, a repository's secrets) is blocked from the recording. A canvas's boards are hidden, and the text of a canvas, its thread and comments, the pull request tab, suggested prompts and canvas names is masked.
+- **IP addresses:** the desktop app and this website send to PostHog from your own device, so PostHog receives your IP address. Our PostHog project does not discard it. Our servers send their events to PostHog without your IP address.
+- **Ponzu for iPhone** sends nothing to PostHog in this version. What our servers record about what you do from the phone follows the switch below.
+- **How to turn it off:** turn off Settings › Account › Share usage data in the desktop app. The switch is on until you turn it off. It is kept on your account, so it holds on every device you sign in on. Within a minute our servers send PostHog nothing more about you (no events, profile updates or errors), the agent's turns that you start are not traced, and the desktop app stops recording and reporting at once; a turn that was already running when you turned it off may still be traced. Events about no one person, such as a sandbox going to sleep, are still counted. On any computer you can also set `PONZU_TELEMETRY=0` or `DO_NOT_TRACK=1` in the environment Ponzu starts in, or write `{"enabled": false}` to `~/.ponzu/telemetry.json`; these turn off what the desktop app on that computer reports, whatever the switch says. Turning the switch off does not delete what was already sent. To have that deleted, write to <Mail to="privacy" /> and we will ask PostHog to delete it.
 
 ### Logs
 
@@ -101,24 +109,23 @@ Our servers log ids and outcomes, never tokens, request bodies or headers. The l
 
 ### This website
 
-ponzu.design counts page views, how far down a page you scrolled, download clicks, whether the sheet that sends a download from a phone to your computer was opened, copied or shared and whether the link it sent arrived, errors in its own code and how fast pages load, with PostHog. It does this without cookies and without storing anything in your browser for PostHog: per PostHog's documentation, visits are told apart by a hash PostHog makes on its servers from the visit's IP address, its browser and a value that changes every day. <Open who="founder">Whether "Discard client IP data" is on in PostHog's production project. If it is not, say here and under Product analytics that PostHog keeps the IP address each event came from.</Open> When your browser sends Do Not Track or Global Privacy Control, the site loads no analytics at all. The site keeps two things in your browser, both in the tab's session storage, which is gone when the tab closes: a marker that tells us whether the page crashed, which holds the page's path and nothing about you and is kept only while analytics runs; and, on a download page, a note that the download has started, so reloading the page does not start it again. Vercel, which hosts the site, sees your IP address as any web host does.
+ponzu.design counts page views, how far down a page you scrolled, download clicks, whether the sheet that sends a download from a phone to your computer was opened, copied or shared and whether the link it sent arrived, errors in its own code and how fast pages load, with PostHog. It does this without cookies and without storing anything in your browser for PostHog: per PostHog's documentation, visits are told apart by a hash PostHog makes on its servers from the visit's IP address, its browser and a value that changes every day. When your browser sends Do Not Track or Global Privacy Control, the site loads no analytics at all. The site keeps two things in your browser, both in the tab's session storage, which is gone when the tab closes: a marker that tells us whether the page crashed, which holds the page's path and nothing about you and is kept only while analytics runs; and, on a download page, a note that the download has started, so reloading the page does not start it again. Vercel, which hosts the site, sees your IP address as any web host does. The downloads themselves come from GitHub.
 
 ## Where it is kept
 
 <SubprocessorSummary />
 
-The full list, with what each one holds, is on [Subprocessors](/subprocessors). Our servers, database and storage are in the United States. Cloudflare delivers canvas files through its network around the world, so a copy of a file can be cached for a while near whoever opens it. <Open who="founder">Confirm the Neon region and the R2 bucket's location and jurisdiction.</Open>
+The full list, with what each one holds, is on [Subprocessors](/subprocessors). Our servers, sandboxes and database are in the United States: the API and the sandboxes run at Vercel in Washington, D.C. (iad1), and the database is at Neon in AWS's N. Virginia region (us-east-1). PostHog keeps analytics in the United States. Cloudflare stores canvas files and checkpoints, and delivers canvas files through its network around the world, so a copy of a file can be cached for a while near whoever opens it. If you use Ponzu from outside the United States, your data is sent to and processed in the United States.
 
 ## Who can see your work
 
 - A canvas belongs to a repository. The people GitHub lets read that repository, who are in its workspace in Ponzu, can open the canvas; the people who can push to it can steer the agent. A Scratch canvas has no repository and is yours alone.
 - A canvas's files are served from ponzu.cloud at addresses no one can guess. Anyone who is given such an address can open that file. The canvas's owner or a workspace admin can reset its file links in Share: its files move to new addresses, and the old ones stop working about fifteen minutes later (a copy already cached may still be served for a while).
 - A picture of a canvas placed in a pull request can be seen by whoever can see the pull request on GitHub.
-- <Open who="founder">Which people at {ENTITY.name} can reach production data, and when.</Open>
 
 ## What the agent can do
 
-- It acts with your permissions, within what Ponzu's GitHub App was granted: contents and pull requests (write); checks, statuses, metadata and members (read). <Open who="founder">Confirm this against the production GitHub App, including email access for sign-in.</Open>
+- It acts with your permissions, within what Ponzu's GitHub App was granted: contents and pull requests (write); checks, statuses, metadata, members and email addresses (read).
 - It runs your repository's code, and it can reach the internet.
 - Words from anyone that reach it (comments, reviews of its pull request, files in the repository) can try to steer it. Our [security page](/security) says what limits that today and what we are building.
 
@@ -128,18 +135,19 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
 - A canvas's change history is compacted after seven days: older changes are folded into its checkpoints.
 - A sandbox's snapshot expires 30 days after it was last used, and Vercel removes the sandbox 14 days after that.
 - A checkpoint is deleted when a newer one replaces it.
+- A notification leaves your inbox three days after it was made if you have not read it, and is deleted after 30 days. A computer the desktop app has not been seen on for 30 days is forgotten.
 - The short-lived records we keep while you connect Claude or install Ponzu's GitHub App are deleted a day after they expire. Records of finished background work, and of the notices GitHub and our other providers send us, are deleted 30 days after the work finished or the notice arrived.
-- <Open who="founder">Analytics: how long PostHog keeps recordings and events on our plan.</Open>
-- <Open who="founder">Backups: Neon's restore window in production (the desired state in infra/neon.json is 7 days of history and daily backups kept 35 days, once applied).</Open>
-- <Open who="founder">Logs: Vercel's log retention on our plan.</Open>
+- Analytics: PostHog keeps recordings of desktop app sessions for 30 days. Our project sets no limit on events, so PostHog keeps them for as long as our plan with it does, unless they are deleted sooner.
+- Backups: what is deleted from our database can still be restored from its history for a day afterwards, and from a snapshot taken before a change to the database's structure for 14 days.
+- Logs: for as long as Vercel keeps them on our plan.
 
 ## Deleting
 
-**Deleting a canvas** (its owner, or a workspace admin, can) removes its document, thread, comments, events, questions, checkpoints and sandbox, and its files at ponzu.cloud: its images and other files, previews, exports and pictures of where a comment was left. A picture of it placed in a pull request stays, since the pull request on GitHub still shows it. A copy of a file that Cloudflare or your browser already cached can still be served for a while after it is deleted. <Open who="founder">Deleting a canvas's files does not purge Cloudflare's cache: previews, exports and comment pictures are cached for up to a year, other files for five minutes. Decide whether to add a Cloudflare cache purge (an API token with cache purge rights) or to say a firmer limit here.</Open>
+**Deleting a canvas** (its owner, or a workspace admin, can) removes its document, thread, comments, events, questions, checkpoints and sandbox, and its files at ponzu.cloud: its images and other files, previews, exports and pictures of where a comment was left. A picture of it placed in a pull request stays, since the pull request on GitHub still shows it. Deleting a file does not clear copies already cached: Cloudflare or your browser can still serve a preview, an export or a comment's picture for up to a year after it is deleted, and other files for up to five minutes.
 
-**Deleting your account,** in Settings › Account › Delete, confirmed by typing your GitHub login:
+**Deleting your account,** in the desktop app's Settings › Account › Delete, confirmed by typing your GitHub login:
 
-- What goes: everything that is only yours. Your sessions end at once, on every device. Your Claude credential is destroyed, the sandboxes of canvases you own are deleted, and canvases that are yours alone (your Scratch canvases, and canvases in a workspace no one else is in) are deleted with everything under them, as a deleted canvas is, their files included. We ask WorkOS to delete your sign-in there, so your next sign-in is someone new.
+- What goes: everything that is only yours. Your sessions end at once, on every device. Your Claude credential is destroyed, the sandboxes of canvases you own are deleted, and canvases that are yours alone (your Scratch canvases, and canvases in a workspace no one else is in) are deleted with everything under them, as a deleted canvas is, their files included. Your notifications and devices are deleted. We ask WorkOS to delete your sign-in there, so your next sign-in is someone new.
 - What stays:
   - Canvases you own in a workspace others are in stay with that workspace, owned by nobody.
   - Your words in shared threads stay, under "Deleted user", and your changes in a canvas's history show "Deleted user", with no picture.
@@ -148,17 +156,24 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
   - Your branches, commits and pull requests on GitHub, and the pictures a pull request shows, are not touched.
 - You cannot delete your account while you are the only admin of a workspace that others are in. Make someone else an admin first.
 - We also revoke Ponzu's authorization on your GitHub account. If GitHub does not answer, your account is deleted all the same, and you can revoke it yourself in GitHub's settings, under Applications.
-- We ask PostHog to delete your profile, events and recordings, which it does in batches, usually within about a week. If PostHog is down, we keep asking for several hours. <Open who="founder">True once PONZU_POSTHOG_PERSONAL_API_KEY and PONZU_POSTHOG_PROJECT_ID are set on production (founder step B5); until then the API skips this step and logs that it did. Set them before this page is in effect, or put back "write to us and we will".</Open>
+- Deleting your account does not yet delete what PostHog holds about you by itself. Write to <Mail to="privacy" /> and we will ask PostHog to delete your profile, events and recordings.
 
 ## Your choices and rights
 
-- **See and correct:** your profile is GitHub's; change it there. Everything you made is in the apps.
-- **Delete:** a canvas, or your whole account, as above.
-- **Object to analytics:** turn it off as described under [Product analytics](#analytics).
-- **Export:** there is no full export. Boards export as PNG or PDF, and your code is on GitHub. <Open who="counsel">Whether a fuller export is needed.</Open>
-- <Open who="counsel">Rights under the GDPR and UK GDPR, the right to complain to a supervisory authority, and California notices.</Open>
+Wherever you live, you can ask us to:
 
-To ask about any of this, write to <Mail to="privacy" />.
+- **See** the personal data we hold about you, and get a copy of it in a common, machine-readable format.
+- **Correct** it. Your name, email and avatar are GitHub's: change them there and they change here at your next sign-in.
+- **Delete** it: a canvas, or your whole account, as above.
+- **Object** to analytics, or have us stop using your data for it: turn it off as described under [Product analytics](#analytics), or write to us.
+
+Everything you made is in the apps, boards export as PNG or PDF, and your code is on GitHub. There is no export of a whole account in the apps yet.
+
+To ask for any of this, write to <Mail to="privacy" /> from the email address on your GitHub account, or tell us your GitHub login. We may ask you to show that the account is yours. We answer within the time the law where you live allows.
+
+**If you are in the EU, the EEA or the UK,** the GDPR or the UK GDPR gives you these rights. We use your account, your work, your credentials and your usage to provide Ponzu to you under our terms, and our logs and error reports to keep it secure and working. You can also complain to the data protection authority where you live or work.
+
+**If you are in California,** you have the right to know what personal information we collect, use and disclose, to have it deleted or corrected, and not to be treated differently for asking. We do not sell or share your personal information, as California law uses those words, and we do not use it for targeted advertising. The categories we collect and why are listed above.
 
 ## Security
 
@@ -166,11 +181,11 @@ Credentials and secrets are encrypted under a key only our API holds, each canva
 
 ## Children
 
-Ponzu is not for children. <Open who="counsel">The age: under 13, or under 16 in the EEA. GitHub itself requires its users to be 13 or older.</Open>
+Ponzu is not for children. You must be at least 13 to use it, and at least 16 in the European Economic Area. We don't knowingly collect data from anyone younger. If we learn that someone younger has an account, we delete it. If you think a child has an account, write to <Mail to="privacy" />.
 
 ## Changes
 
-When this policy changes, the new version is posted here, and every change shows in the repository's history on GitHub.
+When this policy changes, the new version is posted here, and every change shows in the repository's history on GitHub. If a change matters to how your data is used, we tell you before it takes effect.
 
 ## Ponzu 1
 
