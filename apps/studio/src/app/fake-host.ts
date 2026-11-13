@@ -112,6 +112,7 @@ declare global {
  * link or banner reaches the shell.
  */
 export function fakeHost(opts: { shell?: PonzuDesktop } = {}): Host {
+  const pictures = window.ponzuFakePictures ?? opts.shell?.pictures;
   const backend = createFakeBackend();
   const me = backend.addPerson({ login: "maya", name: "Maya Ortiz" });
   const teammate = backend.addPerson({ login: "sam", name: "Sam Lee" });
@@ -331,7 +332,9 @@ export function fakeHost(opts: { shell?: PonzuDesktop } = {}): Host {
     docStorage: opts.shell ? signedInCache(session, window.localStorage) : null,
     notifications: mac?.host ?? null,
     ...(landingBeat ? { landingBeat } : {}),
-    ...(window.ponzuFakePictures ? { pictures: window.ponzuFakePictures } : {}),
+    // A headless test's picture page, else the Mac app's picture window when a test build runs
+    // on this fake (PONZU_FAKE_BACKEND), so spare measures pictures where a release draws them.
+    ...(pictures ? { pictures } : {}),
   };
 }
 
