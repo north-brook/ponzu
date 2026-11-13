@@ -1501,7 +1501,11 @@ export function Canvas({
         >
           {/* The plane's size: nothing drawn, only room to scroll. */}
           <div aria-hidden style={{ width: PLANE, height: PLANE }} />
-          <div ref={layer} className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left">
+          <div
+            ref={layer}
+            data-pz-layer
+            className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left"
+          >
             {/*
              * The boards' plate: a box round all of them, containing their layout, style and
              * paint (see plateBox). The boards inside keep their page coordinates.
