@@ -2909,9 +2909,10 @@ gate is `payment_failed` (the minute's sweep looks at every workspace past due f
 uncollectible invoice stays past due, since its page can still take a payment. A paid or voided
 invoice clears past due once no other period's invoice has failed or is uncollectible (until
 then the page shown is the oldest unpaid one's), and the gate is worked out again, which wakes
-what it held back. Receipts and the emails about failed payments are Stripe's, with the
-invoice's page; Ponzu sends no billing email of its own. Stripe Tax is added to the invoice when
-`PONZU_STRIPE_TAX=1`.
+what it held back. Receipts are Stripe's, with the invoice's page. Ponzu's own emails to admins
+about billing (free credits used, the cap near and reached, a failed payment) have templates in
+`packages/email` but nothing sends them yet; billing is not switched on until they send. Stripe
+Tax is added to the invoice when `PONZU_STRIPE_TAX=1`.
 
 **On the Mac.** The studio shows nothing of this unless `me.features.billing` is `on`: while
 billing is off or observing, Plan and usage shows credits and that Ponzu is free, the Card row
