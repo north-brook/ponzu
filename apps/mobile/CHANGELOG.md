@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/north-brook/ponzu/compare/mobile-v1.1.0...mobile-v1.2.0) (2026-11-13)
+
+
+### Features
+
+* **mobile:** filter the canvases list by person and repo ([#626](https://github.com/north-brook/ponzu/issues/626)) ([6228adb](https://github.com/north-brook/ponzu/commit/6228adb3ba21298d4cd4622e1548dda9450b7516))
+
 ## [1.1.0](https://github.com/north-brook/ponzu/compare/mobile-v1.0.0...mobile-v1.1.0) (2026-11-13)
 
 
