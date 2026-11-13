@@ -284,15 +284,15 @@ background and resumed in front. Offline, it keeps the last rows.
 
 From settings, each step tried whatever the one before did
 (`lib/cloud/sign-out.ts`): this phone's device row (once pings have
-registered one), the session, the cached answers in memory and on disk, the
-live queries, the offline canvases and every `ponzu.*` AsyncStorage key but
-the ping ask's and the cached images, analytics' identity (none yet), then
-the sign-in screen.
+registered one for the person signing out), the session, the cached answers
+in memory and on disk, the live queries, the offline canvases and every
+`ponzu.*` AsyncStorage key but the ping ask's, the app icon's number and the
+cached images, analytics' identity (none yet), then the sign-in screen.
 
 ### Links
 
 `lib/links.ts` is the only reader of links: deep links (through
-`app/+native-intent.tsx`), and later pushes and the links in a thread. A link
+`app/+native-intent.tsx`), pings (below) and the links in a thread. A link
 must use this build's own scheme, so `ponzu://` opens nothing in Ponzu Dev and
 `ponzu-dev://` nothing in Ponzu. It takes:
 
@@ -309,6 +309,122 @@ path the build has no screen for does the same (`app/+not-found.tsx`). The
 grammar is `@ponzu/core/links`, the one the Mac and the API share, and
 `lib/links.ts` is the only file that imports it.
 
+### Pings
+
+Pings are push notifications, sent by the API through Expo's push service
+(docs/cloud.md, "Notifications"). The phone's side is `lib/push/`:
+
+| File | What it does |
+| --- | --- |
+| `ask.ts` | When to ask about pings, pure. |
+| `register.ts` | This phone as one of the person's devices, over injected iOS and API adapters. |
+| `payload.ts` | What a ping carries, and where a tap on it goes. The only reader of `@ponzu/core/push`. |
+| `foreground.ts` | How a ping that arrives with the app open shows. |
+| `route.ts` | When a held tap may go, and how it moves the app. |
+| `native.ts` | The only file that touches `expo-notifications`, `expo-application` and `expo-device`. |
+| `pings.tsx` | `PingsProvider` in `app/_layout.tsx`, which puts these together for whoever is signed in. |
+
+**Off until the API sends pings.** Everything but taps waits on `GET /v1/me`'s
+`features.push`, which is true only once the API has an Expo access token.
+While it is false, which is production today, the phone asks nothing,
+registers nothing, sends no heartbeat, sets no badge, shows no Notifications
+section in Settings and says nothing of focus in a canvas's presence. It does
+just what it did before pings. A tap can only come from a ping that was sent,
+so taps are always handled.
+
+**The ask** (`components/ping-ask.tsx`, onboarding §4.12) never comes at launch
+or in setup. It comes after a new comment sent from this phone reaches the
+API, only while iOS hasn't been asked: "Hear back when Ponzu replies?", "Your
+comment is on its way. Ponzu can ping you when it answers, asks a question, or
+a pull request is ready.", **Turn on notifications** and **Not now**. Turn on
+brings iOS's own prompt (alert, sound and badge). Not now, or a swipe down, is
+kept at `ponzu.pingAsk`, which outlives sign-out. The sheet then comes back
+once, after a comment at least seven days later, and never again. Settings is
+the way in after that. If iOS already allows pings, there is no sheet: the
+phone registers. If iOS refused, there is no sheet: Settings says "Turned off
+in iOS Settings" with **Open iOS Settings**. Replies in a thread don't bring the
+ask, so it never covers a thread's sheet.
+
+**Registering** (`POST /v1/me/devices`) happens at launch and again whenever
+iOS's answer has changed by the time the app comes forward. It sends
+`platform: "ios"`, the Expo push token from `getExpoPushTokenAsync` with the
+EAS project id (tried three times), `pushEnvironment` from
+`getIosPushNotificationServiceEnvironmentAsync`, the Keychain install id, the
+model name (`expo-device`), and `<version>+<update id or embedded>`. The
+device's id is kept at `ponzu.device` together with whose it is, so a sign-in
+as someone else never patches or deletes the last person's device.
+
+- **The simulator** has no APNs environment (null), so nothing is registered
+  there. A ping sent with `xcrun simctl push` still arrives and can be tapped.
+- **Refused in iOS:** a device already registered is patched `blocked: true`.
+- **A new token** (Expo's listener): the device is patched with it.
+- **409 `push_token_taken`:** noted once to analytics as "device token
+  conflict", without the token, and not tried again in that run.
+- **In front:** `PUT /v1/me/devices/:id/active` at once and every minute, so a
+  ping waits for the person at their Mac only when they are there. A device
+  the API forgot (404) registers again.
+- **The app icon's number** is `badge` from `GET /v1/me/notifications` (open
+  needs-you questions across every workspace). It is set each time the app
+  comes forward, and cleared at sign-out.
+
+**What a ping carries.** The API sends title, body and `data`; Expo puts `data`
+under `body`, and iOS hands the app:
+
+```json
+{ "aps": { "alert": { "title": "Pricing page", "body": "Ponzu has a question for you." },
+           "badge": 1, "sound": "default", "thread-id": "cnv_…" },
+  "body": { "v": 1, "n": "ntf_…", "k": "needs_you", "c": "cnv_…", "w": "ws_…",
+            "o": "thread", "q": "q_…" } }
+```
+
+expo-notifications gives `body` as `request.content.data` and the whole thing
+as `request.trigger.payload`. `payload.ts` reads the first, else the second's
+`body`. The data is `PushData` v1 (`@ponzu/core/push`): ids only, so nothing
+anyone wrote crosses Expo or Apple. Nothing else in a ping is trusted. Its
+words are never read and no link in it is followed. A tap goes where
+`linkOfPush` says, through `lib/links.ts`'s routes:
+
+| `o` | Opens |
+| --- | --- |
+| `thread` | the canvas, its chat sheet (at `q`'s question when there is one) |
+| `pull-request` | the canvas, its pull request sheet |
+| `comment` | the canvas, at `p`/`a`, with the pin `t`'s thread open |
+| `usage` | Settings |
+
+A ping from a newer API this build can't read opens the canvas it names, if any.
+One that names nothing this app opens goes to the canvases with "That canvas
+isn't available to you.", and so does a canvas from a ping that the person can
+no longer open (the canvas route carries `ping=<notification id>`, which links
+never do). The tap reads the notification (`POST /v1/me/notifications/:id/read`
+with `via: "ios"`).
+
+**Taps** are heard from launch (`getLastNotificationResponse`, then the
+response listener). A tap is held until the person is signed in, through setup
+and off the launch screen. One that arrives when nobody is signed in, once the
+Keychain is read, is dropped, and so is one held when the person signs out. A
+tap for the canvas already on screen sets its params in place, so its chat or
+pull request sheet opens over it. Any other tap is pushed over where the app
+is.
+
+**In the foreground** a ping about the canvas on screen (the screen on top,
+the app in front) shows no banner and no Notification Center row. Any other
+ping shows its banner silently. Opening a canvas clears its pings from
+Notification Center. While the API sends pings, the canvas's presence carries
+`focused`, so the API holds pings about it back.
+
+**Settings › Notifications** (`components/settings-notifications.tsx`)
+appears only while the API sends pings. It shows "Ping me when" with the Mac's
+rows and words (A teammate comments only for someone in a team), saved as
+flipped. Under "Where" is this iPhone: its Pings toggle, "Turned off in iOS
+Settings" with the way there, or "Not turned on yet" with **Turn on
+notifications**.
+
+**Not proven yet:** a real ping from Expo to a real iPhone. That needs the
+founder's EAS push credentials, an Expo access token on the API, and a build
+with them. The simulator runs prove taps and foreground handling with
+`xcrun simctl push` (`maestro/push/`). The ping's data reaches the app
+exactly as Expo would deliver it, but nothing proves Apple's or Expo's side.
+
 ### The fake backend
 
 `lib/cloud/backend.fake.ts` is Ponzu Cloud in memory: the client's own
@@ -324,9 +440,12 @@ skipped. `ponzu-dev://dev?seed=<scenario>` (`app/dev.tsx`) puts the app in a
 state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
 `setup-where` (Lee, whose own account has no Ponzu yet), `setup-claude`
 (Ava, with no Claude), `canvases` (Maya's list in every state), `chat`
-(the Pricing page's thread with a turn running) and `needs-you` (the Pricing
-page waiting on two questions, a plan and a permission). Only a fake build takes that
-link. With the authorize
+(the Pricing page's thread with a turn running), `needs-you` (the Pricing
+page waiting on two questions, a plan and a permission), `pull-request` (its
+pull request ready to merge) and `pings` (`needs-you` on an API that sends
+pings). Every other scenario is an API that sends none. With `&relaunch=1`
+the next launch is put in the same state too, once, so a flow can end the app
+and open it from a ping. Only a fake build takes that link. With the authorize
 page running, the fake's install links open its `/install` page, which comes
 back as a finished install. A component test can put the person's Claude plan
 at a limit with `backend.limitClaude(until)`.

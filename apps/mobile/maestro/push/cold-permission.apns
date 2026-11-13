@@ -1,0 +1,18 @@
+{
+  "Simulator Target Bundle": "design.ponzu.app.dev",
+  "aps": {
+    "alert": { "title": "Pricing page", "body": "Ponzu is asking for your permission." },
+    "badge": 3,
+    "sound": "default",
+    "thread-id": "cnv_0000000000000011"
+  },
+  "body": {
+    "v": 1,
+    "n": "ntf_maestro_4",
+    "k": "needs_you",
+    "c": "cnv_0000000000000011",
+    "w": "ws_0000000000000007",
+    "o": "thread",
+    "q": "q_0000000000000018"
+  }
+}

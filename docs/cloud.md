@@ -2845,7 +2845,8 @@ person and install. An iPhone (`ios`) sends `pushToken`, its Expo push token exa
 APNs key. A Mac (`macos`) sends neither, and a 400 refuses one that does: it shows its own
 notifications while the app runs. The database holds the same rule (an iPhone row has a token,
 a Mac row has none). The iPhone registers after the person turns notifications on, and again
-at each launch, which updates the row in place and keeps `lastSeenAt`; a new token from the
+at each launch, which updates the row in place and keeps `lastSeenAt`; it asks, registers and
+reports nothing while `GET /v1/me` says `features.push` is false (docs/mobile.md, "Pings"); a new token from the
 same install replaces the old one on the same row. `installId` is the app's own random id for
 the install (16 to 64 letters, digits or dashes), made once and kept (in the Keychain on the
 phone), and never returned. A token another person

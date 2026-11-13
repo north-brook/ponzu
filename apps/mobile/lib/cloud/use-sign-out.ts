@@ -3,11 +3,13 @@ import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback } from "react";
 import { drafts } from "../drafts";
+import { setBadge } from "../push/native";
+import { devices } from "../push/pings";
 import { backend } from "./backend";
 import { DOC_CACHE_PATH, fileStorage } from "./files";
 import { forgetNewCanvas } from "./new-canvas";
 import { useCloud } from "./query";
-import { DEVICE_KEY, keysToClear, signOut } from "./sign-out";
+import { keysToClear, signOut } from "./sign-out";
 import { forgetWorkspaces } from "./workspace";
 
 /** Signing out of this phone, every step in sign-out.ts's order. */
@@ -16,7 +18,8 @@ export function useSignOut(): () => Promise<void> {
   return useCallback(
     () =>
       signOut({
-        readDeviceId: () => AsyncStorage.getItem(DEVICE_KEY),
+        // Only the device registered for the person signing out.
+        readDeviceId: async () => (cloud.userId ? devices.read(cloud.userId) : null),
         deleteDevice: (id) => backend.api.devices.remove(id),
         signOut: () => backend.session.signOut(),
         clearQueries: () => cloud.clear(),
@@ -30,6 +33,8 @@ export function useSignOut(): () => Promise<void> {
           await AsyncStorage.multiRemove(keysToClear(await AsyncStorage.getAllKeys()));
           await Image.clearDiskCache();
           await Image.clearMemoryCache();
+          // The icon's count was theirs.
+          await setBadge(0);
         },
         // Analytics arrive with their own slice (lib/analytics); there is no identity yet.
         resetAnalytics: () => {},

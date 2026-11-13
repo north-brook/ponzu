@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BLOCKED, CLAUDE, CREATE, EFFORT_LABELS, NEEDS_YOU, PR, WHERE } from "./copy";
+import { BLOCKED, CLAUDE, CREATE, EFFORT_LABELS, NEEDS_YOU, PINGS, PR, WHERE } from "./copy";
 
 /*
  * The phone's setup says what the Mac's says. The Mac's words live in its JSX, so this reads
@@ -96,6 +96,22 @@ test("Needs you in the Mac's words", () => {
   };
   for (const [name, said] of Object.entries(words)) {
     expect({ name, found: source.includes(said) }).toEqual({ name, found: true });
+  }
+});
+
+test("Settings › Notifications in the Mac's words", () => {
+  const source = readFileSync(join(SETUP, "../settings/notifications.tsx"), "utf8").replace(
+    /\s+/g,
+    " ",
+  );
+  for (const event of PINGS.events) {
+    expect(source).toContain(
+      `{ key: "${event.key}", title: "${event.title}", line: "${event.line}" }`,
+    );
+  }
+  for (const [name, words] of Object.entries(PINGS.settings)) {
+    const found = source.includes(`"${words}"`);
+    expect({ name, found }).toEqual({ name, found: true });
   }
 });
 

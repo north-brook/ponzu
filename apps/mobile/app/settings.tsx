@@ -1,6 +1,7 @@
 import { useSessionState } from "@ponzu/client/react";
 import { useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { SettingsNotifications } from "../components/settings-notifications";
 import { SectionCard, SectionTitle } from "../components/settings-parts";
 import { SettingsUsage } from "../components/settings-usage";
 import { SettingsWorkspaces } from "../components/settings-workspaces";
@@ -13,8 +14,8 @@ import { useTheme } from "../lib/theme";
 
 /**
  * Settings, a sheet from the lockup: the workspaces (when there are more than one), the account
- * (who is signed in, and Sign out), and the workspace in view's usage, read only. Notifications
- * and Delete account join it with their slices.
+ * (who is signed in, and Sign out), notifications (once the API sends pings), and the workspace
+ * in view's usage, read only. Delete account joins it with its slice.
  */
 export default function Settings() {
   const { color } = useTheme();
@@ -111,6 +112,7 @@ export default function Settings() {
           {leaving && <Juice size={16} color={color.faint} />}
         </Pressable>
       </SectionCard>
+      <SettingsNotifications />
       <SettingsUsage workspace={workspace} />
     </ScrollView>
   );

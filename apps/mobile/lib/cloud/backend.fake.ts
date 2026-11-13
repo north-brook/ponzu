@@ -58,6 +58,11 @@ export const SCENARIOS = [
    * passed, Theo approved, two comments, three files.
    */
   "pull-request",
+  /**
+   * Maya's Pricing page waiting on her (`stockAsks`), on an API that sends pings
+   * (`features.push`): the ask after a comment, Settings › Notifications, and taps on pings.
+   */
+  "pings",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -388,6 +393,11 @@ export interface FakeCloud extends Backend {
   /** The world now (`reset` makes a new one). */
   readonly world: FakeWorld;
   seed(scenario: string): boolean;
+  /**
+   * Seed `scenario` again at the app's next launch, once: a flow that ends the app and opens it
+   * from a ping (a cold start) finds the same state. Kept in AsyncStorage until that launch.
+   */
+  seedNextLaunch(scenario: string): Promise<void>;
   /** A new world, with nobody signed in: each test file's tests start from the same one. */
   reset(): void;
   /**
@@ -410,8 +420,32 @@ export function installPageFor(authorizeUrl: string | null): string {
   return new URL("/install", authorizeUrl).toString();
 }
 
+/** Where `seedNextLaunch` keeps the scenario for the next launch. */
+export const NEXT_LAUNCH_SEED_KEY = "ponzu.fake.nextLaunchSeed";
+
+interface SeedStorage {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+}
+
+/** AsyncStorage in the app; none under Bun, where React Native's modules can't load. */
+function appStorage(): SeedStorage | null {
+  try {
+    return (
+      require("@react-native-async-storage/async-storage") as {
+        default: SeedStorage;
+      }
+    ).default;
+  } catch {
+    return null;
+  }
+}
+
 /** A whole fake Ponzu Cloud behind the app's `Backend`. */
-export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeCloud {
+export function fakeCloud(
+  opts: { authorizeUrl?: string | null; storage?: SeedStorage | null } = {},
+): FakeCloud {
   const authorizeUrl = opts.authorizeUrl ?? null;
   let world = fakeWorld();
   const session = new FakeSignInSession(world.maya);
@@ -423,6 +457,24 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
   const chatted = new WeakSet<FakeWorld>();
   const asked = new WeakSet<FakeWorld>();
   const pulled = new WeakSet<FakeWorld>();
+  const pinged = new WeakSet<FakeWorld>();
+  const storage = opts.storage === undefined ? null : opts.storage;
+  /** The scenario a flow asked for at this launch, read once, before the session is. */
+  let nextLaunch: Promise<void> | null = null;
+  const launched = () => {
+    nextLaunch ??= (async () => {
+      if (!storage) return;
+      try {
+        const scenario = await storage.getItem(NEXT_LAUNCH_SEED_KEY);
+        if (!scenario) return;
+        await storage.removeItem(NEXT_LAUNCH_SEED_KEY);
+        cloud.seed(scenario);
+      } catch {
+        // Nothing kept: the launch starts signed out, as ever.
+      }
+    })();
+    return nextLaunch;
+  };
   const client = () => {
     const person = session.person;
     let known = clients.get(person.id);
@@ -473,7 +525,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
       return real[key as keyof Api];
     },
   });
-  return {
+  const cloud: FakeCloud = {
     kind: "fake",
     get world() {
       return world;
@@ -482,7 +534,11 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
     api,
     makeLive: (): Live => world.fake.connect(session.person).live,
     authorizeUrl,
-    prepare: () => world.ready,
+    prepare: () => launched().then(() => world.ready),
+    async seedNextLaunch(scenario) {
+      if (!storage || !isScenario(scenario)) return;
+      await storage.setItem(NEXT_LAUNCH_SEED_KEY, scenario).catch(() => {});
+    },
     installId: async () => "0123456789abcdef0123456789abcdef",
     installPages,
     settleInstalls(result) {
@@ -522,7 +578,10 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         chat: signedIn,
         "needs-you": signedIn,
         "pull-request": signedIn,
+        pings: signedIn,
       };
+      // An API that sends pings, for the scenario that says so; none otherwise.
+      world.fake.features = { ...world.fake.features, push: scenario === "pings" };
       // The rows change under the list as the live query would deliver them.
       // Maya is signed in once Northbrook exists, as someone already in two workspaces is: `me`
       // read before it would list one, and nothing tells the app to read it again.
@@ -562,13 +621,24 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         });
         return true;
       }
+      if (scenario === "pings" && !pinged.has(world)) {
+        pinged.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockAsks(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
       session.set(states[scenario]);
       return true;
     },
   };
+  return cloud;
 }
 
 export const backend: FakeCloud = fakeCloud({
   // Spelled out: Metro inlines only `process.env.EXPO_PUBLIC_*` read by name.
   authorizeUrl: process.env.EXPO_PUBLIC_PONZU_FAKE_AUTHORIZE_URL || null,
+  storage: appStorage(),
 });

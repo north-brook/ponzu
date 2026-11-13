@@ -66,6 +66,30 @@ maestro --device "$UDID" test -e DEV_CLIENT="$DEV_CLIENT" \
   ${MAESTRO_OUTPUT:+--format junit --output "$MAESTRO_OUTPUT"} \
   ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT"} "$MOBILE/maestro/" || status=$?
 [ "$status" = 0 ] || exit "$status"
+
+# Pings (push/, PUSH=0 skips): `xcrun simctl push` hands the app a ping exactly
+# as Expo's service delivers one (PushData v1 under `body`). A warm tap on a
+# banner, the foreground hiding a ping about the canvas on screen, and a cold
+# start from a banner on the home screen. Each Maestro run below waits for what
+# the ping should do, between the pings run.sh sends.
+if [ "${PUSH:-1}" = 1 ]; then
+  ping() { xcrun simctl push "$UDID" design.ponzu.app.dev "$MOBILE/maestro/push/$1.apns"; }
+  flow() {
+    maestro --device "$UDID" test -e DEV_CLIENT="$DEV_CLIENT" \
+      ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT/push-$1"} \
+      "$MOBILE/maestro/push/$1.yaml"
+  }
+  flow warm-open
+  ping pricing-question
+  flow warm-tap
+  ping pricing-reply
+  ping onboarding-finished
+  flow foreground
+  flow cold-open
+  ping cold-permission
+  flow cold-tap
+fi
+
 # Opt in with REMOUNT=1 until a run on spare has proven it; then make it the default.
 [ "${REMOUNT:-}" = 1 ] || exit 0
 

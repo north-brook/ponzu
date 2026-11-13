@@ -17,3 +17,4 @@ executionOrder:
     - chat
     - needs-you
     - pull-request
+    - pings

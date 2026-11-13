@@ -1,0 +1,16 @@
+appId: design.ponzu.app.dev
+name: push-warm-tap
+---
+# Part 2: the needs-you ping for the Pricing page arrived while Onboarding is
+# on screen, so its banner shows. Tapping it opens the Pricing page with its
+# chat at the question the ping named.
+- extendedWaitUntil:
+    visible: ".*Ponzu has a question for you.*"
+    timeout: 20000
+- tapOn: ".*Ponzu has a question for you.*"
+- extendedWaitUntil:
+    visible:
+      id: needs-you
+    timeout: 20000
+- assertVisible: "Which blue for the buttons?"
+- assertVisible: "1 of 4"

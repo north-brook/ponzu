@@ -33,6 +33,10 @@ const TESTING_ALLOWED = ["lib/cloud/backend.fake.ts"];
 const PRIVATE: Record<string, string[]> = {
   // lib/links.ts is the one reader of links.
   "@ponzu/core/links": ["lib/links.ts", "lib/links.test.ts"],
+  // lib/push/payload.ts is the one reader of a ping's data.
+  "@ponzu/core/push": ["lib/push/payload.ts"],
+  // lib/push/native.ts is the only file that touches iOS's notifications.
+  "expo-notifications": ["lib/push/native.ts"],
 };
 
 /** All the app may take from the canvas page: its messages, and the built page as a string. */

@@ -1,0 +1,13 @@
+appId: design.ponzu.app.dev
+name: push-foreground
+---
+# Part 3: with the Pricing page on screen, run.sh sent a reply ping about it
+# and then a finished ping about Onboarding. Only Onboarding's banner shows:
+# a ping about the canvas on screen shows nothing.
+- extendedWaitUntil:
+    visible: ".*Ponzu finished what you asked.*"
+    timeout: 20000
+- assertNotVisible: ".*Ponzu replied to your comment.*"
+# Still on the Pricing page's chat.
+- assertVisible:
+    id: needs-you

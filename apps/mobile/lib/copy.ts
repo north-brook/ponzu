@@ -278,5 +278,37 @@ export const PR = {
   loading: "Loading the pull request",
 } as const;
 
+/** Pings (docs/mobile.md, "Pings"): the ask after a comment, and Settings › Notifications. */
+export const PINGS = {
+  /** The sheet after the first comment from this phone (onboarding §4.12). */
+  ask: {
+    title: "Hear back when Ponzu replies?",
+    body: "Your comment is on its way. Ponzu can ping you when it answers, asks a question, or a pull request is ready.",
+    turnOn: "Turn on notifications",
+    notNow: "Not now",
+  },
+  /** Settings, in the Mac's words (apps/studio/src/cloud/settings/notifications.tsx). */
+  section: "Notifications",
+  settings: {
+    pingMeWhen: "Ping me when",
+    where: "Where",
+    pings: "Pings",
+    blocked: "Turned off in iOS Settings",
+  },
+  /** The rows of "Ping me when", as the Mac's. */
+  events: [
+    { key: "needsYou", title: "Ponzu needs you", line: "A question, a permission, a sign-in" },
+    { key: "replies", title: "Ponzu replies to my comment", line: "On canvases I commented on" },
+    { key: "prReady", title: "A pull request is ready", line: "Checks passed and it can merge" },
+    { key: "teammateComments", title: "A teammate comments", line: "On canvases I own" },
+  ],
+  /** The phone's own rows. */
+  thisIphone: "This iPhone",
+  /** iOS hasn't been asked yet: the row that asks. */
+  notAsked: "Not turned on yet",
+  /** iOS refused: where to turn them on. */
+  openSettings: "Open iOS Settings",
+} as const;
+
 /** What the canvases list says when the workspace has no canvases: where they come from. */
 export const EMPTY_CANVASES = "No canvases yet. Canvases you make in Ponzu show up here.";

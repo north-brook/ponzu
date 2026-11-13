@@ -1,8 +1,8 @@
 import { type AppLink, parseAppLink } from "@ponzu/core/links";
 
 /*
- * The app's only reader of links: deep links (app/+native-intent.tsx), and later pushes and the
- * links in a thread. A link is only ever a request to show something the person could open
+ * The app's only reader of links: deep links (app/+native-intent.tsx), pings (whose ids
+ * lib/push/payload.ts turns into a link through `@ponzu/core/push`) and the links in a thread. A link is only ever a request to show something the person could open
  * anyway: it never signs in, writes or sends anything. It must use this build's own scheme
  * (`ponzu`, or Ponzu Dev's `ponzu-dev`); anything else is refused, so a link meant for the
  * other app never opens here.
@@ -25,6 +25,8 @@ export type Route =
         question?: string;
         thread?: string;
         message?: string;
+        /** Opened by a tap on a ping (lib/push/payload.ts); never from a link. */
+        ping?: string;
       };
     }
   | { screen: "github-setup"; params: { result: string; workspace?: string } }
