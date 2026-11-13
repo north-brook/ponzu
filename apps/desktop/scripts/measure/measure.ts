@@ -466,6 +466,22 @@ try {
     }
   })();
   const before = await counts(page);
+  // Frames the window drew during the gesture, and the longest gap between two: counted only now,
+  // so the idle readings have no frame loop running.
+  await page.evaluate(() => {
+    const w = window as unknown as { __pzFrames: { n: number; maxGap: number; on: boolean } };
+    w.__pzFrames = { n: 0, maxGap: 0, on: true };
+    let last = performance.now();
+    const tick = (t: number) => {
+      const f = w.__pzFrames;
+      if (!f.on) return;
+      f.n++;
+      f.maxGap = Math.max(f.maxGap, t - last);
+      last = t;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
   for (let i = 0; i < 40; i++) {
     await page.mouse.wheel(i % 20 < 10 ? 60 : -60, 30);
     await pause(16);
@@ -485,7 +501,14 @@ try {
   await pause(2_000);
   moving = false;
   await gestureWatcher;
-  const panned = { ...gesture, did: minus(await counts(page), before) };
+  const frames = await page.evaluate(() => {
+    const f = (window as unknown as { __pzFrames: { n: number; maxGap: number; on: boolean } })
+      .__pzFrames;
+    f.on = false;
+    return { n: f.n, maxGapMs: Math.round(f.maxGap) };
+  });
+  await page.screenshot({ path: join(OUT, "after-pan-and-zoom.png") });
+  const panned = { ...gesture, frames, did: minus(await counts(page), before) };
   console.log(`pan and zoom: peak ${JSON.stringify({ ...panned, gpuSamples: undefined })}`);
   await reading("after pan and zoom", true);
   await pause(10_000);
