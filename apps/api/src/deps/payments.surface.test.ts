@@ -20,18 +20,20 @@ const IMPORTS_SDK = new RegExp(
   ].join("|"),
 );
 
-function trackedFiles(): string[] {
-  const listed = Bun.spawnSync(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
+async function trackedFiles(): Promise<string[]> {
+  const listed = Bun.spawn(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
     cwd: ROOT,
+    stdout: "pipe",
   });
-  expect(listed.exitCode).toBe(0);
-  return listed.stdout.toString().split("\n").filter(Boolean);
+  const [out, exitCode] = await Promise.all([new Response(listed.stdout).text(), listed.exited]);
+  expect(exitCode).toBe(0);
+  return out.split("\n").filter(Boolean);
 }
 
 test("only deps/payments.ts imports stripe", async () => {
   const offenders: string[] = [];
   let seamImports = false;
-  for (const file of trackedFiles()) {
+  for (const file of await trackedFiles()) {
     if (!/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(file)) continue;
     const handle = Bun.file(join(ROOT, file));
     if (!(await handle.exists())) continue;
@@ -46,7 +48,7 @@ test("only deps/payments.ts imports stripe", async () => {
 
 test("only apps/api depends on stripe, pinned exactly at 23.1.0", async () => {
   const dependents: string[] = [];
-  for (const file of trackedFiles()) {
+  for (const file of await trackedFiles()) {
     if (!file.endsWith("package.json")) continue;
     const handle = Bun.file(join(ROOT, file));
     if (!(await handle.exists())) continue;
