@@ -1,4 +1,4 @@
-import { ApiError, type SearchAnswer, type SearchGroup } from "@ponzu/client";
+import { ApiError, SEARCH_QUERY_MAX, type SearchAnswer, type SearchGroup } from "@ponzu/client";
 import {
   type BoardHit,
   type CanvasHit,
@@ -9,6 +9,7 @@ import {
   type MessageHit,
   toSearchResults,
 } from "@ponzu/client/model";
+import { searchQuery } from "@ponzu/client/query";
 import { findMatches, type Match, searchTerms } from "@ponzu/core/search-text";
 import { shortAgo } from "./ago";
 import { SEARCH } from "./copy";
@@ -41,6 +42,20 @@ export const PHONE_SEARCH_GROUPS: readonly SearchGroup[] = [
   "comments",
   "messages",
 ];
+
+/**
+ * The words as they are searched: trimmed, in NFC, and no longer than the API takes
+ * (SEARCH_QUERY_MAX, as the Mac's field caps them), so a long paste is searched by its start
+ * rather than refused with a 400 that would read as search not answering. A cut never splits a
+ * character in two.
+ */
+export function searchWords(query: string): string {
+  const q = searchQuery(query);
+  if (q.length <= SEARCH_QUERY_MAX) return q;
+  const cut = q.slice(0, SEARCH_QUERY_MAX);
+  const last = cut.charCodeAt(cut.length - 1);
+  return (last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut).trim();
+}
 
 /** What a before-typing row needs: its canvas, and the question it waits on, if known. */
 export interface RecentRow {
@@ -212,21 +227,26 @@ export type SearchView =
  * What the tab shows for `query`, from what is known: `answer` (the API's, to the words typed now
  * when `asked` is "answered", else an older one kept while the next is asked), and the
  * `canvases` the phone holds, every one, settled too. A hit on a canvas the phone doesn't hold
- * is dropped: the list is what may be shown.
+ * is dropped: the list is what may be shown. With no list yet (`canvases` null), every hit
+ * would be dropped, so an answer can't say there is nothing: it waits while the list is coming
+ * (`listLoading`), and once it isn't coming, search can't answer.
  */
 export function searchView({
   query,
   answer,
   asked,
   canvases,
+  listLoading = false,
 }: {
   query: string;
   answer: SearchAnswer | undefined;
   asked: SearchAsked;
-  canvases: readonly CanvasSummary[];
+  canvases: readonly CanvasSummary[] | null;
+  listLoading?: boolean;
 }): SearchView {
   const q = query.trim();
   if (!q) return { kind: "recent" };
+  if (!canvases) return listLoading ? { kind: "waiting" } : { kind: "failed" };
   const names = () => nameHits(q, canvases);
   const namesOnly = (busy: boolean): SearchView => {
     const hits = names();

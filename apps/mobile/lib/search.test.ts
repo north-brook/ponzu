@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ApiError, type SearchAnswer } from "@ponzu/client";
+import { ApiError, SEARCH_QUERY_MAX, type SearchAnswer } from "@ponzu/client";
 import type { CanvasSummary, CommentHit, MessageHit } from "@ponzu/client/model";
 import {
   askedOf,
@@ -10,6 +10,7 @@ import {
   recentCanvases,
   resultPath,
   searchView,
+  searchWords,
   subtitle,
   THREADS_CAP,
   threadAge,
@@ -394,6 +395,28 @@ describe("what the tab shows", () => {
     ).toEqual({
       kind: "failed",
     });
+  });
+
+  test("no list yet: an answer can't say there is nothing; it waits, or with no list coming, fails", () => {
+    // Every hit would be dropped with no list held: never "No results" for words that match.
+    const coming = { query: "plans", answer: found, asked: "answered" as const, canvases: null };
+    expect(searchView({ ...coming, listLoading: true })).toEqual({ kind: "waiting" });
+    expect(searchView({ ...coming, listLoading: false })).toEqual({ kind: "failed" });
+    expect(searchView({ ...coming, query: " " })).toEqual({ kind: "recent" });
+  });
+});
+
+describe("the words searched", () => {
+  test("trimmed, in NFC, and cut to what the API takes without splitting a character", () => {
+    expect(searchWords("  café ")).toBe("café");
+    expect(searchWords("a".repeat(SEARCH_QUERY_MAX + 50))).toBe("a".repeat(SEARCH_QUERY_MAX));
+    // An emoji across the cut goes whole.
+    const split = searchWords(`${"a".repeat(SEARCH_QUERY_MAX - 1)}😀`);
+    expect(split).toBe("a".repeat(SEARCH_QUERY_MAX - 1));
+    // A cut that ends on a space is trimmed, as the API trims.
+    expect(searchWords(`${"a".repeat(SEARCH_QUERY_MAX - 1)} b`)).toBe(
+      "a".repeat(SEARCH_QUERY_MAX - 1),
+    );
   });
 });
 

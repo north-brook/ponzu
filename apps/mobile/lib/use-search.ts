@@ -1,4 +1,3 @@
-import { searchQuery } from "@ponzu/client/query";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useCanvasList } from "./cloud/canvases";
@@ -12,6 +11,7 @@ import {
   type SearchAsked,
   type SearchView,
   searchView,
+  searchWords,
 } from "./search";
 
 /*
@@ -33,11 +33,13 @@ export function usePhoneSearch(query: string): PhoneSearch {
   const cloud = useCloud();
   const { workspace, list, loading } = useCanvasList();
   const rows = useMemo(() => (list ? [...list.active, ...list.settled] : []), [list]);
-  const canvases = useMemo(() => rows.map((row) => row.canvas), [rows]);
-  const sent = useDebounced(query, SEARCH_DEBOUNCE_MS);
+  const canvases = useMemo(() => (list ? rows.map((row) => row.canvas) : null), [list, rows]);
+  // What is searched: no longer than the API takes, so a long paste isn't refused.
+  const words = searchWords(query);
+  const sent = useDebounced(words, SEARCH_DEBOUNCE_MS);
   const answer = useQuery({
     ...cloud.queries.search(workspace?.id ?? "", sent, PHONE_SEARCH_GROUPS),
-    enabled: workspace !== null && searchQuery(sent) !== "",
+    enabled: workspace !== null && sent !== "",
   });
   let asked: SearchAsked = "asking";
   if (answer.isError && !answer.isFetching) asked = askedOf(answer.error);
@@ -45,17 +47,13 @@ export function usePhoneSearch(query: string): PhoneSearch {
   // and show what the phone holds rather than an answer to other words.
   else if (answer.fetchStatus === "paused" && (!answer.data || answer.isPlaceholderData)) {
     asked = "failed";
-  } else if (
-    answer.isSuccess &&
-    !answer.isPlaceholderData &&
-    searchQuery(sent) === searchQuery(query)
-  ) {
+  } else if (answer.isSuccess && !answer.isPlaceholderData && sent === words) {
     asked = "answered";
   }
   const data = asked === "failed" || asked === "absent" ? undefined : answer.data;
   const view = useMemo(
-    () => searchView({ query, answer: data, asked, canvases }),
-    [query, data, asked, canvases],
+    () => searchView({ query: words, answer: data, asked, canvases, listLoading: loading }),
+    [words, data, asked, canvases, loading],
   );
   const recent = useMemo(() => recentCanvases(rows), [rows]);
   return { view, recent, loading };

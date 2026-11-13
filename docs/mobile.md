@@ -183,7 +183,10 @@ system's search field in its header, "Search canvases".
 - **Typing** sends the words once typing has rested 150 ms, in the body of
   `POST /v1/workspaces/:id/search` (never in an address), through
   `ponzuQueries.search`, asking for `canvases`, `boards`, `comments` and
-  `messages`. The previous answer stays until the next lands.
+  `messages`. The previous answer stays until the next lands. Words longer
+  than the API takes (200 characters, as the Mac's field caps them) are
+  searched by their start. Until the canvases list is held, an answer waits
+  for it, since a hit is shown only on a canvas the list holds.
 - **Sections.** Canvases (the preview, the name with its match marked, the
   Mac's line "repo · branch", and the needs-you count in a yuzu pill),
   Boards (a page's or board's mark, "Page in <canvas>" or "in <canvas>", as

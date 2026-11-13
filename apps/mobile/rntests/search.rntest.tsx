@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
-import { ApiError } from "@ponzu/client";
+import { ApiError, SEARCH_QUERY_MAX } from "@ponzu/client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { onlineManager } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
@@ -110,6 +110,19 @@ describe("search", () => {
         new RegExp(`^/canvas/${id}\\?page=pg_[^&]+&artboard=ab_plans&thread=th_search$`),
       ),
     );
+  });
+
+  test("a long paste is searched by its start, not refused as too long", async () => {
+    const asked = jest.spyOn(backend.api.workspaces, "search");
+    restore.push(() => asked.mockRestore());
+    const long = `${SEARCH_SCENE.query} ${"z".repeat(SEARCH_QUERY_MAX)}`;
+    await render(<Search query={long} />);
+    await waitFor(() => expect(asked).toHaveBeenCalled());
+    const [, body] = asked.mock.calls.at(-1) as [string, { q: string }];
+    expect(body.q).toBe(long.slice(0, SEARCH_QUERY_MAX));
+    // The API answers (nothing has those words): no results, never that it isn't answering.
+    await screen.findByTestId("search-none");
+    expect(screen.queryByText(SEARCH.failed)).toBeNull();
   });
 
   test("a canvas by name, with its place; nothing found says so", async () => {
