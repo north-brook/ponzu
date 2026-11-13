@@ -29,7 +29,8 @@ Flags: `--samples N` (runs of each ideas case, default 3), `--turns N` (real age
 examples; a partial calibration is never recorded, a partial ideas run is written to
 `results/partial.*` and leaves `latest.*` alone, a partial agent run is merged into `latest.*`
 with each row saying where its turn ran), `--judge name` (calibrate one judge), `--parallel N`
-(cases side by side, default 4).
+(cases side by side, default 4), `--on dev-key` (the agent's turns under the builders' rules,
+below).
 
 The cap is hard: a call is refused unless its worst case (all of its output tokens written),
 added to what is spent and to the worst cases of the calls still in flight, stays under it. So a
@@ -40,7 +41,7 @@ records nothing. With little budget, use `--parallel 1`.
 They cost money and are not deterministic, so `bun test` never runs them: their files are
 `*.eval.ts`. The code around them is tested the usual way, with fake models (the harness in
 `packages/evals/src/evals.test.ts` and `key.test.ts`, the turn's environment in
-`apps/runner/evals/agent/harness.test.ts`, the exact checks in `apps/runner/evals/agent/checks.test.ts`,
+`apps/runner/evals/agent/harness.test.ts`, the exact checks in `apps/runner/evals/agent/checks.test.ts`, how the report keeps runs apart in `apps/runner/evals/agent/report.test.ts`,
 the ideas pipeline and its gate in `apps/api/src/ideas/*.test.ts` and
 `apps/api/src/routes/repo-ideas.test.ts`).
 
@@ -146,6 +147,21 @@ and no turn starts once the cap is spent. A turn stopped before Claude Code repo
 (one that ran past its 40 minutes) is not counted: what it cost shows only in the Anthropic
 Console's usage for the key. One turn can take the
 spend past the cap by its own cost, so give a run room: `--cap 6` for six cases.
+
+### Runs under the builders' rules
+
+`bun run evals agent --on dev-key` runs the agent's turns on `claude-haiku-5-5` at `low` effort
+instead of a canvas's defaults (`RUN_ON` in `harness.ts`), on the same key and the same
+environment built from nothing, and labels every row it writes `ranOn: "dev-key/haiku/low"`. It
+is what builders, their reviewers and CI may run: a few cents a turn. The exact checks (a pull
+request opened, a merge only when someone asked) do not depend on how well the model writes, so
+this run proves the guardrails; its judged rates are not a measure of quality. The report keeps
+its rows apart: they have their own section, "Under the builders' rules", with their own pass
+rates (`ratesByRun` in `latest.json`), they never count in the pass rates at the top, and a run
+at the defaults never replaces or drops them, nor they it (`keptRows` in `agent.eval.ts`,
+tested in `report.test.ts`). The thread judge still judges them, at its own model. The quality
+run, at a canvas's defaults (Opus 5.5 at high), is the founder's call, as it costs dollars a
+case. Use `--cap` on every run.
 
 What a case costs on the API, from the last recorded run (Claude Code's own figure for each
 turn, on Opus 5.5 at high): from $0.17 (A3, a direct answer) to $1.23 (A1, a board built and
