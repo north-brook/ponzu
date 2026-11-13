@@ -82,9 +82,10 @@ name: chat
     notVisible:
       id: chat-sheet
     timeout: 10000
+# (The hidden chrome is hidden from VoiceOver too, so Maestro sees it gone.)
 - extendedWaitUntil:
-    visible:
-      id: chrome-hidden
+    notVisible:
+      id: stack-chat
     timeout: 10000
 - assertVisible: "Plans"
 - assertNotVisible: ".*Cannot update a component.*"
