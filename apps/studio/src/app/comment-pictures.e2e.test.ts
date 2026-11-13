@@ -585,4 +585,83 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     expect(longest).toBeLessThan(10_000);
     expect(errors).toEqual([]);
   });
+
+  /*
+   * What is copied is chosen by layout boxes, and a shadow paints past its element's box. A small
+   * box at the top of a tall board, whose child's shadow spreads over the whole board, is far
+   * from a pin halfway down, yet its shadow is in the picture, as on the canvas.
+   */
+  test("a shadow cast from far outside the picture is still in it", async () => {
+    await page.keyboard.press("Escape");
+    const root = el(
+      "main",
+      { width: "1200px", height: "3200px", background: "#ffffff", position: "relative" },
+      [
+        el(
+          "div",
+          { position: "absolute", left: "580px", top: "0", width: "40px", height: "20px" },
+          [
+            el("div", {
+              width: "40px",
+              height: "20px",
+              "box-shadow": "0 0 0 2400px rgb(37, 99, 235)",
+            }),
+          ],
+        ),
+      ],
+    );
+    const board: Artboard = { id: root.id, name: "Far shadow", x: 4600, y: 0, root };
+    await fake(
+      ({ id, board }: { id: string; board: Artboard }) => {
+        const backend = window.ponzuFake!.backend;
+        const page = backend.canvas(id).sequencer.doc.pages[0]!;
+        backend
+          .agent(id)
+          .commit([{ op: "artboard.create" as const, page: page.id, index: 3, artboard: board }]);
+      },
+      { id: canvasId, board },
+    );
+    const sheet = page.locator(`[data-pz-board="${board.id}"]`);
+    await sheet.waitFor();
+    await fake(
+      ({ id, artboardId }: { id: string; artboardId: string }) =>
+        window.ponzuFake!.link({ kind: "canvas", canvasId: id, artboardId }),
+      { id: canvasId, artboardId: board.id },
+    );
+    await page.waitForTimeout(400);
+    await page.keyboard.press("c");
+    const box = (await sheet.boundingBox())!;
+    const pane = (await page.locator(".pz-root").first().boundingBox())!;
+    const top = Math.max(box.y, pane.y);
+    const bottom = Math.min(box.y + box.height, pane.y + pane.height);
+    await page.mouse.click(box.x + box.width * 0.3, (top + bottom) / 2);
+    await page.getByPlaceholder("Leave a comment…").fill("Under the far shadow");
+    await page.keyboard.press("Enter");
+    await waitUntil(async () =>
+      (await kept()).some((c) => c.text === "Under the far shadow" && c.picture !== null),
+    );
+    await page.keyboard.press("Escape");
+    // The light picture's corner, away from the pin: the shadow's blue, not the board's white.
+    const corner = await fake(
+      async ({ id, text }: { id: string; text: string }) => {
+        const canvas = window.ponzuFake!.backend.canvas(id);
+        const item = canvas.thread.find(
+          ({ item }) => item.kind === "comment" && item.payload.text === text,
+        )!.item as { payload: { picture: { light: string } } };
+        const file = [...canvas.pictures.values()].find(
+          (p) => p.ref === item.payload.picture.light,
+        )!;
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(file.bytes)], { type: "image/webp" }),
+        );
+        const drawn = new OffscreenCanvas(bitmap.width, bitmap.height).getContext("2d")!;
+        drawn.drawImage(bitmap, 0, 0);
+        return [...drawn.getImageData(12, 12, 1, 1).data];
+      },
+      { id: canvasId, text: "Under the far shadow" },
+    );
+    const [r, , b] = corner as number[];
+    expect(b! - r!).toBeGreaterThan(100);
+    expect(errors).toEqual([]);
+  });
 });

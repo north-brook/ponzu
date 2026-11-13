@@ -376,11 +376,31 @@ async function settle(scene: HTMLElement, deadline: number): Promise<void> {
 
 /**
  * How far past the picture's edge, in its own px, a part of a board still counts as in it: room
- * for what paints outside its box (a shadow, an outline, a filter) to reach in. Half the
- * picture's width: 120 page px of a shadow's reach at the closest a picture frames, more as it
- * frames wider.
+ * for what a layout box doesn't say. What an element's own shadows, filters and outlines paint
+ * outside its box is added to the box itself (`paintReach`). Half the picture's width.
  */
 const MARGIN = WIDTH / 2;
+
+/** Every length in a computed value, in px, added up regardless of sign. */
+function pxSum(value: string): number {
+  let sum = 0;
+  for (const match of value.matchAll(/(-?[\d.]+)px/g)) sum += Math.abs(Number(match[1]));
+  return sum;
+}
+
+/**
+ * How far, in the element's own CSS px, what it paints may reach past its box: its box and text
+ * shadows (offsets, blur and spread together), its filter (a blur reaches about three times its
+ * radius) and its outline. Overstated on purpose: too much only copies a little more.
+ */
+function paintReach(style: CSSStyleDeclaration): number {
+  const outline =
+    style.outlineStyle !== "none" ? pxSum(style.outlineWidth) + pxSum(style.outlineOffset) : 0;
+  const filter = style.filter !== "none" ? 3 * pxSum(style.filter) : 0;
+  const shadow = style.boxShadow !== "none" ? pxSum(style.boxShadow) : 0;
+  const text = style.textShadow !== "none" ? pxSum(style.textShadow) : 0;
+  return Math.max(outline, shadow, text) + filter;
+}
 
 /**
  * A drawn scene as a WebP file, by modern-screenshot: the scene copied with its computed styles
@@ -517,7 +537,8 @@ function keepsItsSize(display: string): boolean {
 
 /**
  * The elements of a drawn scene that lie wholly outside the picture, with all under them (the
- * boxes of everything below, as laid out, `MARGIN` round the picture), and whose own size holds
+ * boxes of everything below, as laid out and widened by what each paints past its box
+ * (`paintReach`), `MARGIN` round the picture), and whose own size holds
  * without them (`keepsItsSize`): copied without their children, they take the same room. The
  * parts of any other element outside are looked at in turn.
  */
@@ -529,13 +550,23 @@ function outsideOf(scene: Element): Set<Element> {
   const bottom = frame.bottom + MARGIN;
   const outside = new Set<Element>();
   type Box = { l: number; t: number; r: number; b: number };
+  // The scale an element without a width of its own is drawn at: its parent's.
+  let inherited = 1;
   // Every element's box joined with all under it: what it and its descendants cover.
   const covered = (el: Element): Box | null => {
     const own = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    // The element's own paint past its box, in screen px: its CSS px times the scale it is drawn
+    // at (the scene's, and any transform of its own), or that of its parent when it has no width.
+    const width = el instanceof HTMLElement ? el.offsetWidth : 0;
+    const scale = width > 0 ? own.width / width : inherited;
+    const reach = paintReach(style) * scale;
     let box: Box | null =
       own.width > 0 || own.height > 0
-        ? { l: own.left, t: own.top, r: own.right, b: own.bottom }
+        ? { l: own.left - reach, t: own.top - reach, r: own.right + reach, b: own.bottom + reach }
         : null;
+    const outer = inherited;
+    inherited = scale;
     // The children modern-screenshot copies: a shadow root's in place of the element's own.
     for (const child of (el.shadowRoot ?? el).children) {
       const under = covered(child);
@@ -549,9 +580,10 @@ function outsideOf(scene: Element): Set<Element> {
           }
         : under;
     }
+    inherited = outer;
     const shows = box !== null && box.l < right && box.r > left && box.t < bottom && box.b > top;
     if (!shows && el !== scene && (el.shadowRoot ?? el).firstChild !== null) {
-      if (keepsItsSize(getComputedStyle(el).display)) outside.add(el);
+      if (keepsItsSize(style.display)) outside.add(el);
     }
     return box;
   };
