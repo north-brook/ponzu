@@ -20,7 +20,16 @@ test("the runner starts with its three variables and one Claude credential", () 
     workRoot: "/home/user/work",
     stateDir: "/home/user/.ponzu",
     gitSocket: "/home/user/.ponzu/git.sock",
+    mode: "claude",
   });
+});
+
+test("in tools mode, for a canvas a person's own agent drives, it takes no Claude credential", () => {
+  expect(readEnv({ ...base, PONZU_RUNNER_MODE: "tools" }).mode).toBe("tools");
+  expect(() => readEnv({ ...base, PONZU_RUNNER_MODE: "tools", ANTHROPIC_API_KEY: "k" })).toThrow(
+    "takes no Claude credential",
+  );
+  expect(() => readEnv({ ...base, PONZU_RUNNER_MODE: "drive" })).toThrow("claude or tools");
 });
 
 test("the image says where the agent's side lives", () => {

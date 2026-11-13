@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { appendEvent, getCanvas, getSandbox } from "@ponzu/db";
+import { driversStep } from "../cron/steps/drivers.ts";
 import { call, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
 
@@ -13,7 +15,7 @@ let ws: Workspace;
 
 beforeAll(async () => {
   t = await createTestApp();
-  ws = await workspaceWithRepo(t, { maya: "write", omar: "read" });
+  ws = await workspaceWithRepo(t, { maya: "write", omar: "read", ines: "write" });
 });
 afterAll(() => t.close());
 
@@ -290,5 +292,132 @@ describe("the tools act as the person", () => {
     const unknown = await tool(access_token, "get_canvas", { canvas: "cnv_0000000000000000" });
     expect(unknown.isError).toBe(true);
     expect(unknown.text).toBe("There is no such canvas.");
+  });
+});
+
+describe("driving a canvas", () => {
+  async function drivenCanvas(login = "maya") {
+    const { access_token } = await connect(login);
+    await mcp(access_token, "initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "claude-code", version: "2.1.0" },
+    });
+    const created = await tool(access_token, "create_canvas", { repository: ws.repo.fullName });
+    const canvasId = /Created (cnv_[0-9a-z]+)/.exec(created.text)![1]!;
+    const taken = await tool(access_token, "take_canvas", { canvas: canvasId, host: "T3 Code" });
+    expect(taken.isError).toBe(false);
+    expect(taken.text).toContain("You're driving");
+    return { token: access_token, canvasId };
+  }
+
+  test("taking a canvas shows the agent on its head and in its thread", async () => {
+    const { canvasId } = await drivenCanvas();
+    const canvas = await getCanvas(t.db, canvasId);
+    expect(canvas?.driver).toMatchObject({ client: "t3", name: "Claude Code", host: "T3 Code" });
+    const thread = await call(t, await as("maya"), "GET", `/v1/canvases/${canvasId}/thread`);
+    expect(
+      thread.body.items.some(
+        (item: { payload: { type?: string; action?: string } }) =>
+          item.payload.type === "driver" && item.payload.action === "took",
+      ),
+    ).toBe(true);
+  });
+
+  test("a canvas tool wakes the sandbox in tools mode and runs in its runner, as the agent", async () => {
+    const { token, canvasId } = await drivenCanvas();
+    const before = t.runnerTool.calls.length;
+    const answered = await tool(token, "get_tree", { canvas: canvasId, depth: 2 });
+    expect(answered).toEqual({ text: "Ran get_tree.", isError: false });
+    const relayed = t.runnerTool.calls.slice(before);
+    expect(relayed).toHaveLength(1);
+    expect(relayed[0]).toMatchObject({
+      name: "get_tree",
+      args: { depth: 2 },
+      driver: { name: "Claude Code" },
+    });
+    const sandbox = await getSandbox(t.db, canvasId);
+    expect(sandbox).toMatchObject({ state: "awake", claudeCredential: "tools" });
+    await t.backgroundDone();
+  });
+
+  test("someone else's agent can't take it, and people's messages wait for it to end", async () => {
+    const { canvasId } = await drivenCanvas();
+    const theirs = await connect("ines", "Codex");
+    const refused = await tool(theirs.access_token, "take_canvas", { canvas: canvasId });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain("is driving this canvas for someone else");
+    const message = await call(t, await as("ines"), "POST", `/v1/canvases/${canvasId}/messages`, {
+      text: "Hello?",
+    });
+    expect(message.status).toBe(409);
+    expect(message.body.error.code).toBe("canvas_driven");
+  });
+
+  test("the driving agent's wait hands it people's comments, once", async () => {
+    const { token, canvasId } = await drivenCanvas();
+    await appendEvent(t.db, {
+      canvasId,
+      kind: "comment",
+      priority: "next",
+      payload: {
+        threadId: "th_1",
+        messageId: "m_1",
+        text: "Make the hero warmer",
+        reply: false,
+        artboardId: "ab_1",
+        artboardName: "Hero",
+        nodeId: null,
+      },
+      userId: ws.people.ines!.userId,
+    });
+    const heard = await tool(token, "wait_for_activity", { canvas: canvasId, timeout_seconds: 1 });
+    expect(heard.text).toContain("commented");
+    expect(heard.text).toContain("Make the hero warmer");
+    expect(heard.text).toContain('on "Hero"');
+    const again = await tool(token, "wait_for_activity", { canvas: canvasId, timeout_seconds: 1 });
+    expect(again.text).toContain("Nothing yet");
+  });
+
+  test("taking it back ends the drive; the agent's next call says so", async () => {
+    const { token, canvasId } = await drivenCanvas();
+    const back = await call(t, await as("maya"), "DELETE", `/v1/canvases/${canvasId}/driver`);
+    expect(back.status).toBe(204);
+    expect((await getCanvas(t.db, canvasId))?.driver).toBeNull();
+    const refused = await tool(token, "get_tree", { canvas: canvasId });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain("You aren't driving this canvas");
+    await t.backgroundDone();
+  });
+
+  test("letting go, and disconnecting the agent, end the drive too", async () => {
+    const first = await drivenCanvas();
+    expect((await tool(first.token, "release_canvas", { canvas: first.canvasId })).isError).toBe(
+      false,
+    );
+    expect((await getCanvas(t.db, first.canvasId))?.driver).toBeNull();
+
+    const second = await drivenCanvas();
+    const headers = await as("maya");
+    const listed = await call(t, headers, "GET", "/v1/agent-connections");
+    for (const grant of listed.body) {
+      await call(t, headers, "DELETE", `/v1/agent-connections/${grant.id}`);
+    }
+    expect((await getCanvas(t.db, second.canvasId))?.driver).toBeNull();
+    await t.backgroundDone();
+  });
+
+  test("an agent quiet for 30 minutes loses the canvas at the next sweep", async () => {
+    const { token, canvasId } = await drivenCanvas();
+    await t.db.execute(
+      `update canvas_drivers set seen_at = now() - interval '31 minutes' where canvas_id = '${canvasId}'`,
+    );
+    expect(await driversStep.run(t.deps as never, new Date())).toEqual({
+      ended: 1,
+    });
+    expect((await getCanvas(t.db, canvasId))?.driver).toBeNull();
+    const refused = await tool(token, "get_tree", { canvas: canvasId });
+    expect(refused.text).toContain("You aren't driving this canvas");
+    await t.backgroundDone();
   });
 });

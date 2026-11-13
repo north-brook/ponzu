@@ -32,6 +32,7 @@ import {
   readOps,
   removePresence,
   settleCanvas,
+  takeCanvasDriver,
   takeOverCanvas,
   touchPresence,
 } from "@ponzu/db";
@@ -48,7 +49,7 @@ import { rotateAssetKey } from "../canvases/asset-key.ts";
 import { commitPost } from "../canvases/commit.ts";
 import { startCanvas } from "../canvases/create.ts";
 import { readCurrentDoc } from "../canvases/document.ts";
-import { endDrive } from "../canvases/drive.ts";
+import { driverMark, endDrive, noteDriveTaken } from "../canvases/drive.ts";
 import { deleteCanvasAndFiles } from "../canvases/files.ts";
 import { reverse } from "../canvases/undo.ts";
 import { EFFORTS } from "../claude/models.ts";
@@ -231,6 +232,11 @@ const CommitView = z.object({
   seq: z.number(),
 });
 const ReversalView = z.object({ committed: z.custom<CommittedOp>(), seq: z.number() });
+
+const DriveBody = z.object({
+  /** The app the agent runs in, when it says: "T3 Code". Shown beside its name. */
+  host: z.string().trim().min(1).max(40).optional(),
+});
 
 const PresenceBody = z.object({
   /** The page they are on. Left out: only "still here". */
@@ -657,6 +663,74 @@ export const canvases = new Hono<AppEnv>()
    * row, so it asks nothing of the canvas: one just deleted, or no longer theirs to open, is left
    * as quietly as any other.
    */
+  /**
+   * A person's own agent takes the canvas to drive it (docs/cloud.md, "Driving a canvas"): only
+   * through Ponzu's MCP (`take_canvas`), only with write access, never a settled canvas, and
+   * never from someone else's agent while its lease is live (409 `canvas_driven`). Ponzu's agent
+   * stops: an awake sandbox restarts in tools mode, and a sleeping one wakes so at the agent's
+   * first call. Answers who drives it now.
+   */
+  .put(
+    "/:id/driver",
+    access.user,
+    validate("param", Params),
+    validate("json", DriveBody),
+    async (c) => {
+      const { deps, actor } = c.var;
+      const agent = actor.agent;
+      if (!agent) {
+        throw new ApiError(
+          403,
+          "forbidden",
+          "Only your own agent can drive a canvas, through Ponzu's MCP.",
+        );
+      }
+      const { canvas } = await requireCanvas(c, c.req.valid("param").id, "write");
+      if (canvas.status === "settled") {
+        throw new ApiError(
+          409,
+          "canvas_settled",
+          "This canvas is settled: its work merged. Reopen it in Ponzu to drive it again.",
+        );
+      }
+      const host = c.req.valid("json").host ?? null;
+      const taken = await takeCanvasDriver(deps.db, {
+        canvasId: canvas.id,
+        grantId: agent.grantId,
+        userId: actor.user.id,
+        client: driverMark(agent.client, agent.name, host),
+        name: agent.name,
+        host,
+        version: agent.client,
+      });
+      if (!taken.taken) {
+        const { holder } = taken;
+        throw new ApiError(
+          409,
+          "canvas_driven",
+          `${holder.name}${holder.host ? ` in ${holder.host}` : ""} is driving this canvas for someone else. It's theirs until they let go, or 30 minutes after its last call.`,
+        );
+      }
+      const fresh = taken.driver.startedAt.getTime() === taken.driver.seenAt.getTime();
+      if (fresh || !canvas.driver) {
+        await noteDriveTaken(deps, {
+          canvasId: canvas.id,
+          driver: taken.driver,
+          owner: actor.user,
+        });
+        deps.analytics.capture("canvas driven", { canvas_id: canvas.id });
+        // A sandbox awake on Ponzu's agent restarts in place, in tools mode.
+        const sandbox = await getSandbox(deps.db, canvas.id);
+        if (sandbox?.state === "awake") {
+          deps.background("wake", startWake({ ...deps, log: c.var.log }, canvas.id, "drive"));
+        }
+      }
+      return c.json({
+        driver: { name: taken.driver.name, host: taken.driver.host, since: taken.driver.startedAt },
+      });
+    },
+  )
+
   /**
    * Take the canvas back from the person's own agent driving it (docs/cloud.md, "Driving a
    * canvas"): its lease ends, the thread says who took it back, and Ponzu's agent takes up what

@@ -47,12 +47,12 @@ export async function commitPost(
     caller,
     posted,
   }: {
-    canvas: Pick<Canvas, "id" | "agentState" | "agentArtboards">;
+    canvas: Pick<Canvas, "id" | "agentState" | "agentArtboards"> & { driver?: Canvas["driver"] };
     caller: Caller;
     posted: { id: string; op: unknown }[];
   },
 ): Promise<CommitResult> {
-  const actor = actorOf(caller);
+  const actor = actorOf(caller, canvas.driver ?? null);
   for (let attempt = 0; attempt < COMMIT_ATTEMPTS; attempt++) {
     const current = await readCurrentDoc(deps, canvas.id);
     if (!current) throw new ApiError(404, "not_found", "There is no such canvas.");

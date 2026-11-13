@@ -11,6 +11,7 @@ import {
   type SandboxState,
   sandboxes,
 } from "../schema/index.ts";
+import { DRIVER_LEASE_SECONDS } from "./canvas-drivers.ts";
 import { TURN_KINDS } from "./events.ts";
 import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
@@ -539,6 +540,11 @@ export interface WakeContext {
   /** What the canvas's head says its agent waits on now, and until when. */
   agentBlocker: AgentBlocker | null;
   agentBlockedUntil: Date | null;
+  /**
+   * Whether a person's own agent drives it now (a live lease, docs/cloud.md "Driving a canvas"):
+   * its sandbox runs only the canvas, with no Claude, so nothing of its Claude holds it back.
+   */
+  driven: boolean;
 }
 
 /** Whether the canvas `d`'s owner is still a member of its workspace. */
@@ -572,6 +578,7 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
     } | null;
     sandbox: Record<string, unknown> | null;
     owner_member: boolean;
+    driven: boolean;
   }>(
     db,
     sql`
@@ -585,7 +592,9 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
                        or (d.claude_account_id is null and a.user_id = d.owner_id)
                     order by (a.id = d.claude_account_id) desc limit 1),
         'sandbox', (select row_to_json(s) from sandboxes s where s.canvas_id = d.id),
-        'owner_member', ${ownerMember}
+        'owner_member', ${ownerMember},
+        'driven', exists (select 1 from canvas_drivers cd where cd.canvas_id = d.id
+                            and cd.seen_at >= now() - make_interval(secs => ${DRIVER_LEASE_SECONDS}))
       ) as result
         from canvases d
        where d.id = ${canvasId}
@@ -612,6 +621,7 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
     ownerMember: result.owner_member,
     agentBlocker: canvas.agent_blocker,
     agentBlockedUntil: canvas.agent_blocked_until ? new Date(canvas.agent_blocked_until) : null,
+    driven: result.driven,
   };
 }
 
@@ -735,13 +745,15 @@ export async function listSandboxesToSweep(
                 where s.canvas_id = e.canvas_id and s.kind = 'stop' and s.seq > e.seq
              )
         ) end,
-        'claude_usable', exists (
+        -- A runner in tools mode (a canvas a person's own agent drives) runs no Claude, so
+        -- nothing of the owner's Claude, or their leaving, stops it.
+        'claude_usable', s.claude_credential = 'tools' or exists (
           select 1 from claude_accounts a
            where ${runsOn}
              and a.status = 'connected'
              and (a.expires_at is null or a.expires_at > ${timeParam(now)}::timestamptz)
         ),
-        'owner_member', ${ownerMember}
+        'owner_member', s.claude_credential = 'tools' or ${ownerMember}
       )), '[]'::json)) as result
         from sandboxes s
         join canvases d on d.id = s.canvas_id

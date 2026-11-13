@@ -48,6 +48,18 @@ export function credentialMark(claude: Pick<Claude, "id" | "connectedAt">): stri
   return `${claude.id}@${claude.connectedAt.toISOString()}`;
 }
 
+/**
+ * What a sandbox's row records a runner started in tools mode with (docs/cloud.md, "Driving a
+ * canvas"): no Claude credential at all. A wake that finds the mode changed restarts the runner
+ * in place, as for a changed credential.
+ */
+export const TOOLS_MARK = "tools";
+
+/** What a runner should be started with now: tools mode while driven, else the owner's Claude. */
+export function startMark(context: Pick<WakeContext, "driven" | "claude">): string {
+  return context.driven ? TOOLS_MARK : credentialMark(context.claude!);
+}
+
 export interface Environment {
   /** A `StartEnv`, as a command's env takes it. */
   env: Record<string, string>;
@@ -110,6 +122,28 @@ export async function newEnvironment(
     claudeCredential: credentialMark(claude),
     portToken,
   };
+}
+
+/**
+ * A new environment for a runner in tools mode, for a canvas a person's own agent drives: the
+ * canvas, its tools and its renderer, and nothing of Claude's. No Claude credential and no repo
+ * secrets: nothing runs there but the runner, which reads neither.
+ */
+export async function newToolsEnvironment(
+  deps: Pick<Deps, "db" | "config" | "runnerBundle">,
+  canvasId: string,
+): Promise<Environment> {
+  const token = await createRunnerToken(deps.db, { canvasId, ttlSeconds: RUNNER_TOKEN_SECONDS });
+  const portToken = randomBytes(32).toString("base64url");
+  const env: StartEnv = {
+    PONZU_API_URL: deps.config.sandbox.apiUrl,
+    PONZU_CANVAS_ID: canvasId,
+    PONZU_RUNNER_TOKEN: token.token,
+    PONZU_PORT_TOKEN: portToken,
+    PONZU_RUNNER_BUNDLE: deps.runnerBundle().sha256,
+    PONZU_RUNNER_MODE: "tools",
+  };
+  return { env: asEnv(env), runnerTokenId: token.id, claudeCredential: TOOLS_MARK, portToken };
 }
 
 /** A `StartEnv` as a plain map of the variables it sets. */

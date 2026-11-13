@@ -8,6 +8,7 @@ import {
   getQuestion,
   getUploads,
   getUser,
+  isCanvasDriven,
   listAssets,
   listCanvasSecrets,
   listThreadItems,
@@ -217,6 +218,14 @@ export const canvasThread = new Hono<AppEnv>()
     async (c) => {
       const { deps, actor } = c.var;
       const { canvas } = await requireCanvas(c, c.req.valid("param").id, "write");
+      // A person's own agent drives it: Ponzu's agent is off, and the thread with it.
+      if (canvas.driver && (await isCanvasDriven(deps.db, canvas.id))) {
+        throw new ApiError(
+          409,
+          "canvas_driven",
+          `${canvas.driver.name} is driving this canvas, so Ponzu's agent isn't taking messages. Comment on the canvas to reach ${canvas.driver.name}, or take the canvas back.`,
+        );
+      }
       const { text, attachments: refs = [] } = c.req.valid("json");
       const assets = await listAssets(deps.db, { canvasId: canvas.id, paths: [...new Set(refs)] });
       const byPath = new Map(assets.map((asset) => [asset.path, asset]));

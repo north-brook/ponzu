@@ -3651,6 +3651,75 @@ of the person's own reads; it is a function's long wait, inside the 300 seconds 
 proven: the flow against each agent's own OAuth client (Claude Code, Codex, Cursor); the tests
 play the agent's side by the spec.
 
+### Driving a canvas
+
+An agent can also drive a canvas itself, in place of Ponzu's agent: `take_canvas`. Ponzu's agent
+is off, the canvas's sandbox runs only the canvas (its replica and Chromium, for measuring,
+screenshots, recordings, exports and lint), and the agent calls the canvas tools through the MCP,
+which relays each to that sandbox. People keep commenting, and their comments go to the agent.
+The code is `apps/api/src/mcp/drive.ts`, `canvases/drive.ts`, `apps/runner/src/tools-mode.ts`
+and `packages/tools/src/cloud/remote.ts`.
+
+**The lease** is `canvas_drivers` (one per canvas: the grant, the person, the agent's mark, name,
+the app it runs in and what it said it is, since when, and when last seen), and
+`canvases.driver` says who holds it, for the head (`{ client, name, host, userId, since }`),
+written in the same statement. `take_canvas` (`PUT /v1/canvases/:id/driver`, an agent's only:
+403 for a person's own app) takes write access, refuses a settled canvas (409 `canvas_settled`),
+and never takes a live lease from someone else's agent (409 `canvas_driven`); another of the same
+person's agents takes it over. Its answer is how to work on the canvas from outside it. Every
+drive tool call renews the lease, and so does `wait_for_activity` while it waits; one unseen for
+30 minutes is over at once for every read, and the minute's `drivers` step ends it. The mark is
+the app it runs in when that is one Ponzu draws (T3 Code, from `take_canvas`'s `host`), else the
+agent, from what it said it is in its MCP `initialize` (Claude Code, Codex as OpenAI's, Cursor).
+
+A drive ends when the agent lets go (`release_canvas`), a person takes it back (Take back,
+`DELETE /v1/canvases/:id/driver`, anyone who may steer the canvas), the lease lapses, or the
+person disconnects the agent. Each says so in the thread (a `driver` notice: `took`, `let_go`,
+`taken_back`, `lapsed`, `revoked`), and when the feed holds what people sent meanwhile and the
+agent didn't take, the canvas wakes on Ponzu's agent for it. A drive call without the lease
+answers that the agent isn't driving it, and why when it can.
+
+**While driven:**
+
+- The wake gates `owner`, `claude` and `claudeLimit` don't apply (`WakeContext.driven`): nothing
+  of the owner's Claude runs. `maintenance` and `billing` still do. A wake starts the runner in
+  tools mode (`PONZU_RUNNER_MODE=tools`, no Claude credential and no repo secrets) and the row
+  records `claude_credential = 'tools'`, so a wake that finds the mode changed (a drive begun on
+  an awake sandbox, or ended) restarts it in place as for a changed credential. The sweep's
+  `stop` step leaves a tools runner alone whatever the owner's Claude says.
+- The runner's claim hands out only a stop and a push (`WHILE_DRIVEN`). People's messages,
+  comments, answers and edits wait in the feed for the agent's `wait_for_activity`, which takes
+  them once (`takeDriverEvents`: delivered to `driver:<grant>`), oldest first, as text naming who
+  sent them and where; what GitHub says (a check, a review) waits for Ponzu's agent.
+- A person's message is refused (409 `canvas_driven`: comment on the canvas to reach the agent,
+  or take it back). The Mac's thread rail is closed and its toggle shows the agent's mark, with
+  Take back; the iPhone's chat button does the same.
+- What the runner commits is the agent's: the API names the actor from `canvases.driver`
+  ("Claude Code"), not Ponzu's Claude.
+
+**The tools-only runner** keeps the runner protocol a canvas with no agent needs: the session and
+its lease, an idle state report every heartbeat, claims (each acknowledged at once), and nothing
+to checkpoint, since only the canvas changes and it lives at the API. Its port also takes
+`POST /tool` (the port's bearer, as `/poke`): `{ name, args, driver: { name, client } }`, one
+canvas tool, run on its workspace one call at a time, answered as MCP content. Only the API holds
+the bearer; the agent's checks (its grant, its access, its lease) are the API's.
+
+**The relay.** The drive tools are `remoteTools` (`@ponzu/tools`): the cloud's tools, in the
+cloud's order, with none taking a sandbox path, since the agent's files are on its own computer.
+`write_html` and `create_artboard` take HTML in the call, `add_asset` its bytes (base64) or an
+https address the sandbox fetches, and `export` answers a link to the published file. The API
+lists them from `remote-catalog.json` (their names, descriptions and JSON Schemas, with `canvas`
+added and required), which a test holds to the tools, rather than loading the tools and the
+renderer they bring. Each call: the person must still be able to steer the canvas (their own
+`GET /v1/canvases/:id`), the agent must hold its lease (renewed), the sandbox must be awake in
+tools mode (woken and waited for, up to 90 seconds, when it isn't), the call keeps it awake as a
+person working on it would, and `POST /tool` runs it (tried again for up to 30 seconds while the
+runner is still opening the canvas). The tool's own refusal is the agent's to read; a runner
+that never came up says to try again in a moment.
+
+Not proven: a real Vercel sandbox in tools mode (the tests run the runner on its fake API and
+the API on fake sandboxes), and the time a first call waits on a sleeping sandbox.
+
 ## Security
 
 | Boundary | Rule |

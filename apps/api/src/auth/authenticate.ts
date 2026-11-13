@@ -67,7 +67,11 @@ export async function authenticateAgent(
     kind: "user",
     user: found.user,
     sessionId: `agent:${found.grant.id}`,
-    agent: { grantId: found.grant.id, name: found.grant.name, client },
+    agent: {
+      grantId: found.grant.id,
+      name: found.grant.name,
+      client: client ?? found.grant.lastClient,
+    },
   };
 }
 

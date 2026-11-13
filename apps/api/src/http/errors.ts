@@ -185,6 +185,13 @@ export type ErrorCode =
    * deleted their account, can be taken over. The owner came back, or a teammate took it first.
    */
   | "not_ownerless"
+  /**
+   * A person's own agent drives the canvas (docs/cloud.md, "Driving a canvas"): another agent
+   * can't take it, and a message to Ponzu's agent has nobody to go to. Comments still go.
+   */
+  | "canvas_driven"
+  /** The canvas is settled: an agent can't drive it until a person reopens it. */
+  | "canvas_settled"
   /** The caller has no Claude that could run the canvas: none connected, or its sign-in ran out. */
   | "claude_not_connected"
   /**

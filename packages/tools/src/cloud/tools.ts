@@ -108,7 +108,7 @@ function exportFormat(path: string, asked: ExportFormat | undefined): ExportForm
   return format;
 }
 
-const exportTool = tool({
+export const exportTool = tool({
   name: "export",
   title: "Export",
   group: "see",
@@ -140,7 +140,7 @@ const exportTool = tool({
   },
 });
 
-const updateCanvas = tool({
+export const updateCanvas = tool({
   name: "update_canvas",
   title: "Update canvas",
   group: "organize",

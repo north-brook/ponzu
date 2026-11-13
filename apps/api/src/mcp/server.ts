@@ -30,7 +30,8 @@ function listed(tools: McpTool[]) {
     name: tool.name,
     title: tool.title,
     description: tool.description,
-    inputSchema: z.toJSONSchema(z.object(tool.input), { target: "draft-7" }) as {
+    inputSchema: (tool.jsonSchema ??
+      z.toJSONSchema(z.object(tool.input), { target: "draft-7" })) as {
       type: "object";
       [key: string]: unknown;
     },
@@ -47,6 +48,15 @@ async function call(
 ): Promise<ToolAnswer> {
   const tool = tools.find((t) => t.name === name);
   if (!tool) return failed(`There is no tool ${name}.`);
+  if (tool.jsonSchema) {
+    try {
+      const answer = await tool.run((args ?? {}) as never, ctx);
+      return typeof answer === "string" ? { content: [{ type: "text", text: answer }] } : answer;
+    } catch (error) {
+      if (error instanceof Refusal) return failed(error.message);
+      throw error;
+    }
+  }
   const parsed = z.object(tool.input).safeParse(args ?? {});
   if (!parsed.success) {
     return failed(

@@ -28,6 +28,12 @@ export interface RunnerEnv {
   asAgent?: string;
   /** A Chromium for screenshots. Unset, the renderer looks for one. */
   chromium?: string;
+  /**
+   * `claude`: Ponzu's agent runs the canvas. `tools`: a person's own agent drives it
+   * (`PONZU_RUNNER_MODE=tools`, docs/cloud.md "Driving a canvas"): no Claude Code, only the
+   * canvas and its tools for that agent's calls, and no Claude credential.
+   */
+  mode: "claude" | "tools";
 }
 
 export class EnvError extends Error {
@@ -51,8 +57,16 @@ export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
   };
   // Claude Code takes the API key over the OAuth token when it has both, without a word, and
   // bills the key's account for a canvas whose owner meant their own plan.
+  const mode = env.PONZU_RUNNER_MODE ?? "claude";
+  if (mode !== "claude" && mode !== "tools") {
+    throw new EnvError("PONZU_RUNNER_MODE is claude or tools.");
+  }
   const credentials = CLAUDE_CREDENTIALS.filter((name) => env[name]);
-  if (credentials.length !== 1) {
+  if (mode === "tools" && credentials.length > 0) {
+    // Nothing here would use it, and a runner that holds none can lose none.
+    throw new EnvError("A runner in tools mode takes no Claude credential.");
+  }
+  if (mode === "claude" && credentials.length !== 1) {
     throw new EnvError(
       credentials.length
         ? "Both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set. Set exactly one: with both, Claude Code bills the API key."
@@ -77,6 +91,7 @@ export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
     ...(env.PONZU_GIT ? { git: env.PONZU_GIT } : {}),
     ...(env.PONZU_AS_AGENT ? { asAgent: env.PONZU_AS_AGENT } : {}),
     ...(env.PONZU_CHROMIUM ? { chromium: env.PONZU_CHROMIUM } : {}),
+    mode,
   };
 }
 

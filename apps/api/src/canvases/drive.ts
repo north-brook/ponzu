@@ -33,6 +33,21 @@ export interface DriverNotice {
   by: Person | null;
 }
 
+/**
+ * Which mark the apps draw for an agent: the app it said it runs in when that is one Ponzu
+ * draws (T3 Code), else the agent itself, by what it said it is in its MCP `initialize`
+ * (`claude-code/2.1.0`, `codex-mcp-client/0.40`, `cursor-vscode/1.0`) or its name.
+ */
+export function driverMark(client: string | null, name: string, host: string | null): string {
+  if (host && /\bt3\b|t3 ?code/i.test(host)) return "t3";
+  const said = `${client ?? ""} ${name}`.toLowerCase();
+  if (said.includes("claude")) return "claude";
+  if (said.includes("codex") || said.includes("openai")) return "openai";
+  if (said.includes("cursor")) return "cursor";
+  if (said.includes("t3")) return "t3";
+  return "other";
+}
+
 /** Say in the thread that a drive began. */
 export async function noteDriveTaken(
   deps: Pick<WakeDeps, "db">,

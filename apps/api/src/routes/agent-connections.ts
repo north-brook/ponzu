@@ -3,11 +3,13 @@ import {
   denyAgentAuthorization,
   getOpenAgentAuthorization,
   listAgentGrants,
+  listGrantDrivers,
   revokeAgentGrant,
 } from "@ponzu/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
+import { endDrive } from "../canvases/drive.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
@@ -99,6 +101,13 @@ export const agentConnections = new Hono<AppEnv>()
     if (actor.agent) throw new ApiError(403, "forbidden", "An agent can't disconnect agents.");
     const revoked = await revokeAgentGrant(deps.db, { userId: actor.user.id, grantId: id });
     if (!revoked) throw new ApiError(404, "not_found", "There is no such connected agent.");
+    // Whatever it drove goes back to Ponzu's agent.
+    for (const canvasId of await listGrantDrivers(deps.db, id)) {
+      await endDrive(
+        { ...deps, log: c.var.log },
+        { canvasId, how: "revoked", owner: actor.user, grantId: id },
+      );
+    }
     deps.analytics.capture("agent disconnected", {});
     return c.body(null, 204);
   })

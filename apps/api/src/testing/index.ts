@@ -30,7 +30,7 @@ import { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 import { FakePush } from "./fake-push.ts";
 import { FakeRateLimit } from "./fake-rate-limit.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
-import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
+import { FakeAnthropic, FakePoke, FakeRunnerTool, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { type CapturedEvent, MemoryAnalytics } from "./fake-analytics.ts";
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
@@ -51,7 +51,13 @@ export {
 export { FakePush } from "./fake-push.ts";
 export { FakeRateLimit } from "./fake-rate-limit.ts";
 export { FakeWorkos } from "./fake-workos.ts";
-export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
+export {
+  FakeAnthropic,
+  FakePoke,
+  FakeRunnerTool,
+  FakeSealer,
+  MemoryStorage,
+} from "./fakes.ts";
 
 /** The image the test app's sandboxes run, as current.json names one. */
 export const TEST_IMAGE = `ponzu-runner@sha256:${"a".repeat(64)}`;
@@ -180,6 +186,7 @@ export async function createTestApp(
   const anthropic = new FakeAnthropic();
   const storage = new MemoryStorage(clock);
   const poke = new FakePoke();
+  const runnerTool = new FakeRunnerTool();
   const sealer = new FakeSealer(clock);
   const model = new FakeModel();
   const reviewer = new FakeModel(CLAUDE_SONNET);
@@ -230,6 +237,7 @@ export async function createTestApp(
     storage: options.storage ?? storage,
     archives: options.storage ?? storage,
     poke: poke.poke,
+    runnerTool: runnerTool.tool,
     realtime: options.live?.realtime ?? sealer,
     model,
     reviewer,
@@ -384,6 +392,8 @@ export async function createTestApp(
     anthropic,
     storage,
     poke,
+    /** A driven canvas's runner's `POST /tool`: the calls relayed to it, and its answers. */
+    runnerTool,
     realtime: sealer,
     model,
     reviewer,

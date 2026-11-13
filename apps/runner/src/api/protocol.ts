@@ -57,8 +57,14 @@ export type StartEnv = {
   /** The repo's secrets (`REPO_SECRETS_VARIABLE`), at most 64 KB: our own cap. */
   PONZU_REPO_SECRETS?: string;
 } & (
-  | { ANTHROPIC_API_KEY: string; CLAUDE_CODE_OAUTH_TOKEN?: never }
-  | { CLAUDE_CODE_OAUTH_TOKEN: string; ANTHROPIC_API_KEY?: never }
+  | { ANTHROPIC_API_KEY: string; CLAUDE_CODE_OAUTH_TOKEN?: never; PONZU_RUNNER_MODE?: never }
+  | { CLAUDE_CODE_OAUTH_TOKEN: string; ANTHROPIC_API_KEY?: never; PONZU_RUNNER_MODE?: never }
+  /**
+   * Tools mode, for a canvas a person's own agent drives (docs/cloud.md, "Driving a canvas"):
+   * the canvas, its renderer and its tools for that agent's calls (`POST /tool`), and no Claude
+   * at all, so no Claude credential.
+   */
+  | { PONZU_RUNNER_MODE: "tools"; ANTHROPIC_API_KEY?: never; CLAUDE_CODE_OAUTH_TOKEN?: never }
 );
 
 /* ------------------------------------------------------------------ */

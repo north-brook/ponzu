@@ -177,3 +177,66 @@ export async function isCanvasDriven(db: Db, canvasId: string): Promise<boolean>
   );
   return Boolean(row);
 }
+
+/** What people sent a driven canvas, as its driving agent takes it. */
+export interface DriverEvent {
+  id: string;
+  seq: number;
+  kind: "message" | "comment" | "answer" | "edit";
+  payload: Record<string, unknown>;
+  /** Who sent it, by name; null for nobody Ponzu knows. */
+  from: { id: string; name: string } | null;
+  at: Date;
+}
+
+/** The kinds a driving agent takes from the feed: what people said, and what they changed. */
+export const DRIVER_EVENT_KINDS = ["message", "comment", "answer", "edit"] as const;
+
+/**
+ * Take what waits in a driven canvas's feed for the agent driving it, oldest first: people's
+ * messages, comments, answers and edits that nobody took. Taken once, as delivered to
+ * `driver:<grant>`, so no runner is handed them afterwards; what is left (a GitHub check, a
+ * review) waits for Ponzu's agent. Only while `grantId` holds the canvas's live lease.
+ */
+export async function takeDriverEvents(
+  db: Db,
+  { canvasId, grantId, limit = 50 }: { canvasId: string; grantId: string; limit?: number },
+): Promise<DriverEvent[]> {
+  const kinds = sql.join(
+    DRIVER_EVENT_KINDS.map((kind) => sql`${kind}`),
+    sql`, `,
+  );
+  const result = await run(
+    db.execute(sql`
+      with lease as (
+        select 1 from ${canvasDrivers}
+         where canvas_id = ${canvasId} and grant_id = ${grantId}
+           and seen_at >= now() - make_interval(secs => ${DRIVER_LEASE_SECONDS})
+      ), taken as (
+        update events e
+           set claimed_at = now(), claimed_by = ${`driver:${grantId}`}, delivered_at = now()
+         where e.id in (
+           select id from events
+            where canvas_id = ${canvasId} and delivered_at is null and kind in (${kinds})
+              and exists (select 1 from lease)
+            order by seq
+            limit ${limit}
+            for update skip locked)
+        returning e.id, e.seq, e.kind, e.payload, e.user_id, e.created_at
+      )
+      select t.id, t.seq, t.kind, t.payload, t.created_at as at,
+             u.id as user_id, coalesce(u.name, u.github_login) as user_name
+        from taken t left join users u on u.id = t.user_id
+       order by t.seq
+    `),
+  );
+  const rows = (result as unknown as { rows: Record<string, unknown>[] }).rows;
+  return rows.map((row) => ({
+    id: row.id as string,
+    seq: Number(row.seq),
+    kind: row.kind as DriverEvent["kind"],
+    payload: row.payload as Record<string, unknown>,
+    from: row.user_id ? { id: row.user_id as string, name: row.user_name as string } : null,
+    at: new Date(row.at as string),
+  }));
+}

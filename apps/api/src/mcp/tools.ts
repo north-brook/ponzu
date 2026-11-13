@@ -1,6 +1,8 @@
 import { listOpenQuestions } from "@ponzu/db";
 import { z } from "zod";
 import type { Deps } from "../deps/index.ts";
+import type { Logger } from "../http/log.ts";
+import { waitAsDriver } from "./drive.ts";
 import { type PersonApi, Refusal } from "./internal.ts";
 import {
   type CanvasRowLike,
@@ -22,7 +24,8 @@ import {
 /** What one call has: the person's API, the API's deps, and when to give up. */
 export interface ToolContext {
   api: PersonApi;
-  deps: Pick<Deps, "db" | "clock">;
+  /** The API's deps, with the request's log: a drive tool may wake a sandbox. */
+  deps: Deps & { log: Logger };
   /** Aborted when the agent hangs up. */
   signal: AbortSignal;
 }
@@ -44,6 +47,11 @@ export interface McpTool<Input extends z.ZodRawShape = z.ZodRawShape> {
   title: string;
   description: string;
   input: Input;
+  /**
+   * The input as JSON Schema, for a tool another process checks (the canvas tools, relayed to
+   * the runner): listed as it is, and its arguments handed on unchecked here.
+   */
+  jsonSchema?: Record<string, unknown>;
   readOnly?: boolean;
   run(args: z.infer<z.ZodObject<Input>>, ctx: ToolContext): Promise<ToolAnswer | string>;
 }
@@ -386,6 +394,9 @@ export const delegateTools: McpTool[] = [
     async run(args, ctx) {
       const { api, deps, signal } = ctx;
       const start = await getCanvas(api, args.canvas);
+      // Driving it: what people sent is for this agent.
+      const driving = await waitAsDriver(ctx, start.id, args.timeout_seconds ?? 120);
+      if (driving !== null) return driving;
       let after = args.after;
       if (after === undefined) {
         const { items } = await threadAfter(api, start.id, 0);

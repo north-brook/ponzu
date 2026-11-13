@@ -3,6 +3,12 @@
 export * from "./canvas.ts";
 export { MAX_ASSET_BYTES } from "./cloud/asset.ts";
 export { CLOUD_INSTRUCTIONS, type CloudGuideTopic, cloudGuides } from "./cloud/guides.ts";
+export {
+  getRemoteTool,
+  type RemoteToolEntry,
+  remoteCatalog,
+  remoteTools,
+} from "./cloud/remote.ts";
 export { ReplicaCanvas } from "./cloud/replica-canvas.ts";
 export { cloudTools, getCloudTool } from "./cloud/tools.ts";
 export {

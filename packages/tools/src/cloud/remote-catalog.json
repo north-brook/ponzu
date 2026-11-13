@@ -1,0 +1,1677 @@
+[
+  {
+    "name": "get_basic_info",
+    "title": "Get basic info",
+    "description": "Start here. Summarizes the canvas: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, and what is being worked on. Call get_guide('basics') once per session for the house rules.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "get_tree",
+    "title": "Get tree",
+    "description": "Indented outline of an artboard, node or page: tag, id, layer name, short text and layout hints. Cheap; use it to find ids before editing. Omit id for the whole canvas.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Artboard, node or page id. Omit for the whole canvas.",
+          "type": "string"
+        },
+        "depth": {
+          "description": "Levels to show. Default 4.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "get_node",
+    "title": "Get node",
+    "description": "Full detail for one node: its rendered box (x, y, width, height in px from the artboard's top left), styles, attributes, parent, children and text. For an artboard, also the height its content needs, so you can set its height in one step.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "get_html",
+    "title": "Get HTML",
+    "description": "The HTML of an artboard or node, exactly as stored: every size, color and font setting. Use it to study or reuse existing work, and as the spec when you build a canvas in code.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ids": {
+          "description": "Include data-id attributes. Default true.",
+          "type": "boolean"
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "find_nodes",
+    "title": "Find nodes",
+    "description": "Search nodes by text, layer name, tag, or declared style (property and/or value, including var(--token) references). Filters combine with AND. Searches the whole canvas unless `within` is given.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "text": {
+          "description": "Case-insensitive substring of the node's own text.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Case-insensitive substring of the layer name.",
+          "type": "string"
+        },
+        "tag": {
+          "description": "Tag name, e.g. h1, img, svg, button.",
+          "type": "string"
+        },
+        "style": {
+          "description": "Match a declared style, e.g. {\"value\": \"--color-link\"} or {\"property\": \"font-size\", \"value\": \"64px\"}.",
+          "type": "object",
+          "properties": {
+            "property": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "attr": {
+          "description": "Has this attribute, e.g. src or href.",
+          "type": "string"
+        },
+        "within": {
+          "description": "Page, artboard or node id to search inside.",
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "create_artboard",
+    "title": "Create artboard",
+    "description": "Add an artboard (a top-level frame). It's placed in a free spot unless you give x/y. Defaults to a flex column, even when its style sets display: flex; give flex-direction: row for side-by-side panes. Typical sizes: desktop 1440×900, tablet 768×1024, phone 390×844. Use height 'fit-content' for long pages. Optionally pass `html` to fill it in the same call.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Shown above the artboard."
+        },
+        "page": {
+          "description": "Page id or name. Defaults to the first page.",
+          "type": "string"
+        },
+        "width": {
+          "description": "Default 1440.",
+          "type": ["number", "string"]
+        },
+        "height": {
+          "description": "Default 900. 'fit-content' grows with content.",
+          "type": ["number", "string"]
+        },
+        "style": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": ["string", "number", "null"]
+          },
+          "description": "CSS declarations, camelCase or kebab-case. Numbers, and numeric strings like \"24\", get px where CSS needs a unit. null removes. Example: {\"padding\": 24, \"backgroundColor\": \"var(--color-ink)\"}"
+        },
+        "html": {
+          "description": "Initial content.",
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "write_html",
+    "title": "Write HTML",
+    "description": "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. To set a whole artboard's content in one call, target the artboard with mode replace-children.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Artboard or node id."
+        },
+        "html": {
+          "type": "string"
+        },
+        "mode": {
+          "description": "append (default) and prepend add inside target; before/after add as siblings; replace swaps the target; replace-children empties target first.",
+          "type": "string",
+          "enum": ["append", "prepend", "before", "after", "replace", "replace-children"]
+        }
+      },
+      "required": ["target", "html"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "update_styles",
+    "title": "Update styles",
+    "description": "Change CSS on one or more nodes or artboards. Merges into existing inline styles; null removes a property. Batch many edits: [{\"ids\": [\"n_a\",\"n_b\"], \"style\": {\"color\": \"var(--color-ink)\"}}]. Setting width/height on an artboard resizes it.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "updates": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "style": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": ["string", "number", "null"]
+                },
+                "description": "CSS declarations, camelCase or kebab-case. Numbers, and numeric strings like \"24\", get px where CSS needs a unit. null removes. Example: {\"padding\": 24, \"backgroundColor\": \"var(--color-ink)\"}"
+              }
+            },
+            "required": ["ids", "style"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["updates"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "set_text",
+    "title": "Set text",
+    "description": "Replace the text inside nodes, keeping their styles. Removes any child elements of those nodes.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "updates": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "text"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["updates"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "set_attributes",
+    "title": "Set attributes",
+    "description": "Set or remove HTML attributes (src, href, alt, viewBox, fill…). null removes. Event handlers are not allowed.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "attrs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "required": ["id", "attrs"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "duplicate",
+    "title": "Duplicate",
+    "description": "Deep-copy nodes or artboards. Copies of nodes go right after the original (or into `parent`); artboard copies are placed in a free spot to the right of the original, which makes variations easy, unless you give x/y. Returns each copy's new id; get_tree on a copy lists its descendants.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "ids": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parent": {
+          "description": "Put node copies inside this node instead.",
+          "type": "string"
+        },
+        "names": {
+          "description": "New names for the copies, in order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "x": {
+          "description": "Where the first artboard copy goes. Further artboard copies line up to its right.",
+          "type": "number"
+        },
+        "y": {
+          "description": "Row for artboard copies. Default: the original's row.",
+          "type": "number"
+        }
+      },
+      "required": ["ids"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "move_nodes",
+    "title": "Move nodes",
+    "description": "Reparent or reorder nodes without changing their ids. Give `before` or `after` a sibling id, or `parent` (plus optional `index`). To move artboards on the canvas, use update_artboard.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "moves": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "before": {
+                "type": "string"
+              },
+              "after": {
+                "type": "string"
+              },
+              "parent": {
+                "type": "string"
+              },
+              "index": {
+                "description": "Position among the parent's element children.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["moves"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "delete",
+    "title": "Delete",
+    "description": "Delete nodes or whole artboards. Undoable from the app.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "ids": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["ids"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": true
+  },
+  {
+    "name": "rename",
+    "title": "Rename",
+    "description": "Set layer names (data-name) on nodes or artboards.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "updates": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "name"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["updates"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "update_artboard",
+    "title": "Update artboard",
+    "description": "Move an artboard on the canvas, resize it, rename it, or move it to another page.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": ["number", "string"]
+        },
+        "height": {
+          "type": ["number", "string"]
+        },
+        "name": {
+          "type": "string"
+        },
+        "page": {
+          "description": "Move to this page (id or name).",
+          "type": "string"
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "add_asset",
+    "title": "Add asset",
+    "description": "Add an image, a font or a video to the canvas, from its bytes (base64) or an https address. Returns the reference to use for it, like assets/logo.png: as src in markup, or inside url() in styles and tokens. Up to 20 MB. The file has to be what its name says.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The file name to keep it under, with its extension (png, jpg, gif, webp, avif, svg, woff2, woff, ttf, otf, mp4, webm): letters, numbers, dots, dashes and underscores."
+        },
+        "data": {
+          "description": "The file's bytes, base64.",
+          "type": "string"
+        },
+        "url": {
+          "description": "Instead of data: an https address to fetch it from.",
+          "type": "string"
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "screenshot",
+    "title": "Screenshot",
+    "description": "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow (with the height the artboard needs), charts and images spilling over their neighbors, short labels wrapping in a row, zero-size and off-artboard elements, artboards overlapping each other on the canvas, broken images, tiny text, missing @keyframes, elements left invisible after an animation, more animating at once than the canvas can keep smooth, and states with no styles. Lists what animates. An artboard with a scene script (get_guide('act')) shows its poster frame, and lint lists beats that can't play. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion. A render that stalls stops within a minute and says which step it stalled on; if only the image fails, lint still comes back.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Artboard or node id."
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 3
+        },
+        "colorScheme": {
+          "description": "Theme for light-dark() colors. Default: the theme the person sees Ponzu in, else light.",
+          "type": "string",
+          "enum": ["light", "dark"]
+        },
+        "at": {
+          "description": "Milliseconds into the animation timeline. Default: settled, or a scene's poster. 0 is the first frame. With hover, focus or press, counts from that moment.",
+          "type": "number",
+          "minimum": 0
+        },
+        "hover": {
+          "description": "Node id to hover first. Its :hover rules apply.",
+          "type": "string"
+        },
+        "focus": {
+          "description": "Node id to focus first. :focus and :focus-visible apply.",
+          "type": "string"
+        },
+        "press": {
+          "description": "Node id to press (pointer down) first. :active and :hover apply.",
+          "type": "string"
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "record",
+    "title": "Record",
+    "description": "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops; an artboard with a scene script (get_guide('act')) is filmed as a storyboard, one frame where each beat lands, labeled with the beat. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state. The person's canvas plays the load once when the artboard appears and then holds the end; hovering doesn't replay it.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Artboard or node id. Frames show this area."
+        },
+        "frames": {
+          "description": "How many frames, evenly spaced. Default 9 (a scene: one per beat); 12–16 for fast or detailed motion.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 24
+        },
+        "from": {
+          "description": "Start, in ms. Default 0.",
+          "type": "number",
+          "minimum": 0
+        },
+        "to": {
+          "description": "End, in ms. Default: when everything has settled, plus one cycle of any loop (capped at 10s, or a scene's length).",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "scroll": {
+          "description": "Id of a scroll container (fixed height, overflow: auto). Steps through its scroll range instead of time, for animation-timeline: scroll() or view().",
+          "type": "string"
+        },
+        "hover": {
+          "description": "Node id to hover first. Its :hover rules apply.",
+          "type": "string"
+        },
+        "focus": {
+          "description": "Node id to focus first. :focus and :focus-visible apply.",
+          "type": "string"
+        },
+        "press": {
+          "description": "Node id to press (pointer down) first. :active and :hover apply.",
+          "type": "string"
+        },
+        "colorScheme": {
+          "description": "Theme for light-dark() colors. Default: the theme the person sees Ponzu in, else light.",
+          "type": "string",
+          "enum": ["light", "dark"]
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "export",
+    "title": "Export",
+    "description": "Export an artboard or node as PNG, JPEG or PDF, and get a link to the file, to download it or put it in a pull request description. Work with light-dark() colors exports in the theme the person sees Ponzu in unless you pass colorScheme.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Artboard or node id."
+        },
+        "format": {
+          "type": "string",
+          "enum": ["png", "jpeg", "pdf"]
+        },
+        "scale": {
+          "description": "Default 2.",
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 4
+        },
+        "colorScheme": {
+          "description": "Theme for light-dark() colors. Default: the theme the person sees Ponzu in, else light.",
+          "type": "string",
+          "enum": ["light", "dark"]
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "update_canvas",
+    "title": "Update canvas",
+    "description": "Name the canvas, or change its icon. Give a new canvas a real name once you know what it is: a few words for what is being made, like \"Checkout flow\".",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "icon": {
+          "description": "Name what's inside, as specifically as the list allows: phone for a mobile app, palette for tokens, login for sign-in, cart for checkout, layers or compare for variations, idea for explorations, sitemap for information architecture. Pages in one canvas read best with different icons. star means a favourite, not \"interesting\". null removes it.",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "page",
+                "file",
+                "home",
+                "folder",
+                "archive",
+                "note",
+                "book",
+                "star",
+                "settings",
+                "phone",
+                "tablet",
+                "desktop",
+                "laptop",
+                "watch",
+                "tv",
+                "browser",
+                "terminal",
+                "car",
+                "vr",
+                "game",
+                "speaker",
+                "headphones",
+                "keyboard",
+                "layout",
+                "grid",
+                "list",
+                "table",
+                "kanban",
+                "dashboard",
+                "sidebar",
+                "header",
+                "columns",
+                "sitemap",
+                "flow",
+                "form",
+                "input",
+                "toggle",
+                "menu",
+                "carousel",
+                "cursor",
+                "touch",
+                "idea",
+                "sparkle",
+                "magic",
+                "layers",
+                "compare",
+                "sketch",
+                "experiment",
+                "target",
+                "rocket",
+                "flag",
+                "bookmark",
+                "heart",
+                "pin",
+                "history",
+                "todo",
+                "done",
+                "palette",
+                "colors",
+                "type",
+                "shapes",
+                "components",
+                "brush",
+                "pen",
+                "ruler",
+                "dropper",
+                "image",
+                "motion",
+                "contrast",
+                "sun",
+                "moon",
+                "accessibility",
+                "cube",
+                "crop",
+                "user",
+                "profile",
+                "team",
+                "contacts",
+                "smile",
+                "crown",
+                "award",
+                "trophy",
+                "mail",
+                "inbox",
+                "chat",
+                "comment",
+                "send",
+                "notification",
+                "megaphone",
+                "call",
+                "share",
+                "link",
+                "help",
+                "info",
+                "alert",
+                "loading",
+                "login",
+                "lock",
+                "key",
+                "shield",
+                "fingerprint",
+                "search",
+                "filter",
+                "sliders",
+                "upload",
+                "download",
+                "scan",
+                "qr",
+                "cookie",
+                "cart",
+                "bag",
+                "store",
+                "wallet",
+                "card",
+                "money",
+                "coins",
+                "bank",
+                "invoice",
+                "receipt",
+                "tag",
+                "discount",
+                "gift",
+                "ticket",
+                "package",
+                "delivery",
+                "chart",
+                "analytics",
+                "pie",
+                "bars",
+                "growth",
+                "database",
+                "server",
+                "cloud",
+                "api",
+                "plug",
+                "webhook",
+                "code",
+                "branch",
+                "bug",
+                "ai",
+                "bot",
+                "github",
+                "figma",
+                "wifi",
+                "battery",
+                "tools",
+                "video",
+                "film",
+                "play",
+                "music",
+                "mic",
+                "camera",
+                "album",
+                "podcast",
+                "news",
+                "quote",
+                "calendar",
+                "clock",
+                "timer",
+                "alarm",
+                "hourglass",
+                "map",
+                "globe",
+                "compass",
+                "route",
+                "navigation",
+                "plane",
+                "train",
+                "bus",
+                "bike",
+                "hotel",
+                "building",
+                "office",
+                "mountain",
+                "beach",
+                "tent",
+                "translate",
+                "health",
+                "medicine",
+                "fitness",
+                "yoga",
+                "food",
+                "pizza",
+                "coffee",
+                "drink",
+                "leaf",
+                "plant",
+                "weather",
+                "pet",
+                "cat",
+                "baby",
+                "school",
+                "work",
+                "party",
+                "sport",
+                "fire",
+                "flash",
+                "diamond",
+                "calculator",
+                "legal",
+                "vote",
+                "science",
+                "dna"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "create_page",
+    "title": "Create page",
+    "description": "Add a page: a canvas of its own, holding artboards. Pages are for big groupings: flows, platforms, explorations, an archive.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "icon": {
+          "description": "Name what's inside, as specifically as the list allows: phone for a mobile app, palette for tokens, login for sign-in, cart for checkout, layers or compare for variations, idea for explorations, sitemap for information architecture. Pages in one canvas read best with different icons. star means a favourite, not \"interesting\".",
+          "type": "string",
+          "enum": [
+            "page",
+            "file",
+            "home",
+            "folder",
+            "archive",
+            "note",
+            "book",
+            "star",
+            "settings",
+            "phone",
+            "tablet",
+            "desktop",
+            "laptop",
+            "watch",
+            "tv",
+            "browser",
+            "terminal",
+            "car",
+            "vr",
+            "game",
+            "speaker",
+            "headphones",
+            "keyboard",
+            "layout",
+            "grid",
+            "list",
+            "table",
+            "kanban",
+            "dashboard",
+            "sidebar",
+            "header",
+            "columns",
+            "sitemap",
+            "flow",
+            "form",
+            "input",
+            "toggle",
+            "menu",
+            "carousel",
+            "cursor",
+            "touch",
+            "idea",
+            "sparkle",
+            "magic",
+            "layers",
+            "compare",
+            "sketch",
+            "experiment",
+            "target",
+            "rocket",
+            "flag",
+            "bookmark",
+            "heart",
+            "pin",
+            "history",
+            "todo",
+            "done",
+            "palette",
+            "colors",
+            "type",
+            "shapes",
+            "components",
+            "brush",
+            "pen",
+            "ruler",
+            "dropper",
+            "image",
+            "motion",
+            "contrast",
+            "sun",
+            "moon",
+            "accessibility",
+            "cube",
+            "crop",
+            "user",
+            "profile",
+            "team",
+            "contacts",
+            "smile",
+            "crown",
+            "award",
+            "trophy",
+            "mail",
+            "inbox",
+            "chat",
+            "comment",
+            "send",
+            "notification",
+            "megaphone",
+            "call",
+            "share",
+            "link",
+            "help",
+            "info",
+            "alert",
+            "loading",
+            "login",
+            "lock",
+            "key",
+            "shield",
+            "fingerprint",
+            "search",
+            "filter",
+            "sliders",
+            "upload",
+            "download",
+            "scan",
+            "qr",
+            "cookie",
+            "cart",
+            "bag",
+            "store",
+            "wallet",
+            "card",
+            "money",
+            "coins",
+            "bank",
+            "invoice",
+            "receipt",
+            "tag",
+            "discount",
+            "gift",
+            "ticket",
+            "package",
+            "delivery",
+            "chart",
+            "analytics",
+            "pie",
+            "bars",
+            "growth",
+            "database",
+            "server",
+            "cloud",
+            "api",
+            "plug",
+            "webhook",
+            "code",
+            "branch",
+            "bug",
+            "ai",
+            "bot",
+            "github",
+            "figma",
+            "wifi",
+            "battery",
+            "tools",
+            "video",
+            "film",
+            "play",
+            "music",
+            "mic",
+            "camera",
+            "album",
+            "podcast",
+            "news",
+            "quote",
+            "calendar",
+            "clock",
+            "timer",
+            "alarm",
+            "hourglass",
+            "map",
+            "globe",
+            "compass",
+            "route",
+            "navigation",
+            "plane",
+            "train",
+            "bus",
+            "bike",
+            "hotel",
+            "building",
+            "office",
+            "mountain",
+            "beach",
+            "tent",
+            "translate",
+            "health",
+            "medicine",
+            "fitness",
+            "yoga",
+            "food",
+            "pizza",
+            "coffee",
+            "drink",
+            "leaf",
+            "plant",
+            "weather",
+            "pet",
+            "cat",
+            "baby",
+            "school",
+            "work",
+            "party",
+            "sport",
+            "fire",
+            "flash",
+            "diamond",
+            "calculator",
+            "legal",
+            "vote",
+            "science",
+            "dna"
+          ]
+        },
+        "index": {
+          "description": "Position in the page list. Default last.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "update_page",
+    "title": "Update page",
+    "description": "Rename a page, change its icon, move it in the page list, or delete it (with its artboards).",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "string",
+          "description": "Page id or name."
+        },
+        "name": {
+          "type": "string"
+        },
+        "icon": {
+          "description": "Name what's inside, as specifically as the list allows: phone for a mobile app, palette for tokens, login for sign-in, cart for checkout, layers or compare for variations, idea for explorations, sitemap for information architecture. Pages in one canvas read best with different icons. star means a favourite, not \"interesting\". null removes it.",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "page",
+                "file",
+                "home",
+                "folder",
+                "archive",
+                "note",
+                "book",
+                "star",
+                "settings",
+                "phone",
+                "tablet",
+                "desktop",
+                "laptop",
+                "watch",
+                "tv",
+                "browser",
+                "terminal",
+                "car",
+                "vr",
+                "game",
+                "speaker",
+                "headphones",
+                "keyboard",
+                "layout",
+                "grid",
+                "list",
+                "table",
+                "kanban",
+                "dashboard",
+                "sidebar",
+                "header",
+                "columns",
+                "sitemap",
+                "flow",
+                "form",
+                "input",
+                "toggle",
+                "menu",
+                "carousel",
+                "cursor",
+                "touch",
+                "idea",
+                "sparkle",
+                "magic",
+                "layers",
+                "compare",
+                "sketch",
+                "experiment",
+                "target",
+                "rocket",
+                "flag",
+                "bookmark",
+                "heart",
+                "pin",
+                "history",
+                "todo",
+                "done",
+                "palette",
+                "colors",
+                "type",
+                "shapes",
+                "components",
+                "brush",
+                "pen",
+                "ruler",
+                "dropper",
+                "image",
+                "motion",
+                "contrast",
+                "sun",
+                "moon",
+                "accessibility",
+                "cube",
+                "crop",
+                "user",
+                "profile",
+                "team",
+                "contacts",
+                "smile",
+                "crown",
+                "award",
+                "trophy",
+                "mail",
+                "inbox",
+                "chat",
+                "comment",
+                "send",
+                "notification",
+                "megaphone",
+                "call",
+                "share",
+                "link",
+                "help",
+                "info",
+                "alert",
+                "loading",
+                "login",
+                "lock",
+                "key",
+                "shield",
+                "fingerprint",
+                "search",
+                "filter",
+                "sliders",
+                "upload",
+                "download",
+                "scan",
+                "qr",
+                "cookie",
+                "cart",
+                "bag",
+                "store",
+                "wallet",
+                "card",
+                "money",
+                "coins",
+                "bank",
+                "invoice",
+                "receipt",
+                "tag",
+                "discount",
+                "gift",
+                "ticket",
+                "package",
+                "delivery",
+                "chart",
+                "analytics",
+                "pie",
+                "bars",
+                "growth",
+                "database",
+                "server",
+                "cloud",
+                "api",
+                "plug",
+                "webhook",
+                "code",
+                "branch",
+                "bug",
+                "ai",
+                "bot",
+                "github",
+                "figma",
+                "wifi",
+                "battery",
+                "tools",
+                "video",
+                "film",
+                "play",
+                "music",
+                "mic",
+                "camera",
+                "album",
+                "podcast",
+                "news",
+                "quote",
+                "calendar",
+                "clock",
+                "timer",
+                "alarm",
+                "hourglass",
+                "map",
+                "globe",
+                "compass",
+                "route",
+                "navigation",
+                "plane",
+                "train",
+                "bus",
+                "bike",
+                "hotel",
+                "building",
+                "office",
+                "mountain",
+                "beach",
+                "tent",
+                "translate",
+                "health",
+                "medicine",
+                "fitness",
+                "yoga",
+                "food",
+                "pizza",
+                "coffee",
+                "drink",
+                "leaf",
+                "plant",
+                "weather",
+                "pet",
+                "cat",
+                "baby",
+                "school",
+                "work",
+                "party",
+                "sport",
+                "fire",
+                "flash",
+                "diamond",
+                "calculator",
+                "legal",
+                "vote",
+                "science",
+                "dna"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "delete": {
+          "type": "boolean"
+        }
+      },
+      "required": ["page"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "archive",
+    "title": "Archive",
+    "description": "Move superseded artboards to an Archive page (created if needed, kept last) and pack them into a grid. Keeps the working pages clean without losing history.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "ids": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["ids"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "get_tokens",
+    "title": "Get tokens",
+    "description": "The design tokens as plain CSS. Use them in styles as var(--name).",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "set_tokens",
+    "title": "Set tokens",
+    "description": "Set or remove custom properties in the canvas's tokens; null removes. Values are any CSS, including light-dark(#fff, #111) for themes. Or pass `css` to replace the whole stylesheet (it may hold @font-face and @import too). Example: {\"--color-ink\": \"#0E0E0E\", \"--radius-md\": \"10px\"}",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": ["string", "null"]
+          }
+        },
+        "css": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "list_comments",
+    "title": "List comments",
+    "description": "Comment threads in the canvas. Open ones by default. Most are pinned to an artboard and usually a node inside it; some sit on a page, off any board, beside the artboards.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["open", "resolved", "all"]
+        },
+        "artboard": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "get_comment",
+    "title": "Get comment thread",
+    "description": "A thread with every message, and what its pin points at.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "create_comment",
+    "title": "Create comment",
+    "description": "Start a thread pinned to a node or artboard when you need the person: a question only they can answer, a choice for them to make, or something you couldn't build as asked. Each open thread is something for them to act on. Explanations and rationale go on the canvas, in a \"Note: …\" artboard beside the work.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "string",
+          "description": "Node or artboard id."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["on", "text"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "reply",
+    "title": "Reply",
+    "description": "Reply in a comment thread, in one or two sentences. Only when the person needs to read it: to answer a question, give a recommendation, say how you read an ambiguous comment, or explain what you couldn't do. For a change you simply made, don't reply; resolve it with set_comment_status. Leave a thread you replied to open: resolved threads leave the canvas, so resolve: true hides your reply from the person.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "thread": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolve": {
+          "type": "boolean"
+        }
+      },
+      "required": ["thread", "text"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "set_comment_status",
+    "title": "Set comment status",
+    "description": "Resolve or reopen a thread without replying. Resolve a comment once you've done what it asked; that hides its pin from the canvas, and the change speaks for itself.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "thread": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "resolved"]
+        }
+      },
+      "required": ["thread", "status"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "send_feedback",
+    "title": "Send feedback to the Ponzu team",
+    "description": "Tell the people who build Ponzu how it's working for you. Send it when a tool confused you, failed or got in your way, when you had to work around something Ponzu can't do, when something worked notably well, or when the person asks you to pass something on. Keep it about Ponzu: no canvas content, names, paths or personal details. It goes to the Ponzu team, not to the person; carry on with their task afterwards.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "sentiment": {
+          "type": "string",
+          "enum": ["positive", "neutral", "negative", "mixed"]
+        },
+        "category": {
+          "type": "string",
+          "enum": ["bug", "missing_capability", "confusing_tool", "praise", "other"]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "One sentence."
+        },
+        "details": {
+          "description": "What happened, which tool, and what would have helped. Leave canvas content, names, paths and personal details out of any argument or error you quote.",
+          "type": "string",
+          "maxLength": 4000
+        },
+        "tool": {
+          "description": "The Ponzu tool it's about, if any.",
+          "type": "string"
+        }
+      },
+      "required": ["sentiment", "category", "summary"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "set_status",
+    "title": "Set status",
+    "description": "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person sees it while you work. Artboards you change already show as worked on, until you go a couple of minutes without a tool call. Pass artboards to claim them before your first edit.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A few words, lowercase, e.g. 'adding the autumn drop'."
+        },
+        "intent": {
+          "description": "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' It's kept in the canvas's history. Not your plan, and only once per request.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "artboards": {
+          "description": "The artboards this is about, replacing the ones you were working on. Omit to keep them.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["status"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "write_note",
+    "title": "Write note",
+    "description": "Save a markdown note with the canvas: decisions, the brief, open questions, what you learned about the person's taste. Notes outlive the conversation, so a later session can pick up where you left off. Overwrites; read first to append.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[\\w-]+$",
+          "description": "e.g. brief, decisions, field-notes"
+        },
+        "content": {
+          "description": "Markdown. null deletes the note.",
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["name", "content"],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "destructive": false
+  },
+  {
+    "name": "read_notes",
+    "title": "Read notes",
+    "description": "Read the canvas's notes. Omit name to read them all. Do this at the start of a session.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  },
+  {
+    "name": "get_guide",
+    "title": "Get guide",
+    "description": "House rules and workflows for work in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, comments (how comments and messages reach you, and what to do with each), variations, code (rebuilding UI that is already in the repo, and turning boards into code), motion, product (product shots: faux UI heroes, feature cards, bento grids, demos), act (scene scripts: a cursor that clicks and types, things that appear, totals that roll), kit (windows, phones and rows at real geometry), mobile.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "enum": [
+            "basics",
+            "layout",
+            "typography",
+            "comments",
+            "variations",
+            "code",
+            "motion",
+            "product",
+            "act",
+            "kit",
+            "mobile"
+          ]
+        }
+      },
+      "required": ["topic"],
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "destructive": false
+  }
+]

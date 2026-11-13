@@ -5,7 +5,8 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/cloud/testing.ts"
+    "./testing": "./src/cloud/testing.ts",
+    "./remote-catalog": "./src/cloud/remote-catalog.json"
   },
   "dependencies": {
     "zod": "^4",

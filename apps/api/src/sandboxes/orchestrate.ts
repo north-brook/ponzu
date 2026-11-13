@@ -32,7 +32,13 @@ import {
   SNAPSHOT_EXPIRATION_MS,
   STOP_COMMAND_MS,
 } from "./constants.ts";
-import { credentialMark, type Environment, newEnvironment, portBinding } from "./environment.ts";
+import {
+  type Environment,
+  newEnvironment,
+  newToolsEnvironment,
+  portBinding,
+  startMark,
+} from "./environment.ts";
 import { askWakeGates, LIFTED_BY_A_WAKE } from "./gates.ts";
 
 /*
@@ -151,7 +157,10 @@ export async function wakeCanvas(
   if (context.agentBlocker && LIFTED_BY_A_WAKE.has(context.agentBlocker)) {
     await liftAgentBlockers(db, { blockers: [context.agentBlocker], canvasId });
   }
-  await recordCanvasClaudeAccount(db, { canvasId, claudeAccountId: context.claude!.id });
+  // A driven canvas runs no Claude, so it pins no account to itself.
+  if (!context.driven) {
+    await recordCanvasClaudeAccount(db, { canvasId, claudeAccountId: context.claude!.id });
+  }
 
   try {
     const waking = await claim(deps, context, job.id);
@@ -223,8 +232,8 @@ async function claim(deps: JobDeps, context: WakeContext, by: string): Promise<S
         await claimSandbox(db, { canvasId, from: ["asleep"], now: now(), by, limits }),
       );
     case "awake":
-      // On the credential it should be: the request's poke reached it.
-      if (row.claudeCredential === credentialMark(context.claude!)) return null;
+      // On the credential it should be (or in tools mode, driven): the request's poke reached it.
+      if (row.claudeCredential === startMark(context)) return null;
       // A restart in place, on the owner's new credential.
       return claimed(await claimSandbox(db, { canvasId, from: ["awake"], now: now(), by, limits }));
     case "waking":
@@ -285,7 +294,6 @@ async function bringUp(
 ): Promise<Woke | null> {
   const { db, clock, vault, sandboxes } = deps;
   const { canvasId } = context;
-  const claude = context.claude!;
   await showAgentWaiting(db, { canvasId, waking: true, blocker: null });
 
   const name = sandboxName(deps, canvasId);
@@ -303,7 +311,9 @@ async function bringUp(
         timeoutMs: STOP_COMMAND_MS,
       });
     }
-    environment = await newEnvironment(deps, canvasId, claude);
+    environment = context.driven
+      ? await newToolsEnvironment(deps, canvasId)
+      : await newEnvironment(deps, canvasId, context.claude!);
     await sandboxes.start(at, {
       cmd: IMAGE_COMMANDS.start,
       env: environment.env,
