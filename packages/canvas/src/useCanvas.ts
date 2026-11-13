@@ -274,6 +274,7 @@ export function useCameraLayers(
   useLayoutEffect(() => {
     const s = scroller.current;
     if (!mounted || !s) return;
+    const dots = s.querySelector<HTMLElement>(":scope > .pz-dots");
     let moving: ReturnType<typeof setTimeout> | undefined;
     let zoom = Number.NaN;
     /** The zoom the promoted layer's bitmap was drawn at, while it is promoted. */
@@ -291,12 +292,17 @@ export function useCameraLayers(
       const at = `translate(${tx}px, ${ty}px)`;
       if (layer.current) layer.current.style.transform = `${at} scale(${zoom})`;
       // The ground's dots (styles.css, .pz-dots): one on the page's origin, which is at
-      // (tx, ty) on the plane; each is drawn 1px into its tile.
+      // (tx, ty) on the plane; each is drawn 1px into its tile. Written on the dots
+      // themselves, never on the plane: a custom property is inherited by everything under the
+      // element it's set on, and Chrome restyles all of it when it changes, so on the plane
+      // every frame of a zoom restyled every element of every board (apps/studio/perf).
       const step = dotStep(zoom);
       const from = (t: number) => (((t - 1) % step) + step) % step;
-      s.style.setProperty("--pz-dots-step", `${step}px`);
-      s.style.setProperty("--pz-dots-x", `${from(tx)}px`);
-      s.style.setProperty("--pz-dots-y", `${from(ty)}px`);
+      if (dots) {
+        dots.style.setProperty("--pz-dots-step", `${step}px`);
+        dots.style.setProperty("--pz-dots-x", `${from(tx)}px`);
+        dots.style.setProperty("--pz-dots-y", `${from(ty)}px`);
+      }
       const o = overlay.current;
       if (!o) return;
       o.style.transform = at;
