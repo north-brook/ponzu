@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readdirSync, type Stats } from "node:fs";
 import { join } from "node:path";
 import { MAX_SESSION_BYTES } from "../api/protocol.ts";
 import { fingerprint, type HashSkipped } from "./fingerprint.ts";
-import { type AgentShell, text, unpackKeepingNewer } from "./shell.ts";
+import { type AgentShell, UNPACK_KEEPING_NEWER } from "./shell.ts";
 
 /*
  * Claude Code's transcript of one session, as files under its config folder (`CLAUDE_CONFIG_DIR`,
@@ -20,24 +20,6 @@ import { type AgentShell, text, unpackKeepingNewer } from "./shell.ts";
 
 /** A Claude session id: what Claude Code makes (a UUID), and nothing that could be a path. */
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;
-
-/**
- * The runner's usage totals for the session (usage.ts), carried at the archive's top beside
- * `projects/`. A runner from before it puts the file back under the config folder, where nothing
- * reads it; this one takes it out instead.
- */
-export const USAGE_FILE = ".ponzu-usage.json";
-
-/** `tar` of the files `$2…` under `$1`, and the usage totals on its input as `USAGE_FILE`. */
-const PACK_WITH_USAGE = `set -e
-dir=$1
-shift
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-cat > "$tmp/${USAGE_FILE}"
-tar -czf - -C "$dir" "$@" -C "$tmp" ${USAGE_FILE}`;
-
-const UNPACK_SESSION = unpackKeepingNewer(USAGE_FILE);
 
 export class TranscriptTooLarge extends Error {
   override name = "TranscriptTooLarge";
@@ -107,19 +89,11 @@ export class Transcripts {
     return parts.join("|");
   }
 
-  /**
-   * The session's files as a gzipped tar, or null when there is no transcript. With `usage`, the
-   * runner's usage totals for the session go with them.
-   */
-  async pack(sessionId: string, usage?: string | null): Promise<Uint8Array | null> {
+  /** The session's files as a gzipped tar, or null when there is no transcript. */
+  async pack(sessionId: string): Promise<Uint8Array | null> {
     const files = this.files(sessionId);
     if (!files.length) return null;
-    const { configDir } = this.opts;
-    const bytes = usage
-      ? await this.opts.shell(["/bin/sh", "-c", PACK_WITH_USAGE, "sh", configDir, ...files], {
-          input: new TextEncoder().encode(usage),
-        })
-      : await this.opts.shell(["tar", "-czf", "-", "-C", configDir, ...files]);
+    const bytes = await this.opts.shell(["tar", "-czf", "-", "-C", this.opts.configDir, ...files]);
     if (bytes.byteLength > this.maxBytes)
       throw new TranscriptTooLarge(
         `The session's transcript is ${bytes.byteLength} bytes compressed, over the ${this.maxBytes} a checkpoint keeps.`,
@@ -129,17 +103,13 @@ export class Transcripts {
 
   /**
    * Puts an archive `pack` made back under the config folder. A file on the disk that is newer
-   * than the archive's copy is left as it is (`unpackKeepingNewer`): a transcript only grows, so
-   * the disk's is newer when the turn after the checkpoint was written but never saved. Answers
-   * the usage totals the archive carried, or null for one from before they went with it.
+   * than the archive's copy is left as it is (`UNPACK_KEEPING_NEWER`): a transcript only grows, so
+   * the disk's is newer when the turn after the checkpoint was written but never saved.
    */
-  async unpack(archive: Uint8Array): Promise<{ usage: string | null }> {
-    const printed = await this.opts.shell(
-      ["/bin/sh", "-c", UNPACK_SESSION, "sh", this.opts.configDir],
-      { input: archive },
-    );
-    const usage = text(printed);
-    return { usage: usage.trim() ? usage : null };
+  async unpack(archive: Uint8Array): Promise<void> {
+    await this.opts.shell(["/bin/sh", "-c", UNPACK_KEEPING_NEWER, "sh", this.opts.configDir], {
+      input: archive,
+    });
   }
 
   /** Whether the session has a transcript on this disk. */

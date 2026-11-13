@@ -717,7 +717,6 @@ export class Runner {
       boot: () => this.opts.boot?.() ?? { id: null, at: null },
       flush: () => this.flushDisk(),
       held: () => this.heldEvents.begin([...this.held.values()].map((event) => event.seq)),
-      usage: this.usage,
       // `turn_failed` is the notice whose own words the thread shows.
       notify: (message) =>
         this.notice(randomId("ti"), { type: "error", code: "turn_failed", message }),
@@ -1309,7 +1308,7 @@ export class Runner {
 
   private ack(id: string, inSession: boolean): void {
     const seq = this.held.get(id)?.seq;
-    if (seq !== undefined) this.heldEvents.settled(seq);
+    if (seq !== undefined) this.heldEvents.settled(seq, inSession);
     this.held.delete(id);
     this.acks.put(id, { id, inSession });
   }

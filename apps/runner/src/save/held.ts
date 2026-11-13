@@ -12,7 +12,11 @@
  * as of a claim that was not full (every event below it was handed to this process, or delivered
  * to the session before it started). As an archive is about to be taken, a mark begins from that
  * newest seq. It stops below the oldest event still unsettled then, and below any event that
- * settles while the archive is packed or uploaded, since that one is not in it.
+ * goes into the session while the archive is packed or uploaded, since that one is not in it.
+ *
+ * An event that never goes into a session (a stop, a push, a kind this runner does not know, a
+ * message turned away) still raises how far the session has got, but lowers no mark: no archive
+ * lacks it, and the API's check of what a checkpoint holds leaves such events out.
  */
 
 /** An archive's mark: read just before the checkpoint is recorded, then ended. */
@@ -28,9 +32,13 @@ export class HeldEvents {
   private taken = 0;
   private readonly marks = new Set<{ after: number }>();
 
-  /** An event this process was handed went into the session, or never will. */
-  settled(seq: number): void {
+  /**
+   * An event this process was handed is settled: it went into the session (`inSession`), or
+   * never will.
+   */
+  settled(seq: number, inSession = true): void {
     this.taken = Math.max(this.taken, seq);
+    if (!inSession) return;
     for (const mark of this.marks) mark.after = Math.min(mark.after, seq);
   }
 

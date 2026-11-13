@@ -70,16 +70,6 @@ export interface CheckpointOptions {
    * when it records the checkpoint.
    */
   held?(): HeldMark;
-  /**
-   * The runner's usage totals (usage.ts), which go in the transcript's archive and come back
-   * with it, so a turn reported before the disk went back is not counted again after it.
-   */
-  usage?: {
-    /** The totals of `sessionId` as the disk has them, or null. */
-    saved(sessionId: string): string | null;
-    /** Puts carried totals back, never lowering the disk's. Answers whether they changed. */
-    restore(data: string): boolean;
-  };
 }
 
 export class Checkpoints {
@@ -93,6 +83,11 @@ export class Checkpoints {
   private known: SavedPoint | null = null;
   /** What the person was already told, so it is said once. */
   private told = new Set<string>();
+  /**
+   * The `heldThrough` this process sent with the last recorded checkpoint that carried a
+   * transcript of its own: what the transcript the API keeps holds, as far as this process knows.
+   */
+  private heldSent = 0;
 
   constructor(private readonly opts: CheckpointOptions) {}
 
@@ -153,12 +148,8 @@ export class Checkpoints {
     this.known = latest;
     if (point.session && this.opts.transcripts) {
       try {
-        const { usage } = await this.opts.transcripts.unpack(point.session);
+        await this.opts.transcripts.unpack(point.session);
         restored.session = true;
-        if (usage && this.opts.usage) {
-          const raised = this.opts.usage.restore(usage);
-          this.opts.event("usage_restored", { turn: latest.turn, raised });
-        }
       } catch (err) {
         this.opts.log(`the session's transcript could not be restored: ${said(err)}`);
       }
@@ -260,13 +251,16 @@ export class Checkpoints {
     // carried, the API keeps from the checkpoint before (`keep`), so a checkpoint never carries
     // less than the last one.
     let session: Uint8Array | null = null;
+    /** The transcript could not be packed (not too large: it may well pack next time). */
+    let packFailed = false;
     if (sessionId && transcripts) {
       try {
-        session = await transcripts.pack(sessionId, this.opts.usage?.saved(sessionId));
+        session = await transcripts.pack(sessionId);
       } catch (err) {
         this.opts.log(`the session's transcript was left out of the checkpoint: ${said(err)}`);
         this.opts.event("checkpoint_session_skipped", { turn, reason: said(err) });
         if (err instanceof TranscriptTooLarge) this.tell("session", SESSION_UNSAVED);
+        else packFailed = true;
       }
     }
     let saved: SavedWork | null = null;
@@ -285,6 +279,21 @@ export class Checkpoints {
     // before is still the work.
     const keepWorkspace =
       !saved?.workspace && (!saved || !!saved.kept) && !!(known?.workspace || known?.wipCommit);
+    // What the transcript the API will keep holds. One packed now: what the mark says. One that
+    // failed to pack (tar refuses a file a turn is writing): the transcript kept from before, so
+    // what the last one sent held, never what was delivered since. One over the cap: nothing is
+    // said, and the API counts what was delivered, as before; that conversation is no longer
+    // saved, and saying less would keep its canvas off a new image for good.
+    let sent: number | undefined;
+    const heldThrough =
+      session && held
+        ? () => {
+            sent = held.read();
+            return sent;
+          }
+        : packFailed && held
+          ? () => this.heldSent
+          : undefined;
     // Before the call: once the API has it, this disk has everything it carries.
     this.write(this.markerPoint(), this.opts.boot(), turn);
     const point = await this.opts.api.saveCheckpoint({
@@ -296,14 +305,13 @@ export class Checkpoints {
       ...(keepSession || keepWorkspace
         ? { keep: { session: keepSession, workspace: keepWorkspace } }
         : {}),
-      // Said only of a transcript this checkpoint carries; one it keeps from before, or none,
-      // the API counts as it always has.
-      ...(session && held ? { heldThrough: () => held.read() } : {}),
+      ...(heldThrough ? { heldThrough } : {}),
     });
     this.known = point;
     this.turn = Math.max(turn, point.turn);
     // Another process saved a later one: this one was not recorded, so the disk is not at it.
     if (point.turn !== turn) return;
+    if (sent !== undefined) this.heldSent = sent;
     this.last = stamp;
     this.write(point, this.opts.boot());
     await this.opts.flush();

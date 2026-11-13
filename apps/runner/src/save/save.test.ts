@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, truncateSync, utimesSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,8 +11,8 @@ import { checkout } from "../repo.ts";
 import { type CheckpointOptions, Checkpoints, SESSION_UNSAVED } from "./checkpoints.ts";
 import { fingerprint, MAX_HASH_BYTES, RACY_MS } from "./fingerprint.ts";
 import { HeldEvents } from "./held.ts";
-import { agentShell, text, UNPACK_KEEPING_NEWER } from "./shell.ts";
-import { Transcripts, USAGE_FILE } from "./transcripts.ts";
+import { agentShell, ShellError, text } from "./shell.ts";
+import { Transcripts } from "./transcripts.ts";
 import { GitWork, gitIn, ScratchWork } from "./work.ts";
 
 const dirs: string[] = [];
@@ -687,84 +688,6 @@ test("a file's fingerprint reads what it holds only when its times are too close
   expect(fingerprint(path, stat, newest + RACY_MS + 1)).toBe(cheap);
 });
 
-test("the usage totals go in the transcript's archive and come out of it, never into the config folder", async () => {
-  const shell = agentShell(undefined, process.env);
-  const id = "5f0c6a52-0d6b-4f63-9d7c-3c1b1d2a9e10";
-  const from = new Transcripts({ configDir: await temp(), shell });
-  await transcript((from as unknown as { opts: { configDir: string } }).opts.configDir, id, [
-    '{"type":"user"}',
-  ]);
-  const totals = JSON.stringify({ sessionId: id, totals: [] });
-  const archive = (await from.pack(id, totals))!;
-  const plain = (await from.pack(id))!;
-
-  const configDir = await temp();
-  const to = new Transcripts({ configDir, shell });
-  expect(await to.unpack(archive)).toEqual({ usage: totals });
-  expect(to.has(id)).toBe(true);
-  expect(existsSync(join(configDir, USAGE_FILE))).toBe(false);
-  // An archive from before the totals went with it: the transcript, and no totals.
-  const before = await temp();
-  expect(await new Transcripts({ configDir: before, shell }).unpack(plain)).toEqual({
-    usage: null,
-  });
-
-  // A runner from before unpacks the new archive as it always has: the transcript comes back,
-  // and the totals sit beside `projects/` where nothing reads them.
-  const old = await temp();
-  await shell(["/bin/sh", "-c", UNPACK_KEEPING_NEWER, "sh", old], { input: archive });
-  expect(new Transcripts({ configDir: old, shell }).has(id)).toBe(true);
-  expect(readFileSync(join(old, USAGE_FILE), "utf8")).toBe(totals);
-});
-
-test("a rollback puts the checkpoint's usage totals back, never lowering the disk's", async () => {
-  const api = new FakeRunnerApi();
-  const id = "11111111-2222-3333-4444-555555555555";
-  const [stateDir, cwd, configDir] = [await temp(), await temp(), await temp()];
-  let totals = JSON.stringify({
-    sessionId: id,
-    totals: [
-      {
-        model: "opus",
-        inputTokens: 160,
-        outputTokens: 2,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-        costUsd: 0.5,
-      },
-    ],
-  });
-  const restoredWith: string[] = [];
-  const usage = {
-    saved: (sessionId: string) => (sessionId === id ? totals : null),
-    restore: (data: string) => {
-      restoredWith.push(data);
-      return true;
-    },
-  };
-  const file = await transcript(configDir, id, ['{"turn":1}']);
-  await writeFile(join(cwd, "a.html"), "one\n");
-  const first = await checkpoints(api, stateDir, cwd, configDir, { usage });
-  await first.made.recover(null);
-  await first.made.save(id);
-  const atTurnOne = readFileSync(join(stateDir, "checkpoint.json"), "utf8");
-  await writeFile(file, '{"turn":1}\n{"turn":2}\n');
-  await first.made.save(id);
-  expect(api.saved!.turn).toBe(2);
-
-  // The disk comes back at turn one, its totals with it.
-  await writeFile(join(stateDir, "checkpoint.json"), atTurnOne);
-  await writeFile(file, '{"turn":1}\n');
-  utimesSync(file, 1, 1);
-  totals = "unused";
-  const second = await checkpoints(api, stateDir, cwd, configDir, { usage });
-  await second.made.recover(api.saved);
-  expect(restoredWith).toHaveLength(1);
-  expect(JSON.parse(restoredWith[0]!).totals[0].inputTokens).toBe(160);
-  expect(second.events.map((e) => e.name)).toEqual(["usage_restored", "sandbox_rollback"]);
-  expect(second.events[0]!.fields).toEqual({ turn: 2, raised: true });
-});
-
 test("a checkpoint says what its transcript held when it was taken, not when it was recorded", async () => {
   const api = new FakeRunnerApi();
   const id = "11111111-2222-3333-4444-555555555555";
@@ -833,4 +756,78 @@ test("a recent file too large to hash is told apart by size and times, and said"
     },
   ]);
   expect(api.saved).toMatchObject({ turn: 1, session: true });
+});
+
+test("a transcript that fails to pack keeps the last one, and says what that one held", async () => {
+  const api = new FakeRunnerApi();
+  const id = "11111111-2222-3333-4444-555555555555";
+  const [stateDir, cwd, configDir] = [await temp(), await temp(), await temp()];
+  const file = await transcript(configDir, id, ['{"turn":1}']);
+  const real = agentShell(undefined, process.env);
+  let tarFails = false;
+  const shell: typeof real = (args, opts) =>
+    tarFails && args[0] === "tar"
+      ? Promise.reject(new ShellError("tar exited 1: file changed as we read it", 1))
+      : real(args, opts);
+  const held = new HeldEvents();
+  const { made, events } = await checkpoints(api, stateDir, cwd, configDir, {
+    transcripts: new Transcripts({ configDir, shell }),
+    held: () => held.begin([]),
+  });
+  await made.recover(null);
+
+  // A runner that has sent none yet says 0: the kept transcript holds nothing it knows of.
+  tarFails = true;
+  held.settled(3);
+  await writeFile(join(cwd, "a.html"), "a\n");
+  await made.save(id);
+  expect(api.checkpoints.at(-1)).toMatchObject({ turn: 1, heldThrough: 0 });
+
+  // Packed: what the mark says, 3.
+  tarFails = false;
+  await writeFile(file, '{"turn":1}\n{"turn":2}\n');
+  await made.save(id);
+  expect(api.checkpoints.at(-1)).toMatchObject({ turn: 2, heldThrough: 3 });
+  expect(api.saved).toMatchObject({ turn: 2, session: true });
+
+  // Event 4 goes in during the next turn, and tar fails on the transcript the turn is writing:
+  // the checkpoint keeps the last transcript and says what it held, 3, never 4.
+  held.settled(4);
+  tarFails = true;
+  await writeFile(file, '{"turn":1}\n{"turn":2}\n{"turn":3}\n');
+  await made.save(id);
+  expect(api.checkpoints.at(-1)).toMatchObject({
+    turn: 3,
+    keep: { session: true },
+    heldThrough: 3,
+  });
+  expect(events.filter((e) => e.name === "checkpoint_session_skipped")).toHaveLength(2);
+});
+
+test("a transcript over the cap is not saved, and the checkpoint does not say what it held", async () => {
+  const api = new FakeRunnerApi();
+  const id = "11111111-2222-3333-4444-555555555555";
+  const [stateDir, cwd, configDir] = [await temp(), await temp(), await temp()];
+  const file = await transcript(configDir, id, ['{"turn":1}']);
+  const held = new HeldEvents();
+  held.settled(3);
+  const { made } = await checkpoints(api, stateDir, cwd, configDir, {
+    transcripts: new Transcripts({
+      configDir,
+      shell: agentShell(undefined, process.env),
+      maxBytes: 20_000,
+    }),
+    held: () => held.begin([]),
+  });
+  await made.recover(null);
+  await made.save(id);
+  expect(api.checkpoints.at(-1)).toMatchObject({ turn: 1, heldThrough: 3 });
+
+  // The conversation outgrew what a checkpoint keeps: as before, nothing is said and the API
+  // counts what was delivered, so the canvas is not kept off a new image for good.
+  held.settled(4);
+  await writeFile(file, `${randomBytes(32_768).toString("base64")}\n`);
+  await made.save(id);
+  expect(api.checkpoints.at(-1)).toMatchObject({ turn: 2, keep: { session: true } });
+  expect(api.checkpoints.at(-1)).not.toHaveProperty("heldThrough");
 });

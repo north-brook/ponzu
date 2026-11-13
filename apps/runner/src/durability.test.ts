@@ -3,13 +3,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gunzipSync } from "node:zlib";
 import { ScriptedAgent, type ScriptedRun } from "./agent/scripted.ts";
 import { FakeRunnerApi } from "./api/fake.ts";
 import type { RunnerSession } from "./api/protocol.ts";
 import { Runner, type Timing } from "./run.ts";
 import { agentShell } from "./save/shell.ts";
-import { Transcripts, USAGE_FILE } from "./save/transcripts.ts";
+import { Transcripts } from "./save/transcripts.ts";
 import { ScratchWork } from "./save/work.ts";
 
 /*
@@ -288,29 +287,6 @@ test("a runner without a boot sends the session what a runner from before did", 
   open.push(runner);
   await runner.start();
   expect(api.sessionRequests).toEqual([{}]);
-});
-
-test("a turn's usage totals go in its checkpoint's transcript archive", async () => {
-  const api = new FakeRunnerApi();
-  const d = await disk();
-  const s = await start(api, d);
-  s.run.ready(SESSION);
-  await turn(api, s);
-  await writeTranscript(d.config, ['{"turn":1}']);
-  s.run.say("m1", "Done.");
-  const opus = {
-    model: "opus",
-    inputTokens: 120,
-    outputTokens: 30,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    costUsd: 0.25,
-  };
-  s.run.end({ usage: [opus] });
-  await until(() => api.checkpoints.length === 1);
-  const tar = gunzipSync(api.archives.session!).toString("utf8");
-  expect(tar).toContain(USAGE_FILE);
-  expect(tar).toContain(JSON.stringify({ sessionId: SESSION, totals: [opus] }));
 });
 
 test("an event delivered while the checkpoint's call is on its way is never counted as held", async () => {

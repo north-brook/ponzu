@@ -55,3 +55,21 @@ test("an ended mark follows nothing more, and is never below zero", () => {
   held.settled(1);
   expect(mark.read()).toBe(0);
 });
+
+test("an event that never goes into the session lowers no mark, and still counts as passed", () => {
+  const held = new HeldEvents();
+  held.settled(4);
+  const mark = held.begin([]);
+  // A stop acknowledged while the archive is on its way up: no archive lacks it.
+  held.settled(5, false);
+  expect(mark.read()).toBe(4);
+  // The session has got past it all the same: the next archive's mark goes from it.
+  expect(held.begin([]).read()).toBe(5);
+  // One that does go in, meanwhile, still lowers the first mark.
+  held.settled(6);
+  expect(mark.read()).toBe(4);
+  const open = held.begin([]);
+  held.settled(7, false);
+  held.settled(8);
+  expect(open.read()).toBe(6);
+});
