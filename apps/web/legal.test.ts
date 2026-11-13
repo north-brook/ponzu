@@ -174,6 +174,11 @@ test("the privacy policy claims nothing production does not do", () => {
   // The kinds that can't be turned off say so, and so do the terms (one sentence, below).
   expect(text).toContain("They can't be turned off.");
   expect(text).toContain("Emails have no open or click tracking.");
+  // email_notices keeps the address and has no foreign key to users, on purpose
+  // (packages/db/src/schema/email.ts), so the record outlives a deleted account.
+  expect(text).toContain(
+    "the address it went to, when, and whether it was sent), including after the account is deleted",
+  );
   // Deleting an account revokes the GitHub grant (apps/api/src/account/delete.ts). Production
   // has no PONZU_POSTHOG_PERSONAL_API_KEY, so forget.ts skips PostHog: the page must not say it
   // happens by itself, and says to write to us instead.
@@ -236,6 +241,10 @@ test("Resend is listed for every email Ponzu will send, and as not in use yet", 
     "legal notices",
   ])
     expect(resend?.purpose).toContain(kind);
+  // apps/api/src/deps/mail.ts sends only the address, never "Name <address>", so the row claims
+  // no name of the recipient; the joiners' names are listed separately.
+  expect(resend?.data.startsWith("Your email address, and the email:")).toBe(true);
+  expect(resend?.data).toContain("a suspension's reason");
 });
 
 test("no legal page states a price", () => {
