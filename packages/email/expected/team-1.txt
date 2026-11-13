@@ -1,0 +1,13 @@
+Subject: Maya joined Northbrook on Ponzu
+Preview: Northbrook now has 3 people on Ponzu.
+
+Maya joined Northbrook on Ponzu.
+Maya Chen @mayachen
+
+Northbrook now has 3 people on Ponzu. Who can use it follows GitHub: each person sees the canvases of the repositories GitHub lets them read.
+
+You get this because you're an admin of Northbrook on Ponzu.
+
+Stop emails when people join https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.team.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016
