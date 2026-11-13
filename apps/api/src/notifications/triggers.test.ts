@@ -590,4 +590,39 @@ describe("billing", () => {
       outcome: "access",
     });
   });
+
+  test("a collaborator's billing row in a personal workspace is not sent, its person's is", async () => {
+    const { ws, owner, mate, phone } = await billed();
+    const matePhone = await registerPhone(ws, mate);
+    await registerMac(ws, owner);
+    await registerMac(ws, mate);
+    // Written while the workspace counted both as admins, as an older API would have for a
+    // personal workspace's collaborator.
+    await t.db.execute(
+      `update memberships set role = 'admin' where workspace_id = '${ws.id}' and user_id = '${ws.people[mate]!.userId}'`,
+    );
+    await notify(t.deps, {
+      kind: "billing",
+      workspaceId: ws.id,
+      periodStart: PERIOD,
+      notice: "free_used",
+      amountCents: null,
+    });
+    await t.backgroundDone();
+    const rows = await rowsOf({ workspaceId: ws.id });
+    const mateRow = rows.find((row) => row.userId === ws.people[mate]!.userId);
+    expect(mateRow).toBeDefined();
+    expect((await deliveriesOf(mateRow!.id))[0]).toMatchObject({ state: "waiting" });
+    // Before it goes, the workspace turns out to be the owner's own account.
+    await t.db.execute(
+      `update workspaces set kind = 'personal', github_account_id = ${ws.people[owner]!.github.id} where id = '${ws.id}'`,
+    );
+    await later(MAC_DEFER_MS);
+    expect(pushesTo(matePhone.token)).toHaveLength(0);
+    expect((await deliveriesOf(mateRow!.id))[0]).toMatchObject({
+      state: "cancelled",
+      outcome: "access",
+    });
+    expect(pushesTo(phone.token)).toHaveLength(1);
+  });
 });
