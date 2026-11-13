@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/north-brook/ponzu/compare/mobile-v0.12.1...mobile-v1.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* ponzu cloud ([#561](https://github.com/north-brook/ponzu/issues/561))
+
+### Features
+
+* ponzu cloud ([#561](https://github.com/north-brook/ponzu/issues/561)) ([4c8a130](https://github.com/north-brook/ponzu/commit/4c8a130f86a2fb3546749959aa83cf1098670a7b))
+
+
+### Bug Fixes
+
+* **mobile:** the first cloud iphone build passes every simulator flow ([#567](https://github.com/north-brook/ponzu/issues/567)) ([298ce6c](https://github.com/north-brook/ponzu/commit/298ce6cc5d0b73cecf0299d8dbf01303ce4ffa1c))
+
 ## [0.12.1](https://github.com/north-brook/ponzu/compare/mobile-v0.12.0...mobile-v0.12.1) (2026-11-10)
 
 
