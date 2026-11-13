@@ -88,8 +88,9 @@ const reachable = ({ installationId, suspendedAt }: AppInstallation) =>
  *
  * `known` is the kept answer when the caller read it already (`getCanvasAccess` reads it with
  * the canvas); left out, it is read here. `unlisted` is for a repo a cut-short list of the
- * person's left out, which their list cannot settle: a `read` is then kept only for someone
- * GitHub gives every public repo of the account (`readsPublic`), on a public repo.
+ * person's left out, which their list cannot settle: a `read` then stands on a private repo
+ * (`givenRead`) and, on a public one, only for someone GitHub gives every public repo of the
+ * account (`readsPublic`).
  */
 export async function repoPermission(
   deps: RepoAccessDeps,
@@ -137,7 +138,7 @@ export async function repoPermission(
   }
   if (permission === "read") {
     if (unlisted) {
-      permission = unlisted.readsPublic && !unlisted.private ? "read" : "none";
+      permission = givenRead(unlisted) ? "read" : "none";
     } else if (user.id === null) {
       return "none";
     } else {
@@ -164,10 +165,8 @@ export async function repoPermission(
 /**
  * Whether a `read` GitHub's question as the App gave is one GitHub gave the person: their own
  * list of the workspace's repos says, and keeps what it says for every repo of it. When their
- * GitHub token is dead nothing can tell, except that on a private repo GitHub answers `read`
- * only to someone it gave the repo, so it stands (and is kept) there and is `none` on a public
- * one.
- * `none` too when the repo has left Ponzu.
+ * GitHub token is dead, or their list was cut short before this repo, it is `keepRead`'s to
+ * say. `none` too when the repo has left Ponzu.
  */
 async function settleRead(
   deps: RepoAccessDeps,
@@ -194,14 +193,52 @@ async function settleRead(
     });
   } catch (error) {
     if (!(error instanceof ApiError && error.code === "github_reauth_required")) throw error;
-    if (!visibility.private) return "none";
-    await recordRepoAccess(deps.db, [
-      { userId: user.id, repoId: repo.id, permission: "read", checkedAt: new Date(asked) },
-    ]);
-    return "read";
+    return keepRead(deps, { userId: user.id, repo, visibility, asked });
   }
-  return (await getRepoAccess(deps.db, { userId: user.id, repoId: repo.id }))?.permission ?? "none";
+  const listed = await getRepoAccess(deps.db, { userId: user.id, repoId: repo.id });
+  // A list cut short that left this repo out, and did not get to asking about it, says nothing
+  // of it: the answer kept from before is not trusted, whatever it says.
+  if (!listed || listed.checkedAt.getTime() < asked) {
+    return keepRead(deps, { userId: user.id, repo, visibility, asked });
+  }
+  return listed.permission;
 }
+
+/**
+ * A `read` GitHub's question as the App gave, when the person's own list could not settle it:
+ * it stands (and is kept) on a private repo, where GitHub answers `read` only to someone it gave
+ * the repo, and is `none` on a public one.
+ */
+async function keepRead(
+  deps: RepoAccessDeps,
+  {
+    userId,
+    repo,
+    visibility,
+    asked,
+  }: { userId: string; repo: { id: string }; visibility: { private: boolean }; asked: number },
+): Promise<RepoPermission> {
+  const permission = givenRead({ readsPublic: false, private: visibility.private })
+    ? "read"
+    : "none";
+  await recordRepoAccess(deps.db, [
+    { userId, repoId: repo.id, permission, checkedAt: new Date(asked) },
+  ]);
+  return permission;
+}
+
+/**
+ * Whether a `read` GitHub's question as the App gave is one GitHub gave the person, from what
+ * is known without their list: always on a private repo (nobody else is answered `read` there),
+ * and on a public one only for someone GitHub gives every public repo of the account.
+ */
+const givenRead = ({
+  readsPublic,
+  private: isPrivate,
+}: {
+  readsPublic: boolean;
+  private: boolean;
+}) => isPrivate || readsPublic;
 
 /** Whether a permission lets its holder steer a canvas: send messages, answer, merge. */
 export const canWrite = (permission: RepoPermission) =>

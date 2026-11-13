@@ -288,6 +288,29 @@ describe("every reader, every repo", () => {
     expect(await canvasIds(headers, ws.id)).toEqual([canvas.id]);
   });
 
+  test("a repo list GitHub cuts short keeps a read-only collaborator's private repo", async () => {
+    const ws = await workspaceWithRepo(t, { cy: "write", eve: "read" });
+    const canvas = await canvasIn(t, ws, "cy", emptyDoc("Cut short, private"));
+    const eve = ws.people.eve!;
+    await syncGithub(t.deps, eve.userId);
+    expect(await canvasIds(eve.headers, ws.id)).toEqual([canvas.id]);
+
+    const { github } = t.deps;
+    const listInstallationRepositories = github.listInstallationRepositories;
+    // Past the pages Ponzu reads: the repo is not in what was read, and GitHub still gave it her.
+    github.listInstallationRepositories = async () => ({ items: [], complete: false });
+    try {
+      t.clock.advance(61_000);
+      expect(await canvasIds(eve.headers, ws.id)).toEqual([canvas.id]);
+      t.clock.advance(61_000);
+      expect((await call(t, eve.headers, "GET", `/v1/canvases/${canvas.id}`)).body.access).toBe(
+        "read",
+      );
+    } finally {
+      github.listInstallationRepositories = listInstallationRepositories;
+    }
+  });
+
   test("a repo list GitHub cuts short still loses a repo the person lost", async () => {
     const ws = await workspaceWithRepo(t, { cy: "write", dee: "read" });
     const canvas = await canvasIn(t, ws, "cy", emptyDoc("Cut short"));

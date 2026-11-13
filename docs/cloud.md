@@ -333,8 +333,11 @@ GitHub's, by numeric ids, and reaches the table one of two ways:
   list GitHub cut short (past 2,000 repos) says nothing of the repos it left out, so
   the oldest of those whose answer a reader acts on (one that lets them read, or a
   repo with a canvas), up to 20 at a time, are asked about as the App; for those a
-  `read` stands only for a member of the organization on a public repo, since nothing
-  else can say whether it was given.
+  `read` stands on a private repo (GitHub answers `read` there only to someone it gave
+  the repo) and, on a public one, only for a member of the organization, since nothing
+  else can say whether it was given. A repo the cut-short list left out and did not get
+  to asking about is settled when it is opened as for a dead token (below), never by
+  an answer kept from before.
 - **A question, as the App.** `GET /repos/{owner}/{repo}/collaborators/{login}/permission`
   about one repo, asked by `requireCanvas`, `POST /v1/canvases` and a review's check
   when there is no fresh answer. It takes the answer only when the account it names

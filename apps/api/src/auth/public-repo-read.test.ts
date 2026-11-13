@@ -567,7 +567,7 @@ describe("answers kept under the old rule", () => {
     expect(canRead(await facts(), stranger.userId, at)).toBe(true);
 
     const migration = readFileSync(
-      new URL("../../../../packages/db/migrations/0032_public_repo_read.sql", import.meta.url),
+      new URL("../../../../packages/db/migrations/0033_public_repo_read.sql", import.meta.url),
       "utf8",
     );
     // As the migrator runs it: its statements in order, in one transaction.
