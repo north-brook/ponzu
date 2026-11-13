@@ -4,7 +4,8 @@
  * a question on a canvas not on screen shown once, the dock's number, a click opening the
  * canvas's thread on the question and reading it, the banner taken away as the question closes,
  * a ping about the canvas in front of the person read rather than shown, a billing ping opening
- * Plan and usage, and Settings listing This Mac first. Skips where there is no Chrome or Chromium.
+ * Plan and usage, Settings listing This Mac first, and its Email group only once the API can send
+ * email. Skips where there is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
@@ -242,14 +243,59 @@ describe.skipIf(!chromiumPath)("the Mac's notifications", () => {
     expect(
       await nav.getByRole("button", { name: "Notifications" }).getAttribute("aria-current"),
     ).toBe("page");
-    // No iPhone yet: the way to get one; and no email row, since this Ponzu can't send one.
+    // No iPhone yet: the way to get one; and no Email group, since this Ponzu can't send email.
     expect(await page.getByText("Get Ponzu on your iPhone").count()).toBeGreaterThan(0);
-    expect(await page.getByText("a daily digest only").count()).toBe(0);
+    expect(await page.locator('section[aria-label="Email"]').count()).toBe(0);
+    expect(await page.getByText("Daily digest").count()).toBe(0);
     if (SHOTS) {
       mkdirSync(SHOTS, { recursive: true });
       await page.screenshot({ path: join(SHOTS, "settings-notifications-this-mac.png") });
     }
     await page.keyboard.press("Escape");
+    expect(errors).toEqual([]);
+  });
+
+  test("once Ponzu can send email, Settings has the Email group, and a switch saves only itself", async () => {
+    // A window of its own, on an API with RESEND_API_KEY set.
+    const page = await browser.newPage();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    page.on("pageerror", (error) => errors.push(String(error)));
+    await page.goto(`${server.url}?as=returning&email=1`);
+    await page.locator("#sidebar").waitFor();
+    await page.keyboard.press("Meta+,");
+    const nav = page.getByRole("navigation", { name: "Settings" });
+    await nav.getByRole("button", { name: "Notifications" }).click();
+    const group = page.locator('section[aria-label="Email"]');
+    await group.waitFor();
+    const recap = group.getByRole("switch", { name: "Friday recap" });
+    // Maya is an admin of Northbrook, a team: all three, digest first.
+    expect(await group.getByRole("switch").evaluateAll((s) => s.map((e) => e.ariaLabel))).toEqual([
+      "Daily digest",
+      "Friday recap",
+      "When people join",
+    ]);
+    expect(await recap.getAttribute("aria-checked")).toBe("true");
+
+    // The recap's "Stop these emails", elsewhere: this window still shows it on.
+    await page.evaluate(async () => {
+      const { backend, me } = window.ponzuFake!;
+      await backend.connect(me).api.notifications.set({ emailRecap: false });
+    });
+    expect(await recap.getAttribute("aria-checked")).toBe("true");
+    await group.getByRole("switch", { name: "Daily digest" }).click();
+    await waitUntil(() =>
+      page.evaluate(() => {
+        const { backend, me } = window.ponzuFake!;
+        return backend.settings.prefs.get(me.id)?.emailDigest === true;
+      }),
+    );
+    // The digest went on, and the recap stayed off: the whole stale set was not sent back.
+    const kept = await page.evaluate(() => {
+      const { backend, me } = window.ponzuFake!;
+      return backend.settings.prefs.get(me.id);
+    });
+    expect(kept).toMatchObject({ emailDigest: true, emailRecap: false });
+    await page.close();
     expect(errors).toEqual([]);
   });
 });

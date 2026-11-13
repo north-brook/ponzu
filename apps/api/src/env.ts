@@ -7,6 +7,7 @@ import type { PosthogConfig } from "./analytics/posthog.ts";
 import type { PosthogAdminConfig } from "./analytics/posthog-admin.ts";
 import { DEFAULT_EMAIL_FROM } from "./deps/mail.ts";
 import type { R2Config } from "./deps/storage.ts";
+import { type EmailConfig, emailPaused, parseEmailAllow, parseEmailPaused } from "./email/kinds.ts";
 import {
   BILLING_MODES,
   type Features,
@@ -27,6 +28,11 @@ export type Environment = (typeof ENVIRONMENTS)[number];
  * script), so its runners must call dev, never production.
  */
 export const DEFAULT_API_URL = "https://api-dev.ponzu.design";
+
+/** One mailbox, bare: `hello@ponzu.design`. */
+const MAILBOX = /^[^<>@\s,"]{1,64}@[A-Za-z0-9.-]{1,253}$/;
+/** One mailbox with a name, on one line: `Ponzu <ping@mail.ponzu.design>`. */
+const MAILBOX_WITH_NAME = /^[^<>\r\n]{1,64} <[^<>@\s]{1,64}@[A-Za-z0-9.-]{1,253}>$/;
 
 /** What every Vercel deployment must set beyond the variables the API always needs. */
 const REQUIRED_ON_VERCEL = ["PONZU_ENVIRONMENT", "PONZU_API_URL"] as const;
@@ -172,17 +178,40 @@ const schema = z.object({
    */
   EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
 
-  // Notifications: the daily email (deps/mail.ts, notifications/digest.ts).
-  /** Resend's API key. Unset, email is off: no digest is sent and Settings hides its row. */
+  // Email (docs/cloud.md, "Email"; deps/mail.ts, email/send.ts).
+  /**
+   * Resend's API key. Unset, email is off: nothing is sent, no email job is recorded, and
+   * Settings hides its Email group.
+   */
   RESEND_API_KEY: z.string().min(1).optional(),
   /**
-   * Who the daily email is from, on a domain verified at Resend, like `Ponzu <ping@ponzu.design>`
-   * (the default). One line, a name and an address in angle brackets.
+   * Who Ponzu's emails are from, on a domain verified at Resend, like
+   * `Ponzu <ping@mail.ponzu.design>` (the default). One line, a name and an address in angle
+   * brackets.
    */
-  PONZU_EMAIL_FROM: z
+  PONZU_EMAIL_FROM: z.string().regex(MAILBOX_WITH_NAME).default(DEFAULT_EMAIL_FROM),
+  /** Where replies go: one address, bare or as From is written. Unset: replies go to From. */
+  PONZU_EMAIL_REPLY_TO: z
     .string()
-    .regex(/^[^<>\r\n]{1,64} <[^<>@\s]{1,64}@[A-Za-z0-9.-]{1,253}>$/)
-    .default(DEFAULT_EMAIL_FROM),
+    .refine((value) => MAILBOX.test(value) || MAILBOX_WITH_NAME.test(value))
+    .optional(),
+  /**
+   * Outside production, the only addresses email may go to: exact addresses and `@domain`
+   * entries, comma-separated. Unset there, every email is held. Ignored on production, where
+   * setting it is a mistake the production check reports.
+   */
+  PONZU_EMAIL_ALLOW: z
+    .string()
+    .refine((value) => parseEmailAllow(value) !== null)
+    .optional(),
+  /**
+   * Kinds of email held, comma-separated, from `digest`, `billing`, `team` and `recap`: their
+   * work is dropped, not sent later. Never `billing` while PONZU_BILLING is on in production.
+   */
+  PONZU_EMAIL_PAUSED: z
+    .string()
+    .refine((value) => parseEmailPaused(value) !== null)
+    .optional(),
 
   // Feature switches (features.ts). Each is off when unset.
   /** off, observe (the gate is computed and what it would refuse is logged), or on. */
@@ -313,8 +342,10 @@ export interface Env {
   posthogAdmin: PosthogAdminConfig | null;
   /** Pings to phones through Expo, or null when EXPO_ACCESS_TOKEN is unset and push is off. */
   push: { accessToken: string } | null;
-  /** The daily email through Resend, or null when RESEND_API_KEY is unset and email is off. */
+  /** Email through Resend, or null when RESEND_API_KEY is unset and email is off. */
   mail: { apiKey: string; from: string } | null;
+  /** How email is sent once it is on: Reply-To, the allowlist outside production, what is paused. */
+  email: EmailConfig;
   /** Which features are switched on (features.ts): all off unless their variables say so. */
   features: Features;
   /** Whether this runs as a Vercel deployment (`VERCEL=1`): only there can rate limits be asked. */
@@ -366,6 +397,11 @@ export function readEnv(
   }
   if (pair.problem) throw new EnvError([pair.problem]);
   const vercel = vercelCredentials(env);
+  // Reported, not refused: production serves people, and a deployment that would not start
+  // over an email setting is worse than the email it would hold.
+  for (const problem of emailEnvProblems(env)) {
+    options.log?.error("email_env_problem", { problem });
+  }
 
   let minimumClientVersions: MinimumVersions;
   try {
@@ -424,9 +460,45 @@ export function readEnv(
     posthogAdmin: posthogAdmin(env),
     push: env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : null,
     mail: env.RESEND_API_KEY ? { apiKey: env.RESEND_API_KEY, from: env.PONZU_EMAIL_FROM } : null,
+    email: {
+      replyTo: env.PONZU_EMAIL_REPLY_TO ?? null,
+      allow: env.PONZU_EMAIL_ALLOW === undefined ? null : parseEmailAllow(env.PONZU_EMAIL_ALLOW),
+      paused: parseEmailPaused(env.PONZU_EMAIL_PAUSED ?? "") ?? new Set(),
+    },
     features: featuresFrom(env),
     onVercel: env.VERCEL === "1",
   };
+}
+
+/**
+ * What is wrong with how email is set, as sentences that name variables and never a value
+ * (docs/production.md, "Email"). Production only:
+ * - PONZU_EMAIL_ALLOW is set: it is ignored there, and was meant for dev.
+ * - `billing` is in PONZU_EMAIL_PAUSED while PONZU_BILLING is on: a paused billing email is
+ *   dropped, not sent later, so admins would not hear that work stopped.
+ * The API logs each at boot (`email_env_problem`); scripts/prod's check reports the first by name.
+ */
+export function emailEnvProblems(
+  vars: Pick<
+    z.infer<typeof schema>,
+    "PONZU_ENVIRONMENT" | "PONZU_EMAIL_ALLOW" | "PONZU_EMAIL_PAUSED" | "PONZU_BILLING"
+  >,
+): string[] {
+  if (vars.PONZU_ENVIRONMENT !== "production") return [];
+  const problems: string[] = [];
+  if (vars.PONZU_EMAIL_ALLOW !== undefined) {
+    problems.push("PONZU_EMAIL_ALLOW is set on production, where it is ignored: remove it.");
+  }
+  const paused = parseEmailPaused(vars.PONZU_EMAIL_PAUSED ?? "") ?? new Set();
+  if (
+    vars.PONZU_BILLING === "on" &&
+    emailPaused({ replyTo: null, allow: null, paused }, "billing")
+  ) {
+    problems.push(
+      "PONZU_EMAIL_PAUSED holds billing while PONZU_BILLING is on: admins would not be told that work stopped.",
+    );
+  }
+  return problems;
 }
 
 /** A name Vercel gives an environment: lowercase letters, digits and dashes, at most 32. */

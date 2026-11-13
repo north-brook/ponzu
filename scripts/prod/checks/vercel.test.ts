@@ -138,6 +138,27 @@ describe("evaluate on hand-made failures", () => {
     expect(f["vercel.env.unknown"]?.status).toBe("ok");
   });
 
+  test("email: an allowlist on production fails, and billing paused needs a person to look", () => {
+    const observed = goodProduction();
+    const f0 = byId(evaluateVercel(desired("production"), observed));
+    expect(f0["vercel.env.email_allow"]?.status).toBe("ok");
+    expect(f0["vercel.env.email_paused"]).toBeUndefined();
+
+    observed.project!.env.push(
+      { key: "PONZU_EMAIL_ALLOW", targets: ["production"], type: "plain" },
+      { key: "PONZU_EMAIL_PAUSED", targets: ["production"], type: "plain" },
+      { key: "PONZU_BILLING", targets: ["production"], type: "plain" },
+    );
+    const f = byId(evaluateVercel(desired("production"), observed));
+    expect(f["vercel.env.email_allow"]).toMatchObject({
+      status: "fail",
+      says: "PONZU_EMAIL_ALLOW is set on the Production target, where the API ignores it",
+    });
+    expect(f["vercel.env.email_paused"]?.status).toBe("manual");
+    // Both are names the API reads, so neither is reported as unknown.
+    expect(f["vercel.env.unknown"]?.status).toBe("ok");
+  });
+
   test("one entry covering Production and Preview fails on production; Preview's own does not", () => {
     const observed = goodProduction();
     expect(observed.project!.env.some((e) => e.targets.includes("preview"))).toBe(true);

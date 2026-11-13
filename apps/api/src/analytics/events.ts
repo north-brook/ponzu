@@ -166,6 +166,18 @@ export interface ServerEvents {
   /** Expo refused a push, at once or by its receipt, with its code. */
   "push failed": { kind: string; error: string };
 
+  // Email (never an address, a subject or a body)
+  /** Resend took an email (or had taken it already, under the same key). About the person it is for. */
+  "email sent": { kind: string };
+  /** Resend refused an email and it will not be tried again, with why (`rejected`). */
+  "email refused": { kind: string; failure: string };
+  /**
+   * A person turned an email off from the email itself: `one_click` from their mail app's
+   * unsubscribe, `page` from the button on the link's page. Following the link alone counts
+   * nothing.
+   */
+  "email unsubscribed": { kind: string; via: "one_click" | "page" };
+
   // Pull requests
   "pull request created": { canvas_id: string; number: number };
   "pull request merged": { canvas_id: string; number: number };

@@ -50,7 +50,7 @@ describe("ping preferences", () => {
       },
       devices: [],
       badge: 0,
-      // No mailer in this deployment: the Email row is not shown.
+      // No mailer in this deployment: Settings shows no Email group.
       email: { address: "maya@example.com", available: false },
       timeZone: null,
     });
@@ -133,7 +133,12 @@ describe("ping preferences", () => {
     t.deps.features.email = true;
     try {
       const got = await call(t, ines.headers, "GET", "/v1/me/notifications");
-      expect(got.body.email).toEqual({ address: "ines@example.com", available: true });
+      // With email on, also whether people-joined could reach her (an organisation's admin).
+      expect(got.body.email).toEqual({
+        address: "ines@example.com",
+        available: true,
+        teamAvailable: expect.any(Boolean),
+      });
     } finally {
       t.deps.features.email = before;
     }
