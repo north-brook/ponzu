@@ -19,18 +19,23 @@ const IMPORTS_SDK = new RegExp(
   ].join("|"),
 );
 
-function trackedFiles(): string[] {
-  const listed = Bun.spawnSync(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
+/** Awaited, never spawnSync, which can lose git's exit in a `bun test --parallel` worker. */
+async function trackedFiles(): Promise<string[]> {
+  const listed = Bun.spawn(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
     cwd: ROOT,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "inherit",
   });
-  expect(listed.exitCode).toBe(0);
-  return listed.stdout.toString().split("\n").filter(Boolean);
+  const [stdout, code] = await Promise.all([new Response(listed.stdout).text(), listed.exited]);
+  expect(code).toBe(0);
+  return stdout.split("\n").filter(Boolean);
 }
 
 test("only deps/mail.ts imports resend", async () => {
   const offenders: string[] = [];
   let seamImports = false;
-  for (const file of trackedFiles()) {
+  for (const file of await trackedFiles()) {
     if (!/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(file)) continue;
     const handle = Bun.file(join(ROOT, file));
     if (!(await handle.exists())) continue;
@@ -45,7 +50,7 @@ test("only deps/mail.ts imports resend", async () => {
 
 test("only apps/api depends on resend, pinned exactly", async () => {
   const dependents: string[] = [];
-  for (const file of trackedFiles()) {
+  for (const file of await trackedFiles()) {
     if (!file.endsWith("package.json")) continue;
     const handle = Bun.file(join(ROOT, file));
     if (!(await handle.exists())) continue;

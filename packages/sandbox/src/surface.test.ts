@@ -53,12 +53,16 @@ const IMPORTS_SDK =
   /from\s+["']@vercel\/sandbox(\/[^"']*)?["']|import\(\s*["']@vercel\/sandbox|require\(\s*["']@vercel\/sandbox/;
 
 test("nothing outside packages/sandbox/src imports @vercel/sandbox", async () => {
-  const listed = Bun.spawnSync(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
+  // Awaited, never spawnSync, which can lose git's exit in a `bun test --parallel` worker.
+  const listed = Bun.spawn(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
     cwd: ROOT,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "inherit",
   });
-  expect(listed.exitCode).toBe(0);
-  const files = listed.stdout
-    .toString()
+  const [stdout, code] = await Promise.all([new Response(listed.stdout).text(), listed.exited]);
+  expect(code).toBe(0);
+  const files = stdout
     .split("\n")
     .filter((file) => /\.(ts|tsx|js|mjs|cjs|mts|cts)$/.test(file))
     .filter((file) => !file.startsWith("packages/sandbox/src/"));

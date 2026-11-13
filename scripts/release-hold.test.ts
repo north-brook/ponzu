@@ -105,44 +105,53 @@ describe("release holds", () => {
 });
 
 describe("the command", () => {
-  const run = (args: string[], env: Record<string, string> = {}) => {
-    const result = Bun.spawnSync(["bun", join(import.meta.dir, "release-hold.ts"), ...args], {
+  // Awaited, never spawnSync, which can lose the child's exit in a `bun test --parallel` worker.
+  const run = async (args: string[], env: Record<string, string> = {}) => {
+    const child = Bun.spawn(["bun", join(import.meta.dir, "release-hold.ts"), ...args], {
       env: { PATH: process.env.PATH ?? "", ...env },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
     });
-    return { code: result.exitCode, out: result.stdout.toString().trim() };
+    const [out, , code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { code, out: out.trim() };
   };
 
-  test("prints merge or hold, reading RELEASES_HELD from its environment", () => {
+  test("prints merge or hold, reading RELEASES_HELD from its environment", async () => {
     // The next patch after whatever is released now: a fixed version here goes stale, and
     // fails, the moment a release passes it.
     const [major, minor, patch] = (manifest as Record<string, string>)["."]?.split(".") ?? [];
     const title = `chore(main): release ${major}.${minor}.${Number(patch) + 1}`;
-    expect(run(["--app", "ponzu", "--title", title])).toEqual({ code: 0, out: "merge" });
-    expect(run(["--app", "ponzu", "--title", title], { RELEASES_HELD: "ponzu" })).toEqual({
+    expect(await run(["--app", "ponzu", "--title", title])).toEqual({ code: 0, out: "merge" });
+    expect(await run(["--app", "ponzu", "--title", title], { RELEASES_HELD: "ponzu" })).toEqual({
       code: 0,
       out: "hold: RELEASES_HELD names ponzu",
     });
   });
 
-  test("reads the pull request's manifest from --proposed", () => {
+  test("reads the pull request's manifest from --proposed", async () => {
     const dir = mkdtempSync(join(tmpdir(), "release-hold-"));
     const [major, minor] = (manifest as Record<string, string>)["."]?.split(".") ?? [];
     const next = `${major}.${Number(minor) + 1}.0`;
     const file = join(dir, "proposed.json");
     writeFileSync(file, JSON.stringify({ ".": next }));
     const args = ["--app", "ponzu", "--title", `chore(main): release ${next}`, "--proposed", file];
-    expect(run(args)).toEqual({ code: 0, out: "merge" });
+    expect(await run(args)).toEqual({ code: 0, out: "merge" });
     writeFileSync(file, "Not Found");
-    expect(run(args).out).toStartWith("hold: the pull request's manifest gives ponzu null");
-    expect(run(args.slice(0, -1)).code).toBe(2);
+    expect((await run(args)).out).toStartWith("hold: the pull request's manifest gives ponzu null");
+    expect((await run(args.slice(0, -1))).code).toBe(2);
     rmSync(dir, { recursive: true });
   });
 
-  test("a bad flag answers neither", () => {
-    expect(run(["--app", "desktop", "--title", "chore(main): release 1.80.2"])).toEqual({
+  test("a bad flag answers neither", async () => {
+    expect(await run(["--app", "desktop", "--title", "chore(main): release 1.80.2"])).toEqual({
       code: 2,
       out: "",
     });
-    expect(run(["--app", "ponzu"]).code).toBe(2);
+    expect((await run(["--app", "ponzu"])).code).toBe(2);
   });
 });

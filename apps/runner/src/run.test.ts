@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
 import { chmodSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,7 +18,7 @@ import {
 } from "./api/protocol.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
 import { Runner, type RunnerOptions, summaryAnswer, type Timing } from "./run.ts";
-import { agentShell } from "./save/shell.ts";
+import { agentShell, text } from "./save/shell.ts";
 import { type Git, gitIn } from "./save/work.ts";
 import type { AgentFeedback } from "./telemetry.ts";
 
@@ -46,7 +45,7 @@ afterEach(async () => {
 
 async function until(check: () => unknown, ms = 2_000): Promise<void> {
   const end = Date.now() + ms;
-  while (!check()) {
+  while (!(await check())) {
     if (Date.now() > end) throw new Error("timed out waiting");
     await Bun.sleep(5);
   }
@@ -459,34 +458,45 @@ const GIT_ENV = {
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_NOSYSTEM: "1",
 };
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync("git", args, { cwd, env: GIT_ENV, encoding: "utf8" }).trim();
+// Awaited, never execFileSync: Bun 1.4.2's sync spawns can lose a child's exit in a
+// `bun test --parallel` worker and wait on it forever (oven-sh/bun#47257).
+const gitShell = agentShell(undefined, GIT_ENV);
+const git = async (cwd: string, ...args: string[]) =>
+  text(await gitShell(["git", ...args], { cwd })).trim();
 
 /** "GitHub" (a bare repository) and the canvas's checkout of it on pz/hero, with a runner on it. */
 async function onRepo(
   timing: Partial<Timing> = {},
-  more: { flush?: () => void; api?: FakeRunnerApi; agent?: ScriptedAgent } = {},
+  more: {
+    flush?: () => void;
+    api?: FakeRunnerApi;
+    agent?: ScriptedAgent;
+    /** Awaited before each of the runner's own git commands runs. */
+    beforeGit?: (args: string[]) => Promise<void>;
+  } = {},
 ) {
+  const { beforeGit, ...rest } = more;
   const root = await temp();
   const origin = join(root, "origin.git");
   const seed = join(root, "seed");
-  git(root, "init", "-q", "--bare", "-b", "main", origin);
-  git(root, "init", "-q", "-b", "main", seed);
+  await git(root, "init", "-q", "--bare", "-b", "main", origin);
+  await git(root, "init", "-q", "-b", "main", seed);
   writeFileSync(join(seed, "README.md"), "fern\n");
-  git(seed, "add", ".");
-  git(seed, "commit", "-qm", "First");
-  git(seed, "push", "-q", origin, "main");
+  await git(seed, "add", ".");
+  await git(seed, "commit", "-qm", "First");
+  await git(seed, "push", "-q", origin, "main");
   const work = join(root, "fern");
-  git(root, "clone", "-q", origin, work);
-  git(work, "switch", "-qc", "pz/hero");
+  await git(root, "clone", "-q", origin, work);
+  await git(work, "switch", "-qc", "pz/hero");
   let n = 0;
-  const commit = () => {
+  const commit = async () => {
     writeFileSync(join(work, `screen-${++n}.html`), `<p>${n}</p>\n`);
-    git(work, "add", ".");
-    git(work, "commit", "-qm", `Screen ${n}`);
-    return git(work, "rev-parse", "HEAD");
+    await git(work, "add", ".");
+    await git(work, "commit", "-qm", `Screen ${n}`);
+    return await git(work, "rev-parse", "HEAD");
   };
-  // The runner's own git commands still running.
+  // The runner's own git commands: how many it has run, and how many are still running.
+  let calls = 0;
   let running = 0;
   const s = await setup({
     session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
@@ -494,8 +504,10 @@ async function onRepo(
     checkoutGit: (cwd) => {
       const run = gitIn(agentShell(undefined, GIT_ENV), "git", cwd);
       return async (args, opts) => {
+        calls++;
         running++;
         try {
+          await beforeGit?.(args);
           return await run(args, opts);
         } finally {
           running--;
@@ -503,28 +515,60 @@ async function onRepo(
       };
     },
     timing: { pushWaitsMs: [5, 5], ...timing },
-    ...more,
+    ...rest,
   });
-  const onGithub = () => {
+  const onGithub = async () => {
     try {
-      return git(origin, "rev-parse", "refs/heads/pz/hero");
+      return await git(origin, "rev-parse", "refs/heads/pz/hero");
     } catch {
       return null;
     }
   };
-  return { ...s, work, origin, commit, onGithub, gitQuiet: () => running === 0 };
+  return {
+    ...s,
+    work,
+    origin,
+    commit,
+    onGithub,
+    gitCalls: () => calls,
+    gitQuiet: () => running === 0,
+  };
+}
+
+/**
+ * The first turn on a repo canvas. The claim that brings it also starts the runner's push of
+ * what an earlier start left unpushed, and that push is waited out here: a commit the test makes
+ * next is then the turn's own, pushed once the turn ends, and never seen by that start push
+ * still looking at the branch after the turn has ended, which would push (or fail) it twice.
+ */
+async function firstTurn(s: Awaited<ReturnType<typeof onRepo>>): Promise<void> {
+  await turn(s);
+  await until(() => s.gitCalls() > 0 && s.gitQuiet(), 5_000);
 }
 
 test("a turn that ends with commits GitHub lacks gets them pushed, whatever the agent did", async () => {
-  const s = await onRepo();
+  // The state is paced, so a push quicker than a report could go unsaid in the reports. The
+  // runner's git push waits here until the canvas has been told it is pushing: if the runner
+  // never says so, this wait fails the push and the test, whatever the machine's speed.
+  let api: FakeRunnerApi | undefined;
+  const s = await onRepo(
+    {},
+    {
+      beforeGit: async (args) => {
+        if (args[0] !== "push") return;
+        await until(() => api?.states.some((st) => st.status === "Pushing to GitHub"), 5_000);
+      },
+    },
+  );
+  api = s.api;
   s.run.ready();
-  await turn(s);
+  await firstTurn(s);
   // The agent committed, and its own push failed (or it never pushed).
-  const head = s.commit();
+  const head = await s.commit();
   s.run.say("m1", "The commit is saved locally but didn't reach GitHub.");
   s.run.end();
 
-  await until(() => s.onGithub() === head, 5_000);
+  await until(async () => (await s.onGithub()) === head, 5_000);
   await until(() => s.api.branch?.unpushed === 0 && s.api.lastState?.state === "idle");
   // While it pushed, the canvas said so.
   expect(s.api.states.some((st) => st.status === "Pushing to GitHub")).toBe(true);
@@ -533,10 +577,10 @@ test("a turn that ends with commits GitHub lacks gets them pushed, whatever the 
 
 test("a push that keeps failing is said once in the thread, in Ponzu's words, and tried again next turn", async () => {
   const s = await onRepo();
-  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  await git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
   s.run.ready();
-  await turn(s);
-  s.commit();
+  await firstTurn(s);
+  await s.commit();
   s.run.end();
 
   await until(() => notices(s.api, "error").length === 1, 5_000);
@@ -571,19 +615,19 @@ test("a push that keeps failing is said once in the thread, in Ponzu's words, an
   expect(notices(s.api, "error")).toHaveLength(1);
 
   // Fixed: the next push lands.
-  git(s.work, "remote", "set-url", "origin", s.origin);
+  await git(s.work, "remote", "set-url", "origin", s.origin);
   await turn(s);
   s.run.end();
-  await until(() => s.onGithub() !== null, 5_000);
+  await until(async () => (await s.onGithub()) !== null, 5_000);
   await until(() => s.api.branch?.error === null);
 });
 
 test("Create PR after a failed push: the old error is not said again while the new push runs", async () => {
   const s = await onRepo({ heartbeatMs: 10 });
-  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  await git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
   s.run.ready();
-  await turn(s);
-  s.commit();
+  await firstTurn(s);
+  await s.commit();
   s.run.end();
   await until(() => s.api.branch?.error != null, 5_000);
   await until(() => s.api.lastState?.state === "idle");
@@ -595,11 +639,11 @@ test("Create PR after a failed push: the old error is not said again while the n
 
   // Fixed, and the person presses Create PR: the API forgets the old error. Every report from
   // then on says only how the new push went, never the old failure.
-  git(s.work, "remote", "set-url", "origin", s.origin);
+  await git(s.work, "remote", "set-url", "origin", s.origin);
   const asked = s.api.states.length;
   s.api.askToPush();
   s.runner.poke();
-  await until(() => s.onGithub() !== null, 5_000);
+  await until(async () => (await s.onGithub()) !== null, 5_000);
   await until(() => s.api.branch?.unpushed === 0);
   const after = s.api.states.slice(asked).filter((st) => st.branch !== undefined);
   expect(after.every((st) => st.branch?.error === null)).toBe(true);
@@ -609,35 +653,35 @@ test("Create PR after a failed push: the old error is not said again while the n
 test("Create PR during a turn waits for the turn to end, so the agent's git is left alone", async () => {
   const s = await onRepo();
   s.run.ready();
-  await turn(s);
-  const head = s.commit();
+  await firstTurn(s);
+  const head = await s.commit();
   const asked = s.api.askToPush();
   s.runner.poke();
   // Taken, and the runner's git quiet (the start's push too, which looked before the turn).
   await until(() => s.api.delivered.includes(asked.id) && s.gitQuiet(), 5_000);
   // Mid-turn: nothing pushed for the agent to race.
-  expect(s.onGithub()).toBeNull();
+  expect(await s.onGithub()).toBeNull();
   s.run.end();
-  await until(() => s.onGithub() === head, 5_000);
+  await until(async () => (await s.onGithub()) === head, 5_000);
 });
 
 test("the agent's pull request tools push mid-turn, and ask the API only once GitHub has the branch (#511)", async () => {
   const s = await onRepo();
   s.api.remoteHead = s.onGithub;
   s.run.ready();
-  await turn(s);
-  const head = s.commit();
+  await firstTurn(s);
+  const head = await s.commit();
   const opened = await s.run.call("open_pull_request", { draft: true });
   expect(opened.isError).toBeFalsy();
   // Pushed by the tool itself, mid-turn, before the API was asked: not left for the turn's end.
-  expect(s.onGithub()).toBe(head);
+  expect(await s.onGithub()).toBe(head);
   expect(s.api.prCalls.map((call) => call.action)).toEqual(["open"]);
   expect(opened.text).toContain("Opened pull request #1 as a draft");
   // And the merge names the commit GitHub has.
-  s.commit();
+  await s.commit();
   const merged = await s.run.call("merge_pull_request");
   expect(merged.isError).toBeFalsy();
-  expect(s.api.prCalls.at(-1)).toMatchObject({ action: "merge", headSha: s.onGithub() });
+  expect(s.api.prCalls.at(-1)).toMatchObject({ action: "merge", headSha: await s.onGithub() });
 });
 
 /** Makes "GitHub" refuse every push, saying `line` as GitHub's own refusal does. */
@@ -652,8 +696,8 @@ test("a push GitHub refuses fails the agent's tools before the API is asked, and
   s.api.remoteHead = s.onGithub;
   refusePushes(s.origin, "remote: Repository not found.");
   s.run.ready();
-  await turn(s);
-  s.commit();
+  await firstTurn(s);
+  await s.commit();
   const opened = await s.run.call("open_pull_request", { draft: false });
   expect(opened.isError).toBe(true);
   expect(opened.text).toContain("aren't on GitHub yet, so nothing was asked of the pull request");
@@ -661,7 +705,7 @@ test("a push GitHub refuses fails the agent's tools before the API is asked, and
   expect(merged.isError).toBe(true);
   // The API heard of neither.
   expect(s.api.prCalls).toEqual([]);
-  expect(s.onGithub()).toBeNull();
+  expect(await s.onGithub()).toBeNull();
   // And a fake API that looks at the remote never says it opened one from a branch GitHub lacks.
   const answer = await s.api.actOnPullRequest(s.api.runner!, "open", { turn: null });
   expect(answer).toMatchObject({ did: false, pushing: true, branch: { exists: false } });
@@ -675,8 +719,8 @@ test("a push with a workflow file is refused in its own words: leave the file ou
     "remote: refusing to allow a GitHub App to create or update workflow \\`.github/workflows/ci.yml\\` without \\`workflows\\` permission",
   );
   s.run.ready();
-  await turn(s);
-  s.commit();
+  await firstTurn(s);
+  await s.commit();
   const opened = await s.run.call("open_pull_request", { draft: true });
   expect(opened.isError).toBe(true);
   expect(opened.text).toContain("Take those changes out of the branch's commits");
@@ -709,10 +753,10 @@ test("the turn's checkpoint is saved before its push, which may take a while", a
     },
   );
   pushTries = () => s.api.gitReports.filter((r) => r.name === "git_push").length;
-  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  await git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
   s.run.ready();
-  await turn(s);
-  s.commit();
+  await firstTurn(s);
+  await s.commit();
   ended = true;
   s.run.end();
   await until(() => notices(s.api, "error").length === 1, 5_000);
@@ -724,30 +768,30 @@ test("the turn's checkpoint is saved before its push, which may take a while", a
 test("a branch merged and deleted on GitHub isn't put back by the runner", async () => {
   const s = await onRepo();
   s.run.ready();
-  await turn(s);
-  s.commit();
+  await firstTurn(s);
+  await s.commit();
   s.run.end();
-  await until(() => s.onGithub() !== null, 5_000);
+  await until(async () => (await s.onGithub()) !== null, 5_000);
   await until(() => s.api.lastState?.state === "idle");
   // Merged, and deleted by Ponzu's Merge; the checkout fetches with --prune.
-  git(s.origin, "update-ref", "-d", "refs/heads/pz/hero");
-  git(s.work, "fetch", "-q", "--prune", "origin");
+  await git(s.origin, "update-ref", "-d", "refs/heads/pz/hero");
+  await git(s.work, "fetch", "-q", "--prune", "origin");
   s.api.pullRequest = { number: 4, state: "merged" };
   await turn(s);
   s.run.end();
   await until(() => s.api.states.filter((st) => st.state === "idle").length >= 2, 5_000);
   await Bun.sleep(50);
-  expect(s.onGithub()).toBeNull();
+  expect(await s.onGithub()).toBeNull();
 });
 
 test("Create PR with commits only the sandbox holds: the runner pushes them, without the agent", async () => {
   const s = await onRepo();
   s.run.ready();
-  const head = s.commit();
+  const head = await s.commit();
   const seen = s.run.inputs.length;
   const asked = s.api.push({ kind: "push", payload: {} });
   s.runner.poke();
-  await until(() => s.onGithub() === head, 5_000);
+  await until(async () => (await s.onGithub()) === head, 5_000);
   // Nothing went to the agent, and the event was acknowledged.
   expect(s.run.inputs.length).toBe(seen);
   await until(() => s.api.delivered.includes(asked.id));
