@@ -100,6 +100,16 @@ test("placeholders take the board's own plain background", () => {
   const media =
     ":root { --paper: #fff; }\n@media (prefers-color-scheme: dark) { :root { --paper: #000; } }";
   expect(placeholderFill(tokened, "dark", "transparent", media)).toBe("transparent");
+  // Its var() fallback isn't taken either: the token is declared, just not knowably.
+  const themedFallback = board(
+    `<section data-artboard data-id="ab_m" style="width:10px;height:10px;background:var(--paper, #fff)"></section>`,
+  );
+  expect(placeholderFill(themedFallback, "dark", "transparent", media)).toBe("transparent");
+  // An undeclared token on a themed canvas still takes its fallback.
+  const undeclared = board(
+    `<section data-artboard data-id="ab_u" style="width:10px;height:10px;background:var(--none, rgb(1, 2, 3))"></section>`,
+  );
+  expect(placeholderFill(undeclared, "dark", "transparent", media)).toBe("rgb(1, 2, 3)");
   expect(
     placeholderFill(tokened, "dark", "transparent", ":root { --paper: #fff; --paper: #000; }"),
   ).toBe("transparent");

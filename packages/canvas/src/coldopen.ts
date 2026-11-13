@@ -118,11 +118,13 @@ function plainColour(
   if (pair) return plainColour(pair[scheme === "dark" ? 2 : 1]!.trim(), scheme, tokens, depth + 1);
   const ref = /^var\(\s*(--[\w-]+)\s*(?:,\s*([^()]+(?:\([^)]*\))?)\s*)?\)$/.exec(v);
   if (!ref) return undefined;
-  // A token declared twice, or themed by a media query, may be either colour: not guessed.
-  const declared =
-    tokens && !/prefers-color-scheme/i.test(tokens)
-      ? parseTokens(tokens).filter((t) => t.name === ref[1])
-      : [];
+  // A token declared twice, or themed by a media query, may be either colour: not guessed, and
+  // not its var() fallback either, which is for a token the canvas doesn't declare at all.
+  const name = ref[1]!;
+  if (/prefers-color-scheme/i.test(tokens) && new RegExp(`${name}\\s*:`).test(tokens)) {
+    return undefined;
+  }
+  const declared = tokens ? parseTokens(tokens).filter((t) => t.name === name) : [];
   if (declared.length === 1) return plainColour(declared[0]!.value, scheme, tokens, depth + 1);
   if (declared.length === 0 && ref[2]) return plainColour(ref[2].trim(), scheme, tokens, depth + 1);
   return undefined;
