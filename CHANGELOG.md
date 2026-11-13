@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/north-brook/ponzu/compare/v2.4.0...v2.4.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **canvas:** zooming and resizing the panes no longer restyle every board's elements each frame ([#641](https://github.com/north-brook/ponzu/issues/641)) ([c69598f](https://github.com/north-brook/ponzu/commit/c69598ff768fdcfe327428db7a3ac362f9ce4225))
+
 ## [2.4.0](https://github.com/north-brook/ponzu/compare/v2.3.4...v2.4.0) (2026-11-13)
 
 
