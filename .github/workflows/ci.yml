@@ -234,12 +234,13 @@ jobs:
           bun apps/studio/scripts/prebuild-tests.ts "$RUNNER_TEMP/studio-tests"
           echo "PONZU_PREBUILT_STUDIO=$RUNNER_TEMP/studio-tests" >> "$GITHUB_ENV"
       - name: Tests
-        # Test files run in their own workers; the Chromium ones take most of the time. Every
-        # worker that makes a test database migrates its first one (half a second alone), and
-        # with every worker starting at once that has taken longer than bun's default five
-        # seconds for a test or a hook, so they get twenty. A push records each file's time
-        # for the runs after it. Every test's result also goes to JUnit XML, uploaded below,
-        # so which test failed when can be asked of the artifacts rather than the logs.
+        # Test files run in their own workers; the Chromium ones take most of the time. The test
+        # databases are made in bun's preload (bunfig.toml), before any test, not inside the first
+        # test's timeout. Tests and hooks still get twenty seconds, not bun's default five: that
+        # was set before the move, and what else still needs it has not been measured. A push
+        # records each file's time for the runs after it. Every test's result also goes to JUnit
+        # XML, uploaded below, so which test failed when can be asked of the artifacts rather
+        # than the logs.
         run: |
           timings=${TIMINGS/#\~/$HOME}
           results="$RUNNER_TEMP/test-results"

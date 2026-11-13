@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
@@ -21,20 +21,56 @@ import type { Db } from "./client.ts";
 import { migrationsFolder } from "./migrations.ts";
 import { events } from "./schema/index.ts";
 
-// Starting an empty Postgres and migrating it costs a few seconds of CPU (most of it initdb);
-// loading a copy of one that is already migrated costs a fraction of that. Test files each run
-// in their own process, so the copy is kept on disk, named for the migrations and the code
-// that made it (see cacheKey): the first process to need it makes it once, and every other one, in this run
-// or a later one, loads it. Each database is still its own, made fresh from that copy.
-let migrated: Promise<Blob> | undefined;
+// Starting an empty Postgres costs a second or more of CPU (initdb), and migrating it more;
+// loading a copy of one already made costs a fraction of that. Test files may each run in
+// their own process, so two copies are kept on disk, one empty and one migrated, named for the
+// migrations and the code that made them (see cacheKey): the first process to need one makes it
+// once, and every other one, in this run or a later one, loads it. Each database is still its
+// own, made fresh from that copy.
+//
+// Making a copy must not happen inside a test: under load, with every worker starting at once,
+// initdb alone has taken longer than bun's five seconds for a hook. So `bun test` preloads
+// test-preload.ts (bunfig.toml), which calls prepareTestDbs before any test file loads, and a
+// test only ever loads a copy. Without the preload (`bun test` run from another directory) the
+// first test to ask makes it, as before.
+const copies: Partial<Record<Copy, Promise<Blob>>> = {};
+
+type Copy = "empty" | "migrated";
+
+function copy(kind: Copy): Promise<Blob> {
+  copies[kind] ??= savedCopy(kind);
+  return copies[kind];
+}
+
+/**
+ * Makes sure the empty and the migrated copy are on disk, and the migrated one, which most test
+ * files use, loaded in this process, so no test waits on initdb or on the migrations. The test
+ * preload calls it before any test runs. The empty copy, some 40 MB, is read only by a process
+ * that asks for it; making the migrated one makes it first.
+ */
+export async function prepareTestDbs(): Promise<void> {
+  await copy("migrated");
+  if (!existsSync(copyFile("empty"))) await copy("empty");
+}
+
+function copyFile(kind: Copy): string {
+  return join(tmpdir(), "ponzu-test-db", `${cacheKey()}-${kind}.tar`);
+}
 
 /**
  * A fresh Postgres in this process with every migration applied, for tests. It needs no network
  * and shares nothing with any other database this returns. Close it with `db.$client.close()`.
  */
 export async function createTestDb() {
-  migrated ??= migratedCopy();
-  return drizzle({ client: new PGlite({ loadDataDir: await migrated, extensions }) });
+  return drizzle({ client: new PGlite({ loadDataDir: await copy("migrated"), extensions }) });
+}
+
+/**
+ * A fresh Postgres in this process with nothing in it, as `new PGlite({ extensions })` makes but
+ * without running initdb, for a test that builds a schema itself. Close it with `close()`.
+ */
+export async function createEmptyTestDb(): Promise<PGlite> {
+  return new PGlite({ loadDataDir: await copy("empty"), extensions });
 }
 
 /**
@@ -54,11 +90,10 @@ export function feedOf(db: Db, canvasId: string) {
 /** How long a process waits on another that is making the copy before making its own. */
 const LOCK_PATIENCE_MS = 60_000;
 
-/** The migrated data directory, as a tarball PGlite loads: from disk, or made and saved. */
-async function migratedCopy(): Promise<Blob> {
-  const dir = join(tmpdir(), "ponzu-test-db");
-  const file = join(dir, `${cacheKey()}.tar`);
-  mkdirSync(dir, { recursive: true });
+/** A data directory, as a tarball PGlite loads: from disk, or made and saved. */
+async function savedCopy(kind: Copy): Promise<Blob> {
+  const file = copyFile(kind);
+  mkdirSync(dirname(file), { recursive: true });
   const lock = `${file}.lock`;
   const started = Date.now();
   for (;;) {
@@ -69,7 +104,7 @@ async function migratedCopy(): Promise<Blob> {
         // Another process may have saved it between the read above and taking the lock.
         const raced = read(file);
         if (raced) return raced;
-        const made = await migrateFresh();
+        const made = await make(kind);
         const temporary = `${file}.${process.pid}.tmp`;
         writeFileSync(temporary, new Uint8Array(await made.arrayBuffer()));
         renameSync(temporary, file);
@@ -81,15 +116,22 @@ async function migratedCopy(): Promise<Blob> {
     // A lock left by a process that was killed while making the copy is cleared for the next
     // one to take; and a process that has waited long enough makes its own rather than wait on.
     if (lockAge(lock) > LOCK_PATIENCE_MS) rmSync(lock, { recursive: true, force: true });
-    if (Date.now() - started > LOCK_PATIENCE_MS) return migrateFresh();
+    if (Date.now() - started > LOCK_PATIENCE_MS) return make(kind);
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
 
-async function migrateFresh(): Promise<Blob> {
-  const client = new PGlite({ extensions });
+/** The empty copy is initdb's; the migrated one starts from it, so initdb runs once. */
+async function make(kind: Copy): Promise<Blob> {
+  const client =
+    kind === "empty"
+      ? new PGlite({ extensions })
+      : new PGlite({ loadDataDir: await copy("empty"), extensions });
   try {
-    await migrate(drizzle({ client }), { migrationsFolder });
+    // dumpDataDir does not wait for initdb to finish, and on a Postgres still starting it never
+    // returns; a query does wait.
+    await client.waitReady;
+    if (kind === "migrated") await migrate(drizzle({ client }), { migrationsFolder });
     return await client.dumpDataDir("none");
   } finally {
     await client.close();
