@@ -117,7 +117,5 @@ the view hierarchy it saw (`commands.json`) and a screenshot of the failure.
 
 `Mobile iOS` in `.github/workflows/ci.yml` runs `run.sh` on spare's runners
 for pull requests from this repository that `scripts/ci/scope.ts` says can
-affect the phone, once the repository variable `MOBILE_IOS` is `true`. It
-does not run for pull requests into `cloud` yet: it comes back there once
-the cloud app's flows have passed twice on the job runner. The `Mobile` check
-reports for every pull request either way.
+affect the phone, once the repository variable `MOBILE_IOS` is `true`. The
+`Mobile` check reports for every pull request either way.
