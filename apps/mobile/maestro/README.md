@@ -23,15 +23,18 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 
 Then, unless `PUSH=0`, `run.sh` sends pings with `xcrun simctl push`
 (`push/*.apns`, each as Expo's service delivers one, its data under `body`;
-`push/payloads.test.ts` holds them to the fake's ids) between the flows in
-`push/`: `warm-open.yaml` opens Onboarding, a needs-you ping for the Pricing
-page arrives, and `warm-tap.yaml` taps its banner, which opens the Pricing
-page's chat at that question; a reply ping about the Pricing page and a
-finished ping about Onboarding arrive, and `foreground.yaml` sees only
-Onboarding's banner; `cold-open.yaml` seeds the next launch
-(`relaunch=1`) and ends the app, a ping arrives, and `cold-tap.yaml` taps its
-banner on the home screen, which starts the app and, once Maya is signed in,
-opens the chat at the permission.
+`push/payloads.test.ts` holds them to the fake's ids). While each flow in
+`push/` runs, its ping is sent every two seconds. Maestro reads only the app's
+own views, not iOS's banner over them, so a flow taps the banner where iOS
+draws it, at the top of the screen. `warm-open.yaml` opens Onboarding, and
+`warm-tap.yaml` taps the Pricing page's needs-you banner, which opens its chat
+at that question. `foreground.yaml` taps where a banner would be while pull
+request pings about the Pricing page, on screen, arrive: none shows, so the
+pull request sheet never opens. `other-canvas.yaml` taps Onboarding's banner,
+which opens Onboarding's chat. `cold-open.yaml` seeds the next launch
+(`relaunch=1`) and ends the app, and `cold-tap.yaml` taps the permission
+ping's banner over the home screen, which starts the app and, once Maya is
+signed in, opens the chat at the permission.
 
 With `REMOUNT=1` (`--env REMOUNT=1` on the job), `run.sh` then tests the remount iOS forces on a canvas: `remount/open.yaml`
 opens the Pricing page and waits for its boards, `run.sh` ends that

@@ -38,8 +38,8 @@ test("each simulator ping is one Expo would deliver, naming the fake's own ids",
   expect(files.sort()).toEqual([
     "cold-permission.apns",
     "onboarding-finished.apns",
+    "pricing-pull-request.apns",
     "pricing-question.apns",
-    "pricing-reply.apns",
   ]);
   for (const file of files) {
     const ping = JSON.parse(readFileSync(join(DIR, file), "utf8"));
