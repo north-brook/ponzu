@@ -672,6 +672,12 @@ export interface WakeContext {
   agentBlockedUntil: Date | null;
   /** Its workspace's cached billing gate (`workspaces.billing_gate`; `ok` while billing is off). */
   billingGate: BillingGateValue;
+  /**
+   * Whether its feed holds a `push` not yet handed out (Create PR waits on it). The billing gate
+   * lets such a wake through whatever wake job carries it, since a waiting wake for a comment or a
+   * check takes in a push asked for after it.
+   */
+  pushWaiting: boolean;
 }
 
 /** Whether the canvas `d`'s owner is still a member of its workspace. */
@@ -694,6 +700,7 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
       agent_blocked_until: string | null;
     };
     billing_gate: BillingGateValue;
+    push_waiting: boolean;
     claude: {
       id: string;
       user_id: string;
@@ -720,7 +727,10 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
                     order by (a.id = d.claude_account_id) desc limit 1),
         'sandbox', (select row_to_json(s) from sandboxes s where s.canvas_id = d.id),
         'owner_member', ${ownerMember},
-        'billing_gate', (select w.billing_gate from workspaces w where w.id = d.workspace_id)
+        'billing_gate', (select w.billing_gate from workspaces w where w.id = d.workspace_id),
+        'push_waiting', exists (select 1 from events e
+                                 where e.canvas_id = d.id and e.kind = 'push'
+                                   and e.delivered_at is null)
       ) as result
         from canvases d
        where d.id = ${canvasId}
@@ -748,6 +758,7 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
     agentBlocker: canvas.agent_blocker,
     agentBlockedUntil: canvas.agent_blocked_until ? new Date(canvas.agent_blocked_until) : null,
     billingGate: result.billing_gate ?? "ok",
+    pushWaiting: result.push_waiting === true,
   };
 }
 

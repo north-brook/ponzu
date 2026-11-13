@@ -69,6 +69,7 @@ export {
   canvasBillingGate,
   clearCard,
   dueClosings,
+  listHeldCanvases,
   listWorkspacesToGate,
   type PeriodNumbers,
   readCardSetup,

@@ -149,7 +149,10 @@ export function holdWakeAtLimit(
     reason,
   }: { deps: Pick<JobDeps, "features" | "log" | "analytics">; reason: string | null },
 ): { blocker: (typeof BLOCKER_OF)[keyof typeof BLOCKER_OF] } | null {
-  if (deps.features.billing === "off" || ctx.billingGate === "ok" || reason === "push") return null;
+  // A push is let through whatever wake carries it: a wake already waiting for a comment or a
+  // check takes in a push asked for after it, and only a push goes out at the claim anyway.
+  const forPush = reason === "push" || ctx.pushWaiting;
+  if (deps.features.billing === "off" || ctx.billingGate === "ok" || forPush) return null;
   const gate = ctx.billingGate;
   const blocker = BLOCKER_OF[gate];
   if (deps.features.billing === "observe") {

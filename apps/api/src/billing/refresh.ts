@@ -1,9 +1,17 @@
-import { grantAllowances, listWorkspacesToGate, recordOnce, setBillingGate } from "@ponzu/db";
+import {
+  bringJobForward,
+  grantAllowances,
+  listHeldCanvases,
+  listWorkspacesToGate,
+  recordOnce,
+  setBillingGate,
+} from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import type { BillingNotice } from "../notifications/kinds.ts";
 import { notify } from "../notifications/notify.ts";
-import { resumeBlocked } from "../sandboxes/wake.ts";
+import { WAKE_JOB } from "../sandboxes/orchestrate.ts";
+import { queueWake, RESUME_AT_ONCE, resumeBlocked } from "../sandboxes/wake.ts";
 import { BILLING_BLOCKERS, type BillingGate } from "./gate.ts";
 import { type GateReading, readBillingGate } from "./reading.ts";
 import { ungranted } from "./usage.ts";
@@ -108,7 +116,18 @@ export async function resumeBillingBlocked(deps: RefreshDeps, workspaceId: strin
     { workspaceId, blockers: BILLING_BLOCKERS },
   );
   await Promise.all(pending);
-  return resumed;
+  // What was held back with no billing blocker on its head, and no sandbox up to take it: the
+  // claim holds a message back without marking the canvas, and a push's wake lifts the blocker
+  // while what was held stays in the feed. Once its sandbox has slept, nothing else would wake
+  // it when the gate opens. The minute's cron does.
+  const now = new Date(deps.clock.now());
+  const held = await listHeldCanvases(deps.db, { workspaceId, limit: RESUME_AT_ONCE });
+  for (const canvasId of held) {
+    if (await bringJobForward(deps.db, { kind: WAKE_JOB, key: canvasId, now })) continue;
+    await queueWake(deps, canvasId, "resume");
+  }
+  if (held.length > 0) deps.log.info("billing_held_queued", { workspaceId, queued: held.length });
+  return { ...resumed, queued: resumed.queued + held.length };
 }
 
 /**

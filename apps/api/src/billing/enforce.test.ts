@@ -402,6 +402,34 @@ describe("on", () => {
     });
   });
 
+  test("a push asked for behind another wake is let through too", async () => {
+    const ws = await pastFree();
+    const canvas = await canvasIn(t, ws, "maya", sampleDoc());
+    await setGate(ws.id, "free_used");
+    await withBilling("on", async () => {
+      // A failed check's wake waits for the cron, and Create PR's push rides on it.
+      await owe(canvas.id, "check");
+      await owe(canvas.id, "push");
+      await startWake(t.deps, canvas.id, "check");
+      expect((await getSandbox(t.db, canvas.id))!.state).toBe("awake");
+    });
+  });
+
+  test("what the claim held back with no blocker on the head wakes once the gate opens", async () => {
+    const ws = await pastFree();
+    const canvas = await canvasIn(t, ws, "maya", sampleDoc());
+    await setGate(ws.id, "free_used");
+    // A message the claim held back, its sandbox since asleep: nothing on the head says why.
+    await owe(canvas.id, "message");
+    expect((await head(canvas.id)).agentBlocker).toBeNull();
+    await withBilling("on", async () => {
+      await addCard(ws.id);
+      expect(await refreshBillingGate(t.deps, ws.id)).toEqual({ before: "free_used", after: "ok" });
+      await cron();
+      expect((await getSandbox(t.db, canvas.id))!.state).toBe("awake");
+    });
+  });
+
   test("the claim holds back what would begin a turn, and hands it out once the gate opens", async () => {
     const ws = await team();
     const canvas = await canvasIn(t, ws, "maya", sampleDoc());

@@ -182,6 +182,40 @@ export async function listWorkspacesToGate(
   return result?.ids ?? [];
 }
 
+/**
+ * The active canvases of the workspace that billing may have held back without a blocker on their
+ * head: something for the agent waits in the feed (`now` or `next`), nothing says what the agent
+ * waits on, and no sandbox is up to take it. A runner's claim holds a message back without
+ * marking the canvas, and a push's wake lifts a billing blocker while what was held stays in the
+ * feed, so once the sandbox sleeps nothing would wake it when the gate opens. At most `limit`,
+ * most recently active first.
+ */
+export async function listHeldCanvases(
+  db: Db,
+  { workspaceId, limit }: { workspaceId: string; limit: number },
+): Promise<string[]> {
+  const result = await queryJson<{ ids: string[] }>(
+    db,
+    sql`
+      select json_build_object('ids', coalesce(json_agg(id), '[]'::json)) as result
+        from (
+          select d.id from canvases d
+           where d.workspace_id = ${workspaceId}
+             and d.status = 'active'
+             and d.agent_blocker is null
+             and exists (select 1 from events e
+                          where e.canvas_id = d.id and e.delivered_at is null
+                            and e.priority in ('now', 'next'))
+             and not exists (select 1 from sandboxes s
+                              where s.canvas_id = d.id and s.state in ('waking', 'awake'))
+           order by d.last_activity_at desc, d.id
+           limit ${limit}
+        ) held
+    `,
+  );
+  return result?.ids ?? [];
+}
+
 /** The cached billing gate of the canvas's workspace; null when there is no such canvas. */
 export async function canvasBillingGate(
   db: Db,

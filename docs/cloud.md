@@ -2755,14 +2755,17 @@ the claim read the stored gate, never Stripe (`billing/enforce.ts`):
   anyone but an admin). A create without a message is made, and an answer is never refused:
   the turn that asked waits on it.
 - A wake waits on `credits_used_up`, `cap_reached` or `payment_failed`, except a wake for
-  `push`, so finished work can always be pushed. A comment is committed as ever; only its wake
-  waits.
+  `push`, or any wake while a push waits in the feed (a waiting wake for a check takes in a push
+  asked for after it), so finished work can always be pushed. A comment is committed as ever;
+  only its wake waits.
 - The runner's claim hands out only a stop, an answer, an edit and a push, so a running turn
   finishes and no new one starts. What it holds back stays in the feed, not owed, so nothing
   lapses.
 - When the gate turns `ok` again, `resumeBillingBlocked` lifts those three blockers in the
   workspace and wakes the canvases with something owed (`resumeBlocked`); an awake runner takes
-  up what its claim held back at its next claim.
+  up what its claim held back at its next claim. A canvas whose claim held something back with
+  no blocker on its head (or whose blocker a push's wake lifted), and whose sandbox has slept
+  since, has its wake queued for the minute's cron.
 - With billing on, the workspace's admins (its person, for a personal one) are pinged through
   `notify` with billing's words, once a period for each of free credits used, 80% of the cap
   (with a card) and the cap reached.
