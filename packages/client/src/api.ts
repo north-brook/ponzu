@@ -439,13 +439,16 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
     notifications: {
       /**
        * The person's ping toggles and their devices, the badge (open needs-you questions across
-       * every workspace), the email digest's address and whether it can be sent, and their time
-       * zone as kept.
+       * every workspace), where email goes and whether it can be sent (and, while it can, the
+       * people-joined and recap switches and whether people-joined could reach them), and their
+       * time zone as kept.
        */
       get: async () => (await v1.me.notifications.$get()).json(),
       /**
        * Change some toggles; the rest stay. `timeZone` is the app's IANA zone, sent when it
-       * differs from the one kept: the daily email comes at 9:00 in it.
+       * differs from the one kept: the daily email comes at 9:00 in it. `emailTeam` and
+       * `emailRecap` are taken only while `email.available` (the API can send email); the get
+       * answers them only then too.
        */
       set: async (prefs: {
         needsYou?: boolean;
@@ -453,6 +456,8 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         prReady?: boolean;
         teammateComments?: boolean;
         emailDigest?: boolean;
+        emailTeam?: boolean;
+        emailRecap?: boolean;
         timeZone?: string;
       }) => (await v1.me.notifications.$patch({ json: prefs })).json(),
       /**

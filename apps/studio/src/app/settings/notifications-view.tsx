@@ -7,9 +7,9 @@ import { SectionUnavailable } from "./unavailable.tsx";
 
 /*
  * Settings › Notifications: which events ping the person, each Mac and iPhone signed in as them
- * (this one first, as "This Mac"), and the daily email once Ponzu can send it. A toggle shows
- * flipped at once and is put back if the API turns it down. With no iPhone yet, a row leads to
- * getting one: the guided setup's own step.
+ * (this one first, as "This Mac"), and which emails Ponzu sends once it can send any. A toggle
+ * shows flipped at once and is put back if the API turns it down. With no iPhone yet, a row leads
+ * to getting one: the guided setup's own step.
  */
 export function NotificationsView({
   email,
@@ -37,11 +37,14 @@ export function NotificationsView({
   return (
     <NotificationsSection
       prefs={answer.data.prefs}
-      onPrefsChange={(prefs) => setPings.mutate(prefs)}
+      // Only the switch flipped, so a copy shown from before "Stop these emails" in an email
+      // can't turn that email back on.
+      onPrefChange={(pref, on) => setPings.mutate({ [pref]: on })}
       devices={devices}
       onDeviceChange={(device, pings) => setDevice.mutate({ deviceId: device.id, pings })}
       email={answer.data.email.address ?? email}
       emailAvailable={answer.data.email.available}
+      teamAvailable={answer.data.email.teamAvailable === true}
       team={team}
       onGetIphone={onGetIphone}
     />

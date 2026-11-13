@@ -110,6 +110,60 @@ describe("the document", () => {
   });
 });
 
+describe("a page with one button", () => {
+  const asking: Handoff = {
+    documentTitle: "Friday recap",
+    view: { title: "Stop Ponzu's Friday recap?", body: "Turn it back on in Settings." },
+    link: null,
+    form: {
+      action: "/v1/email/unsubscribe?t=usr_1.recap.pzv1.a&x=1",
+      fields: { via: "page" },
+      label: "Stop these emails",
+    },
+  };
+
+  test("posts to its own origin only, with the policy allowing that and nothing more", async () => {
+    const { html, csp } = await renderHandoff(asking);
+    expect(html).toContain(
+      '<form method="post" action="/v1/email/unsubscribe?t=usr_1.recap.pzv1.a&amp;x=1"><input type="hidden" name="via" value="page"><button class="cta" type="submit">Stop these emails</button></form>',
+    );
+    expect(csp).toBe(await handoffPolicy({ form: true }));
+    expect(csp).toContain("form-action 'self';");
+    // The same script and style as every other page: the hashes hold.
+    const plain = await renderHandoff({ ...asking, form: undefined });
+    expect(plain.csp).toContain("form-action 'none';");
+    expect(html.match(/<script>[\s\S]*?<\/script>/)![0]).toBe(
+      plain.html.match(/<script>[\s\S]*?<\/script>/)![0],
+    );
+    expect(plain.html).not.toContain("<form");
+  });
+
+  test("refuses another origin, a script, or a link beside it", async () => {
+    for (const action of [
+      "https://evil.example/x",
+      "//evil.example/x",
+      "javascript:alert(1)",
+      '/x"><script>',
+    ]) {
+      await expect(renderHandoff({ ...asking, form: { ...asking.form!, action } })).rejects.toThrow(
+        "posts only to a path on its own origin",
+      );
+    }
+    await expect(
+      renderHandoff({ ...withLink("ponzu://canvas/cnv_1"), form: asking.form }),
+    ).rejects.toThrow("a link to open or a form, not both");
+  });
+
+  test("its words and fields are only ever words", async () => {
+    const { html } = await renderHandoff({
+      ...asking,
+      form: { action: "/x", fields: { 'a"b': '<c>"' }, label: "<b>Stop</b>" },
+    });
+    expect(html).toContain('name="a&quot;b" value="&lt;c&gt;&quot;"');
+    expect(html).toContain("&lt;b&gt;Stop&lt;/b&gt;</button>");
+  });
+});
+
 async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return `'sha256-${Buffer.from(digest).toString("base64")}'`;

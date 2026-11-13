@@ -15,6 +15,7 @@ import type { RateLimit } from "../deps/rate-limit.ts";
 import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
+import { EMAIL_CONFIG_UNSET, type EmailConfig } from "../email/kinds.ts";
 import type { Environment, SandboxConfig } from "../env.ts";
 import { FEATURES_OFF, type Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
@@ -160,6 +161,8 @@ export async function createTestApp(
      * sets none, except `push` and `email`, which follow the options above.
      */
     features?: Partial<Features>;
+    /** How email goes (Reply-To, the allowlist, what is paused); nothing set by default. */
+    email?: Partial<EmailConfig>;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -269,6 +272,7 @@ export async function createTestApp(
         vercel: null,
         ...options.sandbox,
       },
+      email: { ...EMAIL_CONFIG_UNSET, ...options.email },
     },
   };
   const app = createApp(deps);
