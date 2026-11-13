@@ -6,8 +6,10 @@
  *
  * - A failed deploy opens it, or comments on the one already open, naming the commit, its pull
  *   request, the job and step that failed, the log, and whether production was put back.
- * - A deploy that does everything it was asked closes it, unless production deploys and this run
- *   (a dispatch, which deploys dev alone) left it out: that proves nothing about production.
+ * - A deploy that does everything it was asked closes it, unless the issue records a production
+ *   failure and this run left production out (a dispatch, or production switched off): that
+ *   proves nothing about production. Each report on a production failure carries a hidden mark
+ *   (PRODUCTION_MARK) so a later run can tell, whatever the variables say by then.
  * - A push that deployed nothing (deploy-plan.ts) leaves it as it is: it proved nothing.
  *
  *   bun scripts/ci/deploy-report.ts
@@ -21,6 +23,9 @@ import { $ } from "bun";
 import { apiUrlOf } from "./health.ts";
 
 export const LABEL = "deploy-failed";
+
+/** Hidden in every report on a run whose production job failed, so a dev-only run leaves it open. */
+export const PRODUCTION_MARK = "<!-- deploy-failed: production -->";
 
 /** A job's result as `needs.<job>.result` gives it. */
 export type Result = "success" | "failure" | "cancelled" | "skipped" | "";
@@ -60,6 +65,8 @@ export interface GitHub {
   /** The pull request that merged as this commit. */
   pullRequest(commit: string): Promise<number | null>;
   openIssue(): Promise<number | null>;
+  /** Whether the issue's body or a comment on it carries PRODUCTION_MARK. */
+  recordsProductionFailure(number: number): Promise<boolean>;
   createIssue(title: string, body: string): Promise<number>;
   comment(number: number, body: string): Promise<void>;
   closeIssue(number: number, comment: string): Promise<void>;
@@ -118,6 +125,11 @@ export function summary(
       : verdict === "nothing"
         ? `${short(run.commit)} changes nothing the API is made from, so nothing was deployed.`
         : `The deploy of ${short(run.commit)} failed${step ? ` at "${step.job}" › "${step.step}"` : ""}.`;
+  const productionFailed =
+    run.productionOn &&
+    run.production !== "success" &&
+    run.production !== "skipped" &&
+    run.production !== "";
   return [
     `## API deploy`,
     "",
@@ -129,6 +141,7 @@ export function summary(
     `- Production serves ${live.production}.`,
     `- Log: ${step?.url ?? run.runUrl}`,
     "",
+    ...(productionFailed ? [PRODUCTION_MARK, ""] : []),
   ].join("\n");
 }
 
@@ -147,8 +160,9 @@ export async function report(deps: {
   if (verdict === "nothing") return { verdict, text, issue: null, action: "none" };
   const open = await github.openIssue();
   if (verdict === "deployed") {
-    if (open === null || (run.productionEnabled && !run.productionOn))
-      return { verdict, text, issue: open, action: open === null ? "none" : "left open" };
+    if (open === null) return { verdict, text, issue: open, action: "none" };
+    if (!run.productionOn && (await github.recordsProductionFailure(open)))
+      return { verdict, text, issue: open, action: "left open" };
     await github.closeIssue(open, text);
     return { verdict, text, issue: open, action: "closed" };
   }
@@ -219,11 +233,18 @@ export function ghGitHub(gh: Gh, repository: string, runId: string): GitHub {
         conclusion: string | null;
         steps: { name: string; conclusion: string | null }[];
       }[];
+      const stopped = new Set(["failure", "cancelled", "timed_out"]);
       for (const job of jobs) {
         const step = job.steps.find((s) => s.conclusion === "failure");
         if (step) return { job: job.name, step: step.name, url: job.html_url };
-        if (job.conclusion === "failure" || job.conclusion === "cancelled")
-          return { job: job.name, step: `the job was ${job.conclusion}`, url: job.html_url };
+      }
+      // Nothing failed outright: a job cancelled or out of time names the step it stopped in.
+      for (const job of jobs) {
+        if (!stopped.has(job.conclusion ?? "")) continue;
+        const how =
+          job.conclusion === "timed_out" ? "the job ran out of time" : "the job was cancelled";
+        const step = job.steps.find((s) => s.conclusion === "cancelled");
+        return { job: job.name, step: step ? `${step.name} (${how})` : how, url: job.html_url };
       }
       return null;
     },
@@ -255,6 +276,21 @@ export function ghGitHub(gh: Gh, repository: string, runId: string): GitHub {
         ]),
       ) as { number: number }[];
       return issues.map((i) => i.number).sort((a, b) => a - b)[0] ?? null;
+    },
+    async recordsProductionFailure(number) {
+      // If the issue can't be read, it is left open: closing it would claim too much.
+      const out = await gh([
+        "issue",
+        "view",
+        String(number),
+        "--repo",
+        repository,
+        "--json",
+        "body,comments",
+        "--jq",
+        '[.body, .comments[].body] | map(select(. != null)) | join("\\n")',
+      ]).catch(() => PRODUCTION_MARK);
+      return out.includes(PRODUCTION_MARK);
     },
     async createIssue(title, body) {
       await gh([

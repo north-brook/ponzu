@@ -98,12 +98,17 @@ export async function canary(deps: Canary): Promise<Record<string, number>> {
     }
   };
 
-  // Where: the check account's own personal workspace, with nobody else in it.
+  // Where: the check account's own personal workspace (the personal one on its own GitHub
+  // login), with nobody else in it. Another person's personal workspace it can see is never
+  // counted or opened.
   const me = await api.me();
-  const personal = me.workspaces.filter((w) => w.kind === "personal");
+  const login = me.user.githubLogin.toLowerCase();
+  const personal = me.workspaces.filter(
+    (w) => w.kind === "personal" && w.githubLogin.toLowerCase() === login,
+  );
   if (personal.length !== 1)
     throw new CanaryError(
-      `The check account has ${personal.length} personal workspaces; the canary works only in its own one.`,
+      `The check account has ${personal.length} personal workspaces of its own; the canary works only in its own one.`,
     );
   const workspace = personal[0]!;
   const { members } = await api.workspaces.get(workspace.id);

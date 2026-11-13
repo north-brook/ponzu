@@ -21,7 +21,7 @@ interface World {
 function world(
   opts: {
     claude?: "api_key" | "subscription" | null;
-    workspaces?: "alone" | "two" | "shared";
+    workspaces?: "alone" | "two" | "shared" | "others_personal";
     agent?: "answers" | "silent" | "never_sleeps";
   } = {},
 ): World {
@@ -33,6 +33,12 @@ function world(
   fake.addWorkspace({ login: "ponzu-check", kind: "personal", members });
   if (opts.workspaces === "two")
     fake.addWorkspace({ login: "acme", members: { [check.id]: "member", [other.id]: "admin" } });
+  if (opts.workspaces === "others_personal")
+    fake.addWorkspace({
+      login: "someone",
+      kind: "personal",
+      members: { [check.id]: "member", [other.id]: "admin" },
+    });
   const claude = opts.claude === undefined ? "api_key" : opts.claude;
   if (claude) fake.claude.connect(check.id, claude);
   const { api } = fake.connect(check);
@@ -135,6 +141,28 @@ describe("the canary", () => {
     expect(me.workspaces.length).toBe(2);
     expect(created.map((c) => c.workspaceId)).toEqual([personal?.id]);
     expect(w.fake.canvases.size).toBe(0);
+  });
+
+  test("never counts or opens another person's personal workspace it can see", async () => {
+    const w = world({ workspaces: "others_personal" });
+    const opened: string[] = [];
+    const get = w.api.workspaces.get;
+    w.api.workspaces.get = async (id) => {
+      opened.push(id);
+      return get(id);
+    };
+    const created: { workspaceId?: string }[] = [];
+    const create = w.api.canvases.create;
+    w.api.canvases.create = async (body) => {
+      created.push(body);
+      return create(body);
+    };
+    await run(w);
+    const me = await w.api.me();
+    const own = me.workspaces.find((x) => x.githubLogin === "ponzu-check");
+    expect(me.workspaces.filter((x) => x.kind === "personal").length).toBe(2);
+    expect(opened).toEqual([own!.id]);
+    expect(created.map((c) => c.workspaceId)).toEqual([own!.id]);
   });
 
   test("never runs on a subscription or with no Claude, and never connects one", async () => {

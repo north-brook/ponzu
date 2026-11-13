@@ -631,8 +631,11 @@ and a failure anywhere stops everything after it:
    summary says in plain words what deployed, and which commit dev and production each serve
    now. A failure opens one issue labelled `deploy-failed`, or comments on the one already open,
    naming the commit, its pull request, the job and step that failed, the log, and where
-   production stands. A run that deploys everything it was asked to closes the issue. A run that
-   deployed nothing leaves it alone.
+   production stands, and the step a cancelled or timed-out job stopped in. A run that deploys
+   everything it was asked to closes the issue, except that an issue recording a production
+   failure stays open until a run deploys production again (a dispatch, or a run with
+   production switched off, proves nothing about it). A run that deployed nothing leaves it
+   alone.
 
 **One at a time, never cancelled.** The workflow is one concurrency group, `deploy-api`, with
 `cancel-in-progress: false`: a second merge's run waits until the first has finished, its
@@ -674,7 +677,7 @@ waits for Claude's answer and the agent to go idle, calls the minute with dev's 
 until the sandbox is asleep, sends a second message, waits for the sandbox to wake and Claude to
 answer again, and deletes the canvas whatever happened. It uses the client's own session and API
 code, and is tested against the client's fake backend (`canary.test.ts`). It works only in the
-account's own personal workspace, and refuses to run, and fails, when that workspace has another
+account's own personal workspace (the personal one on its own GitHub login), and refuses to run, and fails, when that workspace has another
 member or when the account's Claude is not an API key. Other workspaces the account can see (the
 workspace of any repository GitHub lets it read, a public one included) it never opens; it never connects or disconnects
 a Claude. With no `CANARY_SESSION`, or no `CANARY_SESSION_WRITER` to keep the rotated session, it

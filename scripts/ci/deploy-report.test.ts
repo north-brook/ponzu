@@ -3,6 +3,7 @@ import {
   fromEnv,
   type GitHub,
   ghGitHub,
+  PRODUCTION_MARK,
   productionSentence,
   type Run,
   report,
@@ -29,7 +30,7 @@ const run = (over: Partial<Run> = {}): Run => ({
 });
 
 /** A GitHub that records what was done, with one issue open or none. */
-function fakeGitHub(open: number | null) {
+function fakeGitHub(open: number | null, production = false) {
   const done: string[] = [];
   const github: GitHub = {
     failedStep: async () => ({
@@ -39,6 +40,7 @@ function fakeGitHub(open: number | null) {
     }),
     pullRequest: async () => 601,
     openIssue: async () => open,
+    recordsProductionFailure: async () => production,
     createIssue: async (title, body) => {
       done.push(`create ${title}\n${body}`);
       return 42;
@@ -150,8 +152,17 @@ describe("the issue", () => {
     expect(out.text).toContain("changes nothing the API is made from");
   });
 
-  test("a dispatch that deployed dev alone leaves a production failure's issue open", async () => {
-    const open = fakeGitHub(42);
+  test("only a production failure's report carries the production mark", async () => {
+    const prod = fakeGitHub(null);
+    await report({ run: run({ production: "failure" }), github: prod.github, live });
+    expect(prod.done[0]).toContain(PRODUCTION_MARK);
+    const dev = fakeGitHub(null);
+    await report({ run: run({ dev: "failure", production: "skipped" }), github: dev.github, live });
+    expect(dev.done[0]).not.toContain(PRODUCTION_MARK);
+  });
+
+  test("a run that left production out leaves a production failure's issue open", async () => {
+    const open = fakeGitHub(42, true);
     const out = await report({
       run: run({ productionOn: false, production: "skipped" }),
       github: open.github,
@@ -159,14 +170,26 @@ describe("the issue", () => {
     });
     expect(out).toMatchObject({ verdict: "deployed", issue: 42, action: "left open" });
     expect(open.done).toEqual([]);
-    // With production off altogether, dev is everything a run is asked to do.
-    const devOnly = fakeGitHub(42);
+    // Production switched off after it failed: nothing proves production, so it stays open.
+    const switchedOff = fakeGitHub(42, true);
+    const stays = await report({
+      run: run({ productionOn: false, productionEnabled: false, production: "skipped" }),
+      github: switchedOff.github,
+      live,
+    });
+    expect(stays.action).toBe("left open");
+    expect(switchedOff.done).toEqual([]);
+    // An issue about dev alone is closed by a dev-only run that passes.
+    const devOnly = fakeGitHub(42, false);
     const closed = await report({
       run: run({ productionOn: false, productionEnabled: false, production: "skipped" }),
       github: devOnly.github,
       live,
     });
     expect(closed.action).toBe("closed");
+    // A push that deployed production as well closes a production failure's issue.
+    const both = fakeGitHub(42, true);
+    expect((await report({ run: run(), github: both.github, live })).action).toBe("closed");
   });
 });
 
@@ -218,6 +241,7 @@ describe("from the workflow", () => {
           },
         ]);
       if (args[1]?.includes("/pulls")) return "601\n";
+      if (args[0] === "issue" && args[1] === "view") return `body\n${PRODUCTION_MARK}\n`;
       if (args[0] === "issue" && args[1] === "list") return "[]";
       if (args[0] === "issue" && args[1] === "create") return "https://github.com/o/r/issues/43\n";
       return "";
@@ -230,14 +254,53 @@ describe("from the workflow", () => {
     });
     expect(await github.pullRequest(SHA)).toBe(601);
     expect(await github.openIssue()).toBeNull();
+    expect(await github.recordsProductionFailure(43)).toBe(true);
     expect(await github.createIssue("t", "body")).toBe(43);
     await github.closeIssue(43, "done");
     expect(calls.filter((c) => c.startsWith("issue") || c.startsWith("label"))).toEqual([
       "issue list --repo o/r --label deploy-failed --state open --json number --limit 20",
+      expect.stringMatching(/^issue view 43 --repo o\/r --json body,comments --jq /),
       "label create deploy-failed --repo o/r --color B60205 --description The API deploy failed (deploy-api.yml) --force",
       "issue create --repo o/r --title t --label deploy-failed --body-file - <<4",
       "issue comment 43 --repo o/r --body-file - <<4",
       "issue close 43 --repo o/r",
     ]);
+  });
+
+  test("gh: a cancelled or timed-out job names the step it stopped in", async () => {
+    const jobs =
+      (conclusion: string, steps: { name: string; conclusion: string | null }[]) =>
+      async (args: string[]) =>
+        args[1]?.includes("/jobs")
+          ? JSON.stringify([
+              { name: "Plan", html_url: "u1", conclusion: "success", steps: [] },
+              { name: "Migrate, deploy and check production", html_url: "u2", conclusion, steps },
+            ])
+          : "";
+    const steps = [
+      { name: "Promote it to api.ponzu.design", conclusion: "success" },
+      { name: "The minute is active in production", conclusion: "cancelled" },
+      { name: "Put back the deployment that was serving", conclusion: "success" },
+    ];
+    expect(await ghGitHub(jobs("cancelled", steps), "o/r", "7").failedStep()).toEqual({
+      job: "Migrate, deploy and check production",
+      step: "The minute is active in production (the job was cancelled)",
+      url: "u2",
+    });
+    expect(await ghGitHub(jobs("timed_out", steps), "o/r", "7").failedStep()).toEqual({
+      job: "Migrate, deploy and check production",
+      step: "The minute is active in production (the job ran out of time)",
+      url: "u2",
+    });
+    expect(await ghGitHub(jobs("timed_out", []), "o/r", "7").failedStep()).toEqual({
+      job: "Migrate, deploy and check production",
+      step: "the job ran out of time",
+      url: "u2",
+    });
+  });
+
+  test("gh: an issue that can't be read is treated as a production failure's", async () => {
+    const github = ghGitHub(async () => Promise.reject(new Error("gh failed")), "o/r", "7");
+    expect(await github.recordsProductionFailure(43)).toBe(true);
   });
 });
