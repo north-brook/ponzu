@@ -219,6 +219,49 @@ it names is gone). While a reply streams, a link still being written shows as it
 parser slow (see `parseable` and `parts` in markdown.ts), or longer than 32 KB, is plain text.
 Blocks are memoised in runs of 16, so a reply streaming in parses only its last run.
 
+### Search
+
+⌘K turns the sidebar's header row into the search field; an empty query keeps the list, and
+results take its place as you type. The words go to the API's search
+(`POST /v1/workspaces/:id/search`, docs/cloud.md "Search") once typing has rested for 100 ms
+(`app/search.ts`, `useCanvasSearch`), a newer query giving up on the older one's request. Until
+the first answer of a search lands, the canvases' names the window already holds stand in; after
+that the last answer stays until the next lands, the list marked `aria-busy` meanwhile. The field
+takes at most the API's 200 characters.
+
+The answer is ids and names only. `toSearchResults` (`@ponzu/client/model/map`) puts each hit with
+the canvas the window lists, for its preview, place and owner, and drops a hit on any canvas the
+window doesn't list: the list is what may be shown. A page's icon is known for the open canvas.
+
+The groups, in order, are Canvases, Boards (pages and boards as the server ranked them; a page
+reads "Page in <canvas>" with its own icon), Comments (the snippet in curly quotes, then who, the
+canvas, the age and "Resolved" for a resolved thread; the agent with its mark and the name
+"Claude", "Deleted user" with an empty avatar), Messages (a person's message or the agent's
+answer to a turn, the same row as a comment's), Pull requests (the pull request tile, the title,
+then "#412 · Open · canvas", the state only for the canvas's current one) and People (the avatar,
+the name or else the login, and "@login"). People are asked for only in an organization's
+workspace (`studioSearchGroups`), as the filter menu offers teammates only there. Each result's
+key (`ResultKey`: `canvas:`, `page:`, `board:`, `comment:`, `message:`, `pr:`, `person:`) names
+its canvas, since ids repeat across canvases. The arrows walk every result in that order,
+stopping at the ends; a hidden status says how many there are. The gallery's "Search · every
+group" composition draws one or two of each.
+
+Opening a result closes search and counts `search result opened` (its group and place, never the
+words). A canvas opens as from the list; a board opens on its page, framed; a page, showing; a
+comment, with its pin in the middle of the view and its thread open, resolved or not. Each place
+is a link the canvas follows (`Opening` in main-window.tsx, carried through `useCanvasPanes`),
+the newer of it and the thread's last jump winning. A message opens the thread's pane, without
+putting the keyboard in it (`holdThreadFocus`); while the rail holds only later pages of the
+thread (no live rows), it asks for the page before, at most 20 (`revealStep`), then draws the
+line, scrolls it to the middle and washes it in pith for 1.2 s, fading at the pane's pace. With
+reduced motion it is only scrolled to. Out of pages, the oldest line held is shown. A pull
+request opens its canvas on the pull request tab, as ⌘P does; on the canvas already open, a
+message or a pull request leaves its page as it was. A person sets the sidebar's filter to them
+(`{ person, projects: null }`). A comment deleted since its answer shows
+where it was and says "That comment was deleted. This is where it was." With nothing to show,
+"Searching…" appears after 300 ms; nothing found reads "No results for “q”"; no answer reads
+"Search isn't answering. Try again in a moment." Results are masked in a private recording.
+
 ## Keyboard
 
 | Shortcut | What it does | Where |

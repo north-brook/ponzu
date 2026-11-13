@@ -3164,17 +3164,105 @@ already left.
 
 ## Search
 
-Not built. Searching the sidebar for canvas names alone is cheap (the `canvases` row has the
-name and the access joins `workspace.canvases` uses), but the board shows boards and comments
-too, and those live only inside a canvas's document, as `json` in checkpoints and ops. Reading
-every readable canvas's document per keystroke is not an answer, so search needs a small table
-kept at commit time: `search_entries (canvas_id, kind: canvas | board | comment, ref, text,
-author_id, at)`, written by the statement that commits ops (the same one that copies the name
-and icon to `canvases`) from what each op changed, and rebuilt for a canvas from its checkpoint
-when its shape changes. `GET /v1/workspaces/:id/search?q=` then reads it with a trigram index
-(`pg_trgm`), joined to `repo_access` as the canvases list is, at most 8 canvases, 8 boards and 8
-comments, with the match offsets the results board highlights. That is a change to the commit
-path, which is its own pull request.
+Search looks through one workspace at a time, in the canvases the person may read there, on
+Postgres with the `pg_trgm` extension. It finds:
+
+- canvas names, page names and board names;
+- comments, open and resolved;
+- people's messages in a canvas's thread, and the agent's answer of each turn that ended with one
+  (`turn.final`);
+- pull request titles and numbers, every pull request a canvas has had;
+- the workspace's people who have joined Ponzu, by name or login.
+
+It does not find words drawn on boards, notes, asides, tool steps, repo or branch names, or
+anything in another workspace. Each of those would be another kind in the same table.
+
+**The table.** `search_entries (canvas_id, kind, ref, text, folded, context, author_kind,
+author_id, author_name, at)`, one row per thing that can be found, keyed by `(canvas_id, kind,
+ref)`. The kinds are `canvas`, `page`, `board`, `comment`, `message` and `pull_request`. `text` is
+what the person sees, cut at 8,000 characters; `folded` is the same text folded for matching
+(lower case, accents taken off, punctuation as spaces) in TypeScript (`@ponzu/core`'s
+`foldForSearch`), keeping its length, so match offsets carry straight back to `text`. A GIN
+`gin_trgm_ops` index covers `folded`, and a second, partial one covers the name kinds.
+`search_state (canvas_id, version, indexed_seq)` says which version of these rules last rebuilt a
+canvas's entries. Entries go with their canvas when it is deleted.
+
+**Written by the statement that changes their source:**
+
+- A commit (`POST /v1/canvases/:id/ops`, and undo and redo) carries what changed in the
+  document's entries (`docSearchChanges`), worked out on the same documents as the commit, in the
+  same statement and gated on the canvas's seq moving, so a conflict or a replay writes nothing.
+  Ops search never reads (the agent's node edits, mostly) send no search SQL at all. A removed
+  entry is left with empty text, which is never a hit.
+- A canvas's create writes its document's entries, its first message's, and its `search_state`.
+- A person's message is indexed by the statement that posts it.
+- The agent's answers are indexed after the runner's thread write, in a statement of their own:
+  for each turn that write ended with a `final`, that answer, as plain text (its markdown taken
+  off with `mdast-util-from-markdown`). This never fails the runner's write: a failure is logged
+  as `search_index_failed`, with ids alone, and queues a reindex of the canvas. An answer that
+  is not in the thread yet, or is still streaming there, when its turn's ending arrives (the
+  runner may send the two in separate writes) also queues a reindex, which finds it once it lands.
+- A pull request's read writes `#<number> <title>` when that text changed.
+- A person who deletes their account keeps their entries' author id, and is shown as "Deleted
+  user" by the failed join to `users`; the stored name is rewritten too, and a later commit or
+  reindex writes "Deleted user", never the name a document's comment still carries.
+
+**Reindex and backfill.** The job `search.reindex` (key: the canvas id) rebuilds one canvas's
+entries whole. It reads the document, replaces its document's entries in one statement that
+holds the canvas row at that seq (`FOR UPDATE`), so a commit either waits for it or moves the seq
+and the reindex reads again; after three tries it is retried 30 seconds later. Then it writes the
+thread's entries page by page: people's messages, each ended turn's answer (and takes out any
+other answer of that turn), and answers from before turns had records. When an ended turn's
+answer is still streaming or not in the thread yet, it writes what there is and is retried 15
+seconds later, until the answer lands or the job's attempts run out. The cron step
+`search_backfill` queues it for canvases with no `search_state` or an older version, the most
+recently active first, with at most 25 waiting at once so other jobs are not held behind it.
+Raising `SEARCH_VERSION` rebuilds every canvas this way.
+
+**Access.** One rule, `readableCanvases`, serves both the canvas list and search: the canvas is
+in the workspace, the person is a member of it, and it is either their own Scratch canvas or one
+in a repo `repo_access` says they can read. Search therefore never finds a canvas the sidebar
+would not list. Before searching, the route brings the person's repo access up to the minute
+exactly as the list does (`refreshWorkspaceRepoAccess`), so a repo they lost leaves search when
+it leaves the list.
+
+**The route.** `POST /v1/workspaces/:id/search`, with `{ q, groups? }`. It is a POST, not a GET,
+so the words never sit in an address that a request log or a proxy keeps. `q` is 1 to 200
+characters after trimming (400 `invalid_request` otherwise); `groups` picks among `canvases`,
+`boards`, `comments`, `messages`, `pullRequests` and `people`, all six when left out. A
+non-member gets the same 404 as an unknown workspace. A query of punctuation alone answers
+nothing, with 200. The answer holds at most 8 canvases, 8 boards (pages share the group), 8
+comments, 8 messages, 4 pull requests and 4 people, each with the match offsets into the text it
+shows, and for comments and messages a snippet round the first match. A pull request's state is
+given only for the canvas's current one. Authors are a person (as their row is now), the agent,
+or `deleted`. No asset key, preview address, repo or branch is in an answer: clients draw those
+from the canvas list they hold and drop a hit on a canvas it does not list.
+
+**Matching and ranking.** The query is folded as the text is and split into terms (at most 8);
+quoted words are a phrase. Every term must match. A term of 3 or more characters matches
+anywhere in the text; a shorter one only at the start of a word, and comments and messages are
+searched only when some term has 3 or more characters, so "ui" alone searches names. `%`, `_` and
+`\` are never wildcards: they fold to spaces. Within each group hits rank by tier (the whole text,
+or a pull request's number; the text starts with the query; every term at a word start;
+anywhere), then by recency (the entry's own time, else the canvas's last activity), then by id.
+People are matched in TypeScript over the people GitHub would show the searcher, joined members
+only, ranked the same way, then admins, then by name.
+
+**What it logs and sends.** One log line, `search`, with the workspace id, `ms`, `access_ms`,
+`query_ms`, the number of terms, the query's length and the count per group, and the server
+event `search answered` (docs/analytics.md). Never the words.
+
+**Speed.** The targets: the search statement at p50 20 ms and p95 50 ms for a workspace of up to
+100,000 entries; the route without a GitHub refresh at p95 150 ms; a commit that carries search
+changes no more than 5 ms slower. `packages/db/scripts/search-bench.ts` measures the statement;
+`search.live.test.ts` checks in CI that a 3-character term's plan uses the trigram index. What
+has been measured, on Postgres 17 and 18 on a loaded Mac, is in "Known constraints".
+
+**On the Mac.** ⌘K asks for every group (people only in an organization's workspace) and shows
+them as Canvases, Boards, Comments, Messages, Pull requests and People. A result opens where it
+is: a board or page on the canvas, a comment at its pin, a message in the thread's rail (paged
+back to, at most 20 pages, and marked a moment), a pull request on its tab, and a person as the
+sidebar's filter. apps/studio/src/cloud/README.md "Search" has the details.
 
 ## Clients
 
@@ -3576,3 +3664,25 @@ from `cloud` into `main`, released as the next major version.
 - Neon Realtime is a public beta.
 - A commit can be authored by the person or verified, not both. Repos that require
   signed commits on the pushed branch need the API commit path.
+- **Search** (above):
+  - **Common words are slower than the target.** On Postgres 17 and on Postgres 18.6 (in Docker),
+    both on a loaded Mac (`search-bench.ts`), at 100,000 entries in one workspace, rare words, one-
+    and two-letter prefixes, `#412`, CJK and queries with no hit stay at or under about 9 ms p95,
+    but a word found in about a fifth of all entries takes 57 to 95 ms p95, against the 50 ms
+    target. On Postgres 17 such a word took 0.6 to 3 seconds at 1,000,000 entries; that size was
+    not run on Postgres 18. It has not been measured on Neon. Past 150 ms p95 for
+    a day on production, or about 1,000,000 entries in one workspace, the next steps are partial
+    indexes per kind, a `(canvas_id, folded)` index with `btree_gin`, and then an outside engine
+    fed from `search_entries`.
+  - Only the first 8,000 characters of a message, comment or answer are searched.
+  - Asides, tool steps and the words of a turn that stopped or failed before it answered are not
+    indexed, and neither is an answer of a turn that ended with no `final`.
+  - Whether CJK and other non-Latin text yields trigrams depends on the database's ctype. Under
+    the C locale it still matches, but by scanning the index whole, so it is slower.
+  - An older pull request read can briefly put back an older title, until the next read.
+  - People are matched in TypeScript, which is fine to about 2,000 people shown in a workspace.
+  - Results follow repo access as the canvas list does: up to a minute behind GitHub (10 while
+    GitHub fails). A member who leaves loses search at once.
+  - An index write that fails after the runner's thread write, or an answer that arrives after
+    its turn's ending, is repaired by the reindex it queues, so an answer can be missing from
+    search until the next minute's jobs run.

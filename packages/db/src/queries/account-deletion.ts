@@ -81,8 +81,9 @@ export const DELETED_PERSON = { name: "Deleted user", login: "ghost" } as const;
 
 /**
  * Take the person's name, login and picture out of what other people still see: the thread
- * items they wrote or stopped a run in, and the actor of their ops in the canvas's history, in
- * every canvas of a workspace they are in or that they own. Their words stay, under
+ * items they wrote or stopped a run in, the actor of their ops in the canvas's history, and the
+ * author of their search entries, in every canvas of a workspace they are in or that they own.
+ * Their words stay, under
  * `DELETED_PERSON`. Safe to repeat. Answers how many rows it wrote.
  */
 export async function anonymiseUser(db: Db, userId: string): Promise<number> {
@@ -110,9 +111,18 @@ export async function anonymiseUser(db: Db, userId: string): Promise<number> {
          where o.canvas_id in (select id from theirs)
            and o.actor_kind = 'user' and o.actor_id = ${userId}
         returning 1
+      ),
+      -- Search keeps its own copy of the name each entry was written with (search_entries).
+      entries as (
+        update search_entries s set author_name = ${DELETED_PERSON.name}
+         where s.canvas_id in (select id from theirs)
+           and s.author_kind = 'user' and s.author_id = ${userId}
+           and s.author_name is distinct from ${DELETED_PERSON.name}
+        returning 1
       )
       select json_build_object(
         'changed', (select count(*) from items) + (select count(*) from ops)
+          + (select count(*) from entries)
       ) as result
     `,
   );

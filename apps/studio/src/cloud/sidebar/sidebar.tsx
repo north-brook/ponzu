@@ -45,6 +45,12 @@ export interface SidebarProps extends RowHandlers {
   onQueryChange: (query: string | null) => void;
   /** The answer for `query`, or null while it is on its way. */
   results: SearchResults | null;
+  /** The results shown aren't the answer to `query` yet: the last one, while it comes. */
+  searchBusy?: boolean;
+  /** Search didn't answer, and there are no results to show. */
+  searchFailed?: boolean;
+  /** The longest query search takes. */
+  searchMaxLength?: number;
   onOpenResult: (key: ResultKey) => void;
   onNewCanvas: () => void;
   onSwitchWorkspace: (workspace: Workspace) => void;
@@ -191,6 +197,7 @@ export function Sidebar(props: SidebarProps) {
           onSelect={setSelected}
           onOpenResult={props.onOpenResult}
           onClose={closeSearch}
+          {...(props.searchMaxLength ? { maxLength: props.searchMaxLength } : {})}
         />
       )}
       <div className="h-2 shrink-0" />
@@ -198,6 +205,8 @@ export function Sidebar(props: SidebarProps) {
         <SearchResultsView
           query={query}
           results={results}
+          busy={props.searchBusy ?? false}
+          failed={props.searchFailed ?? false}
           selected={selected}
           onSelect={setSelected}
           onOpenResult={props.onOpenResult}

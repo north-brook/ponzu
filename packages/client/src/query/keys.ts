@@ -34,4 +34,20 @@ export const queryKeys = {
   /** One changed file's diff at a commit: a push makes another, so the commit is the key. */
   pullRequestFile: (canvasId: string, path: string, headSha: string | null) =>
     ["ponzu", "canvas", canvasId, "pull-request", "file", path, headSha] as const,
+
+  /*
+   * Search.
+   */
+
+  /**
+   * A search's answer. The query is trimmed and NFC-normalised, as the request sends it, so
+   * spacing and how an accent was typed never ask twice.
+   */
+  search: (workspaceId: string, query: string, groups: readonly string[]) =>
+    ["ponzu", "search", workspaceId, searchQuery(query), groups.join(",")] as const,
 };
+
+/** A query as a search sends it, and keys it: trimmed, in NFC. */
+export function searchQuery(query: string): string {
+  return query.trim().normalize("NFC");
+}

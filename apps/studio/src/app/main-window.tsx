@@ -1,4 +1,4 @@
-import type { Api, Profile } from "@ponzu/client";
+import { type Api, type Profile, SEARCH_QUERY_MAX } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
@@ -16,13 +16,13 @@ import { focusCreateComposer } from "../cloud/create/focus.ts";
 import { type Sent, useLanding } from "../cloud/create/landing.ts";
 import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { CanvasSummary, Person, ThreadItem } from "../cloud/model.ts";
-import type { ResultKey } from "../cloud/search.ts";
+import { type ResultKey, resultAt, resultGroup } from "../cloud/search.ts";
 import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
 import type { RowAction } from "../cloud/sidebar/canvas-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
 import { readDraft, writeDraft } from "../cloud/thread/composer-rules.ts";
-import { ThreadRail } from "../cloud/thread/rail.tsx";
+import { holdThreadFocus, ThreadRail } from "../cloud/thread/rail.tsx";
 import { quietFocus } from "../cloud/ui/quiet-focus.ts";
 import { paneHeld, ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
@@ -40,8 +40,8 @@ import {
   canvasMembers,
   hereNow,
   membersById,
+  pageIconKey,
   pushableRepos,
-  searchByName,
   shownWorkspace,
   toPerson,
   toSummary,
@@ -52,6 +52,7 @@ import { Banner, PaneMessage } from "./notices.tsx";
 import { ThisDevice, useMacNotifications } from "./notifications.ts";
 import { usePonzu } from "./ponzu-query.tsx";
 import { ASKED_AHEAD_MS } from "./pull-request-store.ts";
+import { openSearchResult, useCanvasSearch } from "./search.ts";
 import { SettingsView } from "./settings/settings-view.tsx";
 import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
 import { useAssetsUrls, useRowPresence, useUnchanged } from "./sidebar-data.ts";
@@ -66,16 +67,18 @@ import { useOnReturn } from "./use-answer.ts";
 
 type MeWorkspace = Awaited<ReturnType<Api["me"]>>["workspaces"][number];
 
-/** Where a link asked to open a canvas. */
+/** Where a link, or a search result, asked to open a canvas. */
 interface Opening {
   canvasId: string;
   page?: string;
   artboard?: string;
-  /** A comment's thread, opened on its pin. */
+  /** A comment's thread: its pin in the middle of the view and the thread open. */
   thread?: string;
-  /** The pull request tab, open over the canvas. */
+  /** A line of the thread: the rail open on it, paged back to it if need be, and shown. */
+  item?: { id: string; seq: number };
+  /** The pull request tab over the canvas, as ⌘P shows it. */
   tab?: "pull-request";
-  /** When it was asked: the same link again is followed again. */
+  /** When it was asked: the same place asked for again is followed again. */
   at: number;
 }
 
@@ -304,6 +307,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
         badge={badge}
         opening={opening}
         onOpenCanvas={openCanvas}
+        onOpening={setOpening}
         openedVia={openedVia}
         notice={notice}
         say={say}
@@ -336,6 +340,7 @@ function WorkspaceWindow({
   badge,
   opening,
   onOpenCanvas,
+  onOpening,
   openedVia,
   notice,
   say,
@@ -361,6 +366,11 @@ function WorkspaceWindow({
   opening: Opening | null;
   /** Opens a canvas a link names, on its page or board. */
   onOpenCanvas: (link: { canvasId: string; pageId?: string; artboardId?: string }) => void;
+  /**
+   * Where a canvas of this workspace's that is opening, or open, should show: search's. Null
+   * when a canvas opens as itself, so an older place isn't followed again.
+   */
+  onOpening: (opening: Opening | null) => void;
   openedVia: { current: OpenedVia };
   notice: string | null;
   say: (notice: string) => void;
@@ -487,13 +497,16 @@ function WorkspaceWindow({
   const openCanvas = useCallback(
     (canvasId: string | null, via: OpenedVia = "sidebar") => {
       openedVia.current = via;
+      // Opened as itself, not at a place: a link or result followed before isn't followed again
+      // (its comment reopened, or said to be deleted) when the canvas next opens.
+      onOpening(null);
       update((now) => {
         const { [id]: _was, ...others } = now.canvases;
         return { ...now, canvases: canvasId ? { ...others, [id]: canvasId } : others };
       });
       setPage(null);
     },
-    [id, update, openedVia],
+    [id, update, openedVia, onOpening],
   );
   useEffect(() => {
     if (!openId) return;
@@ -507,9 +520,14 @@ function WorkspaceWindow({
     },
     [analytics, openId],
   );
-  // Another canvas opens on its first page, or the one a link names, never the last one's.
+  // Another canvas opens on its first page, or the one a link names, never the last one's. A
+  // link to no place on the canvas (a line of its thread, its pull request) leaves the page.
+  const pageFor = useRef(openId);
   useEffect(() => {
-    setPage(link?.page ?? null);
+    const another = pageFor.current !== openId;
+    pageFor.current = openId;
+    const somewhere = link && (link.page || link.artboard || link.thread);
+    if (another || somewhere) setPage(link?.page ?? null);
   }, [openId, link]);
 
   // The panes' toggles, for the menu's commands: the latest, without listening again each render.
@@ -599,7 +617,47 @@ function WorkspaceWindow({
   // it is all the person has: with a team set up too, the sidebar is how they reach it.
   const firstCanvas =
     workspace.kind === "personal" && summaries?.length === 0 && workspaces.length === 1;
-  const canvases = [...(active ?? []), ...(settled ?? [])];
+  const canvases = useMemo(() => [...(active ?? []), ...(settled ?? [])], [active, settled]);
+  // ⌘K: the API's search over every canvas the window lists. Hits come back as ids and names;
+  // their previews and places are the list's, and a page's icon is known for the open canvas.
+  const search = useCanvasSearch(workspace, query, canvases, () => {
+    if (!open) return new Map();
+    const pages = open.source.getState().doc?.pages ?? [];
+    return new Map(
+      pages.flatMap((p) => (p.icon ? [[pageIconKey(open.id, p.id), p.icon] as const] : [])),
+    );
+  });
+  const openResult = (key: ResultKey) => {
+    const found = search.results ? resultAt(search.results, key) : null;
+    setQuery(null);
+    if (!found) return;
+    analytics.capture("search result opened", {
+      kind: resultGroup(found.result),
+      position: found.position,
+    });
+    openSearchResult(found.result, {
+      canvas: (canvasId) => openCanvas(canvasId, "search"),
+      place: (at) => {
+        // A line of the thread or the pull request tab, on the canvas already open, leaves the
+        // canvas as it is (its page) and shows over or beside it. Anything else opens the canvas
+        // there, as a link does.
+        if (!(at.canvasId === openId && (at.item || at.tab))) openCanvas(at.canvasId, "search");
+        if (at.item) {
+          // Opened for reading, not to type: the keyboard stays where it was. From the create
+          // page the pane comes with the canvas and never takes the keyboard, so nothing is held
+          // there (a hold left over would swallow the next ⌥⌘B's).
+          if (!railOpen && openId) holdThreadFocus();
+          update((now) => ({ ...now, railOpen: true }));
+        }
+        onOpening({ ...at, at: Date.now() });
+      },
+      person: (userId) =>
+        update((now) => ({
+          ...now,
+          filters: { ...now.filters, [id]: { person: userId, projects: null } },
+        })),
+    });
+  };
   const sidebarOpen = ui.sidebarOpen;
   // A send from the create page: the thread's pane open for it, whatever it was left as, until
   // its beat is over (cloud/create/landing.ts); and the canvas's view at once, until it is made.
@@ -793,13 +851,11 @@ function WorkspaceWindow({
                   }
                   query={query}
                   onQueryChange={setQuery}
-                  results={query?.trim() ? searchByName(query, canvases) : null}
-                  onOpenResult={(key: ResultKey) => {
-                    if (key.startsWith("canvas:")) {
-                      openCanvas(key.slice("canvas:".length), "search");
-                    }
-                    setQuery(null);
-                  }}
+                  results={search.results}
+                  searchBusy={search.busy}
+                  searchFailed={search.failed}
+                  searchMaxLength={SEARCH_QUERY_MAX}
+                  onOpenResult={openResult}
                   onOpen={onOpen}
                   onIntent={onIntent}
                   onAction={onAction}

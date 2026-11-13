@@ -114,6 +114,55 @@ goes on. For thread, event and question payloads the characters are replaced wit
 A plain text column (a canvas's name, a thread item's id) is not checked here: a NUL in one
 is a `QueryError`. `isStorable` takes any json value, so the API can ask it of a request body.
 
+## Search entries
+
+`search_entries` holds what search finds, one row per thing, under its canvas. **An entry is
+written by the statement that changes its source**, so the two never disagree:
+
+- a canvas's name, pages, boards and comments by the commit statement (`commitOps` and
+  `commitReversal` take `search`, which is `docSearchChanges(before, after, ops)` from
+  `@ponzu/core`), and by `createCanvas` for the document it starts as;
+- a person's message by `postMessage` (and `createCanvas`'s first message) when given `search`;
+- a pull request's title by `recordPullRequestRead`, only when the text differs;
+- the agent's settled answers by `upsertSearchEntries`, which the runner's thread write cannot
+  carry.
+
+`replaceDocSearchEntries` rebuilds a canvas's document entries whole, at a seq, holding the
+canvas's row while it does, and records the version in `search_state`; `queueSearchBackfill`
+queues that (`search.reindex` jobs, due at the caller's `now`) for canvases no reindex has
+done at the current `SEARCH_VERSION`, with at most `limit` waiting at once. `deleteSearchEntries`
+takes out entries by key (a reindex removing an answer its turn no longer names), and
+`listSearchEntries` reads a canvas's rows as stored, empty ones included, for tests and checks.
+
+Rules that keep it from ever failing a commit: `toSearchRows` keeps one row per key, makes
+every string storable, and drops a ref too long to index; the table has no check constraints;
+and a commit whose ops touch nothing searched (`docSearchChanges` answers null) sends no
+search SQL at all. A commit removes an entry by emptying it (`text` and `folded` empty) rather
+than deleting it: a delete sees the rows as they were when its statement began, so a commit
+that waited on a reindex's lock would miss what the reindex had just written, while an upsert
+reaches it. An empty entry matches no search, and the canvas's next reindex deletes it.
+
+An entry keeps the name its author had when it was written, so deleting an account
+(`anonymiseUser`) renames that person's entries to "Deleted user", as it does their thread
+items. A write whose person author names no `users` row stores "Deleted user" too, so a commit
+or a reindex never writes back the name a document's comment still carries.
+
+The migration that made the table creates the `pg_trgm` extension, a line written by hand
+(drizzle-kit does not emit extensions). PGlite is given it in `createTestDb`.
+
+**Reading.** `searchCanvases` answers a search in one statement, from the canvases
+`readableCanvases` lets the person read. That condition is the canvas list's too
+(`listWorkspaceCanvases`): a member's own Scratch canvases, and the canvases of repos
+`repo_access` says they can read, never anything once they are not a member. So search can never
+find a canvas the list would not show; `search.access.test.ts` checks it over 200 random access
+matrices. Terms reach the statement only as parameters, each checked by core's
+`assertSearchTerm`, and matching is on `folded`: a one-word term anywhere, a short one (one or two
+characters) only at a word start, a phrase its words in order. Hits rank by tier (the whole
+text, its start, every term at a word start, anywhere), then by recency, then by key, at most 8
+a group and 4 pull requests. A query of short words alone searches names only, through a second
+trigram index over the names (`search_entries_names_trgm_idx`). `scripts/search-bench.ts` times
+it on a real Postgres.
+
 ## Tables
 
 Clients watch the tables marked **live** through Neon Realtime. That puts these rules on them:
@@ -164,6 +213,8 @@ Canvases
 | `presence` | Who has a canvas open. A row per person per canvas, refreshed every 30 seconds, stale after 75. | live |
 | `assets` | A file a canvas uses. The bytes are in R2. | |
 | `uploads` | Bytes on their way to R2: what a signed address was made for (purpose, name, type, size, SHA-256), until the uploader completes it and the file is recorded where it belongs. | |
+| `search_entries` | One searchable thing on a canvas, keyed by canvas, kind and ref: its name, a page's or board's name, a comment thread's message, a thread message (a person's, or the agent's settled answer), a pull request's title. The text as shown and `folded`, what is matched, under a pg_trgm GIN index, and the names under a second, partial one. No workspace column and no check constraints. See "Search entries". | |
+| `search_state` | Which version of the search rules last indexed each canvas whole, and at which seq. Apart from `canvases` so writing it reaches no watcher. | |
 
 The agent
 

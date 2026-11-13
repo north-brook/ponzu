@@ -1,4 +1,4 @@
-import { applyOp, type CommittedOp, newOpId, OpError } from "@ponzu/core";
+import { applyOp, type CommittedOp, docSearchChanges, newOpId, OpError } from "@ponzu/core";
 import { type Canvas, commitReversal, nextRedo, nextUndo } from "@ponzu/db";
 import type { Actor as Caller } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
@@ -78,6 +78,7 @@ export async function reverse(
       op,
       events,
       head: headChange(current.doc, doc),
+      search: docSearchChanges(current.doc, doc, [op.op]) ?? undefined,
     });
     if (result.kind === "conflict") continue;
     if (result.kind === "unstorable") {

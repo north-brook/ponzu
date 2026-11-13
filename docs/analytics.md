@@ -121,8 +121,9 @@ Every event about a workspace also carries `workspace_id`.
 | `file uploaded` | `canvas_id`, `content_type`, `bytes` | A person's image reached a canvas. |
 | `monthly cap set` | `cap_usd` | |
 | `repo secret changed` | `repo_id`, `action` (`added`, `replaced`, `removed`) | Never the secret's name or value. |
+| `search answered` | `q_length`, `terms`, `results`, `groups`, `ms` | A search of a workspace was answered (`POST /v1/workspaces/:id/search`). `q_length` is the query's length after trimming, `terms` how many terms it made, `results` the hits in all, `groups` the names of the groups with a hit, `ms` the time from the route's start to its answer. Never the words searched for. |
 
-Not captured: reads, polls, presence, health checks, the cron's runs, and the runner's protocol
+Not captured: reads other than a search, polls, presence, health checks, the cron's runs, and the runner's protocol
 traffic (claims, acks, state reports, thread writes).
 
 ## Error tracking
@@ -224,6 +225,7 @@ a canvas is its `canvas_id`.
 | `idea chosen` | `position` | an idea on the create page is picked into the composer |
 | `create prompt sent` | `source`: `idea`, `idea_edited`, `typed`; `project`: `repo`, `scratch`; `images` | the create page made its canvas |
 | `canvas opened` | `canvas_id`, `via`: `sidebar`, `search`, `link`, `created`, `restored` | |
+| `search result opened` | `kind`: `canvases`, `boards`, `comments`, `messages`, `pullRequests`, `people`; `position` | a ⌘K result opened, by its group and its place in the list from 0; never the words searched for or what the result says |
 | `page switched` | `canvas_id` | |
 | `pane toggled` | `pane`: `sidebar`, `thread`, `pull_request`; `open`; `canvas_id` | |
 | `comment mode entered` | `canvas_id` | the canvas's Comment tool, by button or `C` |

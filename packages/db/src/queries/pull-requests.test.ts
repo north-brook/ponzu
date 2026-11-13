@@ -43,6 +43,7 @@ const read = (
 ): PullRequestRead => ({
   canvasId,
   number: 7,
+  title: "Checkout",
   state: "open",
   checks: "running",
   mergeable: null,

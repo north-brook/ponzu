@@ -77,6 +77,7 @@ import { startRunnerSession } from "../runner/session.ts";
 import { writeRunnerThread } from "../runner/thread.ts";
 import { reportTurns } from "../runner/turns.ts";
 import { claimableKinds } from "../sandboxes/gates.ts";
+import { indexTurnAnswers } from "../search/index-thread.ts";
 import { completeUploads, presignUploads } from "../uploads/uploads.ts";
 
 /*
@@ -279,10 +280,14 @@ export const runner = new Hono<AppEnv>()
     bodyLimit({ maxSize: MAX_THREAD_BODY_BYTES }),
     validate("json", Thread),
     async (c) => {
-      const written = await writeRunnerThread(
-        c.var.deps,
+      const { items } = c.req.valid("json");
+      const written = await writeRunnerThread(c.var.deps, c.var.actor.canvasId, items);
+      // The answers of turns this write ended, for search. It never fails the write: a failure
+      // is logged and queues a reindex of the canvas.
+      await indexTurnAnswers(
+        { db: c.var.deps.db, log: c.var.log, clock: c.var.deps.clock },
         c.var.actor.canvasId,
-        c.req.valid("json").items,
+        items.filter((item) => written.items.some((w) => w.id === item.id && !w.streaming)),
       );
       return c.json(ThreadView.parse(written));
     },

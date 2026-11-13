@@ -428,6 +428,7 @@ export function BoardsView({
   page,
   onPage,
   link,
+  say,
   onClose,
 }: {
   host: Host;
@@ -437,6 +438,8 @@ export function BoardsView({
   onPage: (id: string) => void;
   /** Where a link, or a line of the thread, asked to show it. */
   link?: CanvasProps["link"];
+  /** Says over the window that a comment a link named has been deleted since. */
+  say?: (notice: string) => void;
   /** Leave it: back to the create page. */
   onClose: () => void;
 }) {
@@ -461,6 +464,22 @@ export function BoardsView({
   useEffect(() => {
     source.setPage(page);
   }, [source, page]);
+
+  // A comment the link names that is gone (a search's answer can be older than the canvas): the
+  // canvas shows where it was, and this says why there is no thread. Each link is judged once,
+  // when the document first holds it: a comment deleted later, while the canvas is open (by the
+  // person themself, say), isn't news to announce.
+  const linkThread = link?.thread;
+  const linkKey = linkThread ? `${linkThread}:${link?.at ?? ""}` : null;
+  const doc = state.doc;
+  const judged = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linkThread || !linkKey || !doc || judged.current === linkKey) return;
+    judged.current = linkKey;
+    if (!doc.threads.some((t) => t.id === linkThread)) {
+      say?.("That comment was deleted. This is where it was.");
+    }
+  }, [linkThread, linkKey, doc, say]);
 
   // The network is back: don't wait out the retry.
   useEffect(() => {

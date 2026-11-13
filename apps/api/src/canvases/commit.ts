@@ -3,6 +3,7 @@ import {
   applyOp,
   type CommitResult,
   type Doc,
+  docSearchChanges,
   InvalidOpError,
   type Op,
   OpError,
@@ -90,6 +91,14 @@ export async function commitPost(
       ops: fresh,
       events,
       head: headChange(current.doc, doc),
+      // What changed in its search entries, worked out on this attempt's documents. Null
+      // (no search SQL at all) when every op is one search never reads, as most agent edits are.
+      search:
+        docSearchChanges(
+          current.doc,
+          doc,
+          fresh.map((stored) => stored.op),
+        ) ?? undefined,
     });
     if (result.kind === "conflict") continue;
     if (result.kind === "unstorable") {

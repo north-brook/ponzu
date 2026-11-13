@@ -11,6 +11,7 @@
     "./push": "./src/push.ts",
     "./wordmark": "./src/wordmark.ts",
     "./redact": "./src/redact.ts",
+    "./search-text": "./src/search-text.ts",
     "./fixtures": "./src/fixtures/ops.ts",
     "./testing": "./src/fixtures/sequencer.ts"
   },

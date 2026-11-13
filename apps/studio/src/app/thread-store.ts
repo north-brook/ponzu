@@ -34,6 +34,30 @@ export interface ThreadSnapshot {
 /** The most items a page of the thread's history holds (the API's own limit). */
 export const THREAD_PAGE = 50;
 
+/** The most pages of history a line asked for pages back before it settles for the oldest held. */
+export const REVEAL_PAGES = 20;
+
+/**
+ * What showing a line of the thread (a search's message, by its id and seq) does next with what
+ * the thread holds: wait (for the thread, or a page on its way), ask for the page before it, or
+ * show (the line's seq is held, or nothing older can be had: then the oldest held is shown).
+ * `pages` is how many it has asked for.
+ */
+export function revealStep(
+  thread: Pick<ThreadSnapshot, "items" | "older">,
+  line: { id: string; seq: number } | null,
+  pages: number,
+): "wait" | "page" | "show" {
+  if (!line || !thread.items) return "wait";
+  const oldest = thread.items[0];
+  const held =
+    thread.items.some((item) => item.id === line.id) || (!!oldest && oldest.seq <= line.seq);
+  if (held) return "show";
+  if (thread.older === "loading") return "wait";
+  if (thread.older === "more" && pages < REVEAL_PAGES) return "page";
+  return "show";
+}
+
 export class ThreadStore {
   private live: LiveSnapshot<RunnerItem> | null = null;
   /** Pages of history, by id. */

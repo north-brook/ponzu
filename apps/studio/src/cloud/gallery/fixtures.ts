@@ -397,13 +397,19 @@ export const heroResults: SearchResults = {
   boards: [
     {
       id: "ab_hero_b",
+      place: "board",
+      pageId: "pg_home",
       name: "Hero · B",
+      icon: null,
       matches: [[0, 4]],
       canvas: { id: quieter.id, name: quieter.name },
     },
     {
       id: "ab_hero_dark",
+      place: "board",
+      pageId: "pg_brand",
       name: "Hero, dark",
+      icon: null,
       matches: [[0, 4]],
       canvas: { id: brandKit.id, name: brandKit.name },
     },
@@ -412,11 +418,183 @@ export const heroResults: SearchResults = {
     {
       id: "msg_serif",
       threadId: "th_serif",
-      text: "Can C try the serif at a smaller size on the hero?",
+      pageId: "pg_home",
+      artboardId: "ab_hero_b",
+      resolved: false,
+      snippet: "Can C try the serif at a smaller size on the hero?",
       matches: [[44, 48]],
       author: maya,
       canvas: { id: quieter.id, name: quieter.name },
       at: minutesAgo(120),
+    },
+  ],
+  messages: [],
+  pullRequests: [],
+  people: [],
+};
+
+/**
+ * More of what search finds, for "pricing": a page with its icon, a board, the agent's comment
+ * on a resolved thread, and one from someone who has since deleted their account.
+ */
+export const pricingResults: SearchResults = {
+  query: "pricing",
+  canvases: [{ canvas: pricing, matches: [[0, 7]] }],
+  boards: [
+    {
+      id: "pg_pricing",
+      place: "page",
+      pageId: "pg_pricing",
+      name: "Pricing",
+      icon: "card",
+      matches: [[0, 7]],
+      canvas: { id: quieter.id, name: quieter.name },
+    },
+    {
+      id: "ab_pricing_annual",
+      place: "board",
+      pageId: "pg_takes",
+      name: "Pricing, annual",
+      icon: null,
+      matches: [[0, 7]],
+      canvas: { id: pricing.id, name: pricing.name },
+    },
+  ],
+  comments: [
+    {
+      id: "msg_rows",
+      threadId: "th_rows",
+      pageId: "pg_takes",
+      artboardId: "ab_pricing_annual",
+      resolved: true,
+      snippet: "The pricing cards now line up on one row at every width.",
+      matches: [[4, 11]],
+      author: "agent",
+      canvas: { id: pricing.id, name: pricing.name },
+      at: minutesAgo(30),
+    },
+    {
+      id: "msg_seat",
+      threadId: "th_seat",
+      pageId: "pg_takes",
+      artboardId: null,
+      resolved: false,
+      snippet: "Could the pricing say per seat?",
+      matches: [[10, 17]],
+      author: "deleted",
+      canvas: { id: pricing.id, name: pricing.name },
+      at: minutesAgo(60 * 26),
+    },
+  ],
+  messages: [],
+  pullRequests: [],
+  people: [],
+};
+
+/** A canvas only search finds here: the "park" answer's, outside the sidebar's list. */
+const parkPlanters = canvas({
+  id: "cnv_park",
+  name: "Park planters collection",
+  project: { kind: "repo", repo: fernwood, branch: "pz/park-planters" },
+  preview: null,
+  owner: sam,
+  lastActivityAt: minutesAgo(240),
+});
+
+/**
+ * What search finds for "park", one or two of everything: a canvas, a page with its icon and a
+ * board, a comment, a person's message and the agent's answer, the canvas's pull request and an
+ * earlier one (no state: only the current one's is known), and two people.
+ */
+export const everyResults: SearchResults = {
+  query: "park",
+  canvases: [{ canvas: parkPlanters, matches: [[0, 4]] }],
+  boards: [
+    {
+      id: "pg_park",
+      place: "page",
+      pageId: "pg_park",
+      name: "Park planters",
+      icon: "list",
+      matches: [[0, 4]],
+      canvas: { id: parkPlanters.id, name: parkPlanters.name },
+    },
+    {
+      id: "ab_park_grid",
+      place: "board",
+      pageId: "pg_park",
+      name: "Park planters, grid",
+      icon: null,
+      matches: [[0, 4]],
+      canvas: { id: parkPlanters.id, name: parkPlanters.name },
+    },
+  ],
+  comments: [
+    {
+      id: "msg_sage",
+      threadId: "th_sage",
+      pageId: "pg_park",
+      artboardId: "ab_park_grid",
+      resolved: false,
+      snippet: "Could the park planters come in sage as well?",
+      matches: [[10, 14]],
+      author: sam,
+      canvas: { id: parkPlanters.id, name: parkPlanters.name },
+      at: minutesAgo(200),
+    },
+  ],
+  messages: [
+    {
+      id: "ti_park_ask",
+      seq: 3,
+      snippet: "Make a park planters page, three to a row like the care cards.",
+      matches: [[7, 11]],
+      author: maya,
+      canvas: { id: parkPlanters.id, name: parkPlanters.name },
+      at: minutesAgo(235),
+    },
+    {
+      id: "ti_park_answer",
+      seq: 9,
+      snippet: "I added the park planters page, three to a row, with the sizes under each one.",
+      matches: [[12, 16]],
+      author: "agent",
+      canvas: { id: parkPlanters.id, name: parkPlanters.name },
+      at: minutesAgo(230),
+    },
+  ],
+  pullRequests: [
+    {
+      number: 417,
+      title: "Park planters collection",
+      matches: [[0, 4]],
+      state: "draft",
+      canvas: { id: parkPlanters.id, name: parkPlanters.name },
+    },
+    {
+      number: 391,
+      title: "Park planters, first try",
+      matches: [[0, 4]],
+      state: null,
+      canvas: { id: parkPlanters.id, name: parkPlanters.name },
+    },
+  ],
+  people: [
+    {
+      id: ada.id,
+      login: ada.login,
+      name: ada.name,
+      avatarUrl: ada.avatarUrl,
+      nameMatches: [[4, 8]],
+      loginMatches: [[3, 7]],
+    },
+    {
+      id: leo.id,
+      login: leo.login,
+      name: leo.name,
+      avatarUrl: leo.avatarUrl,
+      nameMatches: [[4, 8]],
+      loginMatches: [[3, 7]],
     },
   ],
 };

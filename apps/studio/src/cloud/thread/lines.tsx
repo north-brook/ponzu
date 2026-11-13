@@ -78,6 +78,8 @@ export const ThreadLine = memo(function ThreadLine({
         <div
           // The rail notes where an aside sits, so it can close its room once the turn ends.
           data-aside={aside ? item.id : undefined}
+          // What the rail finds a line by, to bring it into view (ThreadView's `reveal`).
+          data-item={item.id}
           className={cn(
             "px-[2px] text-13 leading-[1.5]",
             // Said on the way to the answer: quieter, in italics, a run of them close together
@@ -155,6 +157,7 @@ function PersonLine({
     ) : null;
   return (
     <div
+      data-item={item.id}
       className={cn(
         // What sits above a bubble hugs it; a team's bubbles leave room for the avatar above.
         "flex flex-col items-end self-end",

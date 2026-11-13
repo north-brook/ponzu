@@ -1,6 +1,7 @@
-import { queryOptions } from "@tanstack/react-query";
-import type { Api } from "../api.ts";
-import { queryKeys } from "./keys.ts";
+import { keepPreviousData, queryOptions } from "@tanstack/react-query";
+import { type Api, SEARCH_GROUPS, type SearchGroup } from "../api.ts";
+import { ApiError } from "../errors.ts";
+import { queryKeys, searchQuery } from "./keys.ts";
 
 /**
  * The query options for what the apps read with a request, bound to one `Api`:
@@ -115,6 +116,38 @@ export function ponzuQueries(api: Api) {
         queryFn: () => api.canvases.pullRequest.file(canvasId, path),
         staleTime: headSha ? Number.POSITIVE_INFINITY : 0,
       }),
+
+    /*
+     * Search.
+     */
+
+    /**
+     * A search of the workspace, in `groups` (all six when left out). Asked only once the query
+     * has more than spaces in it. A newer query gives up on the older one's request, through
+     * TanStack's signal, and the older answer is shown until the newer lands. Answers are kept
+     * for half a minute fresh and two minutes in all; a new QueryClient per sign-in forgets them
+     * at sign-out. Asked again once after no answer or a 5xx, never after a 4xx.
+     */
+    search: (
+      workspaceId: string,
+      query: string,
+      groups: readonly SearchGroup[] = SEARCH_GROUPS,
+    ) => {
+      const q = searchQuery(query);
+      return queryOptions({
+        queryKey: queryKeys.search(workspaceId, query, groups),
+        queryFn: ({ signal }) =>
+          api.workspaces.search(workspaceId, { q, groups: [...groups] }, { signal }),
+        enabled: q !== "",
+        staleTime: 30_000,
+        gcTime: 2 * 60_000,
+        placeholderData: keepPreviousData,
+        // Not `transient`, which counts a 408 and a 429: a search is never asked again after a
+        // 4xx, since the next keystroke asks anew.
+        retry: (failures, error) =>
+          failures < 1 && error instanceof ApiError && (error.status === 0 || error.status >= 500),
+      });
+    },
   };
 }
 

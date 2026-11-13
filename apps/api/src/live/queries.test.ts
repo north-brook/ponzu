@@ -2,8 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import {
   insertNotifications,
+  listWorkspaceCanvases,
   markNotificationsRead,
   type NewNotification,
+  recordRepoAccess,
+  removeMembership,
   resolveNeedsYou,
 } from "@ponzu/db";
 import {
@@ -202,6 +205,58 @@ describe("workspace.canvases", () => {
     await watch("ines");
     expect(await rows(subscribed)).toEqual([]);
     team.grant("ines", "read");
+  });
+
+  test("holds exactly the canvases listWorkspaceCanvases (and so search) holds, for everyone", async () => {
+    // The live query is a plain SQL string, so it cannot share `readableCanvases` with the list
+    // and search. This keeps the three the same: readers, writers, someone answered none, Scratch
+    // canvases of two people, a leftover answer of someone who is not a member, and a member who
+    // has just left.
+    const space = await workspaceWithRepo(t, {
+      maya: "write",
+      ines: "read",
+      omar: "none",
+      lena: "read",
+    });
+    const outsider = (await workspaceWithRepo(t, { tariq: "write" })).people.tariq!;
+    await canvasIn(t, space, "maya", emptyDoc("In the repo"));
+    await canvasIn(t, space, "maya", emptyDoc("Maya's own"), "scratch");
+    await canvasIn(t, space, "omar", emptyDoc("Omar's own"), "scratch");
+    await canvasIn(t, space, "lena", emptyDoc("Lena's own"), "scratch");
+    const checkedAt = new Date(t.clock.now());
+    const answers = Object.entries({ maya: "write", ines: "read", omar: "none", lena: "read" });
+    await recordRepoAccess(t.db, [
+      ...answers.map(([login, permission]) => ({
+        userId: space.people[login]!.userId,
+        repoId: space.repo.id,
+        permission: permission as "write" | "read" | "none",
+        checkedAt,
+      })),
+      { userId: outsider.userId, repoId: space.repo.id, permission: "admin", checkedAt },
+    ]);
+    await removeMembership(t.db, {
+      installationId: space.installationId,
+      userId: space.people.lena!.userId,
+    });
+
+    const client = (t.db as unknown as { $client: { query(sql: string, params: string[]): any } })
+      .$client;
+    const seen: Record<string, string[]> = {};
+    for (const userId of [...Object.values(space.people), outsider].map((p) => p.userId)) {
+      const live = (
+        await client.query(LIVE_QUERIES["workspace.canvases"].sql, [userId, space.id])
+      ).rows.map((row: { name: string }) => row.name);
+      const listed = (await listWorkspaceCanvases(t.db, { workspaceId: space.id, userId })).map(
+        (row) => row.name,
+      );
+      expect(live.sort()).toEqual(listed.sort());
+      seen[userId] = listed;
+    }
+    expect(seen[space.people.maya!.userId]).toEqual(["In the repo", "Maya's own"]);
+    expect(seen[space.people.ines!.userId]).toEqual(["In the repo"]);
+    expect(seen[space.people.omar!.userId]).toEqual(["Omar's own"]);
+    expect(seen[space.people.lena!.userId]).toEqual([]);
+    expect(seen[outsider.userId]).toEqual([]);
   });
 });
 

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
-import { createTestDb } from "../testing.ts";
+import { createTestDb, extensions } from "../testing.ts";
 import * as schema from "./index.ts";
 
 // Everything Postgres names in the public schema, and what each is: relations, constraints of
@@ -34,7 +34,9 @@ let migrated: Awaited<ReturnType<typeof createTestDb>>;
 let fresh: PGlite;
 beforeAll(async () => {
   migrated = await createTestDb();
-  fresh = new PGlite();
+  fresh = new PGlite({ extensions });
+  // drizzle-kit does not emit extensions; the migration that needs one creates it by hand.
+  await fresh.exec("CREATE EXTENSION IF NOT EXISTS pg_trgm");
   const empty = generateDrizzleJson({});
   for (const statement of await generateMigration(empty, generateDrizzleJson(schema, empty.id))) {
     await fresh.exec(statement);

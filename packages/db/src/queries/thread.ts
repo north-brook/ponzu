@@ -1,9 +1,10 @@
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import { events, type Json, threadItems } from "../schema/index.ts";
 import { eventRow } from "./events.ts";
 import { run } from "./run.ts";
+import { insertMessageRow, type MessageSearch } from "./search.ts";
 import { scrubbed } from "./text.ts";
 
 export type ThreadItem = typeof threadItems.$inferSelect;
@@ -130,7 +131,8 @@ export async function writeThreadItems(
 
 /**
  * A person's message: the thread item everyone sees and the `now` event that puts it into the
- * run, in one statement, so neither is ever there without the other.
+ * run, in one statement, so neither is ever there without the other. With `search`, the same
+ * statement indexes it: an entry of kind `message` keyed by the item's id, with its seq and time.
  */
 export async function postMessage(
   db: Db,
@@ -140,6 +142,7 @@ export async function postMessage(
     item,
     event,
     posthogSessionId = null,
+    search,
   }: {
     canvasId: string;
     userId: string;
@@ -147,6 +150,8 @@ export async function postMessage(
     event: Json;
     /** The PostHog session of the app that sent it, if it said. */
     posthogSessionId?: string | null;
+    /** The message as search finds it. Not indexed when left out. */
+    search?: MessageSearch;
   },
 ): Promise<ThreadItem> {
   // Postgres runs a data-modifying `with` whether or not the statement reads it.
@@ -159,13 +164,25 @@ export async function postMessage(
       })
       .returning({ id: events.id }),
   );
-  const [row] = await run(
-    db
-      .with(queued)
-      .insert(threadItems)
-      .values({ id: newId("ti"), canvasId, kind: "message", userId, payload: scrubbed(item) })
-      .returning(),
-  );
+  const values = {
+    id: newId("ti"),
+    canvasId,
+    kind: "message" as const,
+    userId,
+    payload: scrubbed(item),
+  };
+  const message = search && insertMessageRow(canvasId, search, "said");
+  if (!message) {
+    const [row] = await run(db.with(queued).insert(threadItems).values(values).returning());
+    return row!;
+  }
+  // The entry needs the item's seq, which only the inserted row has, so the item is inserted in
+  // a `with` of its own and the statement answers with it from there.
+  const said = db.$with("said").as(db.insert(threadItems).values(values).returning());
+  const indexed = db
+    .$with("indexed", { canvasId: sql<string>`canvas_id` })
+    .as(sql`${message} returning canvas_id`);
+  const [row] = await run(db.with(queued, said, indexed).select().from(said));
   return row!;
 }
 
@@ -262,4 +279,34 @@ export async function listThreadItems(
       .limit(limit),
   );
   return rows.reverse();
+}
+
+/** A page of a canvas's thread, oldest first: the first `limit` items after seq `after`. */
+export async function listThreadItemsAfter(
+  db: Db,
+  { canvasId, after, limit }: { canvasId: string; after: number; limit: number },
+): Promise<ThreadItem[]> {
+  return run(
+    db
+      .select()
+      .from(threadItems)
+      .where(and(eq(threadItems.canvasId, canvasId), sql`${threadItems.seq} > ${after}`))
+      .orderBy(threadItems.seq)
+      .limit(limit),
+  );
+}
+
+/** Items of a canvas's thread by id, in thread order. An id the thread does not have is left out. */
+export async function getThreadItems(
+  db: Db,
+  { canvasId, ids }: { canvasId: string; ids: readonly string[] },
+): Promise<ThreadItem[]> {
+  if (ids.length === 0) return [];
+  return run(
+    db
+      .select()
+      .from(threadItems)
+      .where(and(eq(threadItems.canvasId, canvasId), inArray(threadItems.id, [...ids])))
+      .orderBy(threadItems.seq),
+  );
 }

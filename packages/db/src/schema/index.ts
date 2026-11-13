@@ -4,4 +4,5 @@ export * from "./billing.ts";
 export * from "./canvases.ts";
 export type { Json } from "./columns.ts";
 export * from "./notifications.ts";
+export * from "./search.ts";
 export * from "./system.ts";

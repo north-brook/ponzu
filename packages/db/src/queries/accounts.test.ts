@@ -548,6 +548,9 @@ describe("repos", () => {
     await recordRepoAccess(db, [
       { userId: user.id, repoId: repo!.id, permission: "write", checkedAt: new Date() },
     ]);
+    for (const workspace of [from, to]) {
+      await upsertMembership(db, { workspaceId: workspace.id, userId: user.id, role: "member" });
+    }
 
     await upsertRepos(db, { workspaceId: to.id, repos: [seen(211, "b/app")] });
 

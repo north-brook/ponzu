@@ -187,6 +187,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       branch: `pz/checkout-${canvas.id}`,
       doc: emptyDoc("checkout"),
     });
+    await upsertMembership(db, { workspaceId: workspace.id, userId: user.id, role: "member" });
     await markCanvasSeen(db, { userId: user.id, canvasId: inRepo.id, seq: 4, threadSeq: 9 });
     const checkedAt = new Date("2026-11-10T12:00:00.123Z");
     await recordRepoAccess(db, [
@@ -564,6 +565,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       await recordPullRequestRead(db, {
         canvasId: onBranch.id,
         number: 2,
+        title: "Live checkout",
         state: "draft",
         checks: "running",
         mergeable: null,
@@ -577,6 +579,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       await recordPullRequestRead(db, {
         canvasId: onBranch.id,
         number: 2,
+        title: "Live checkout",
         state: "draft",
         checks: "running",
         mergeable: null,
@@ -591,6 +594,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     const settled = await recordPullRequestRead(db, {
       canvasId: onBranch.id,
       number: 2,
+      title: "Live checkout",
       state: "merged",
       checks: "passing",
       mergeable: true,

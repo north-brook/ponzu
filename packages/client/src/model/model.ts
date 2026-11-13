@@ -4,6 +4,8 @@
  * Times are ISO 8601 strings, as the API sends them.
  */
 
+import type { Match } from "@ponzu/core/search-text";
+
 /*
  * The database's enums (packages/db/src/enums.ts), restated rather than imported so the app
  * doesn't depend on the database package. The typed API client will carry them.
@@ -158,15 +160,34 @@ export function effortFor(
   return takes[0] ?? effort;
 }
 
-/** A start of a match in a search result's text, and its end (exclusive). */
-export type Match = readonly [start: number, end: number];
+/** A start of a match in a search result's text, and its end (exclusive): search's, in core. */
+export type { Match };
 
+/**
+ * A search's answer as the window shows it, every group in the order the list draws them. Each
+ * hit is on a canvas the window lists (the rest are dropped: the list is what may be shown), and
+ * `matches` are offsets into the text the row draws: a canvas's, board's or pull request's name
+ * or title, a comment's or message's snippet, a person's name or login.
+ */
 export interface SearchResults {
   query: string;
   canvases: CanvasHit[];
+  /** Pages and boards, as the server ranked them. */
   boards: BoardHit[];
   comments: CommentHit[];
+  messages: MessageHit[];
+  pullRequests: PullRequestHit[];
+  people: PersonHit[];
 }
+
+/** The canvas a hit is on, as its row names it. */
+export interface HitCanvas {
+  id: string;
+  name: string;
+}
+
+/** Who said what a comment or message hit holds: a person, the canvas's agent, or someone gone. */
+export type HitAuthor = Person | "agent" | "deleted";
 
 export interface CanvasHit {
   canvas: CanvasSummary;
@@ -174,20 +195,63 @@ export interface CanvasHit {
 }
 
 export interface BoardHit {
+  /** The page's or the board's id. */
   id: string;
+  place: "page" | "board";
+  /** The page a board is on; a page's own id for a page. Null when the board's page is unknown. */
+  pageId: string | null;
   name: string;
+  /** A page's icon (one of the canvas's page icon names), when the window knows it. */
+  icon: string | null;
   matches: Match[];
-  canvas: { id: string; name: string };
+  canvas: HitCanvas;
 }
 
 export interface CommentHit {
+  /** The comment's message id. */
   id: string;
   threadId: string;
-  text: string;
+  /** Null for a comment on the page rather than a board, or an old one that never said. */
+  pageId: string | null;
+  artboardId: string | null;
+  resolved: boolean;
+  /** The words around the match, at most about 140 characters, with "…" where they were cut. */
+  snippet: string;
   matches: Match[];
-  author: Person;
-  canvas: { id: string; name: string };
-  at: string;
+  author: HitAuthor;
+  canvas: HitCanvas;
+  /** When it was said; null when the server doesn't know. */
+  at: string | null;
+}
+
+export interface MessageHit {
+  /** The thread item's id, and its place in the thread. */
+  id: string;
+  seq: number;
+  snippet: string;
+  matches: Match[];
+  author: HitAuthor;
+  canvas: HitCanvas;
+  at: string | null;
+}
+
+export interface PullRequestHit {
+  number: number;
+  title: string;
+  matches: Match[];
+  /** Null unless it is the canvas's current pull request. */
+  state: PrState | null;
+  canvas: HitCanvas;
+}
+
+export interface PersonHit {
+  id: string;
+  login: string;
+  /** Their name on GitHub; null when they show none. */
+  name: string | null;
+  avatarUrl: string | null;
+  nameMatches: Match[];
+  loginMatches: Match[];
 }
 
 /*

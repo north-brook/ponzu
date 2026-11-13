@@ -254,8 +254,33 @@ describe("listWorkspaceCanvases", () => {
     await recordRepoAccess(db, [
       { userId: user.id, repoId: repo.id, permission: "read", checkedAt: new Date() },
     ]);
+    await upsertMembership(db, { workspaceId: workspace.id, userId: user.id, role: "member" });
     return { user, workspace, repo, oldest, settled, newest };
   }
+
+  const join = (workspaceId: string, ...users: { id: string }[]) =>
+    Promise.all(
+      users.map((user) => upsertMembership(db, { workspaceId, userId: user.id, role: "member" })),
+    );
+
+  test("lists nothing to someone who is not a member, whatever repo_access says", async () => {
+    const { user, workspace, repo } = await workspaceWithCanvases();
+    const outsider = await seedUser(db, "zoe");
+    await recordRepoAccess(db, [
+      { userId: outsider.id, repoId: repo.id, permission: "admin", checkedAt: new Date() },
+    ]);
+    const names = async (userId: string) =>
+      (await listWorkspaceCanvases(db, { workspaceId: workspace.id, userId })).map((d) => d.name);
+
+    expect(await names(outsider.id)).toEqual([]);
+    await join(workspace.id, outsider);
+    expect(await names(outsider.id)).toEqual(["Oldest"]);
+    // The owner of Scratch canvases sees none of them once they have left.
+    await db.execute(
+      sql`delete from memberships where workspace_id = ${workspace.id} and user_id = ${user.id}`,
+    );
+    expect(await names(user.id)).toEqual([]);
+  });
 
   test("lists one workspace's canvases, most recently active first", async () => {
     const { user, workspace } = await workspaceWithCanvases();
@@ -335,6 +360,7 @@ describe("listWorkspaceCanvases", () => {
       { userId: writer.id, repoId: repo.id, permission: "admin", checkedAt },
       { userId: revoked.id, repoId: repo.id, permission: "none", checkedAt },
     ]);
+    await join(workspace.id, reader, writer, revoked, unasked);
     const names = async (userId: string) =>
       (await listWorkspaceCanvases(db, { workspaceId: workspace.id, userId })).map((d) => d.name);
 

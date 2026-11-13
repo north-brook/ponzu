@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -33,8 +34,14 @@ let migrated: Promise<Blob> | undefined;
  */
 export async function createTestDb() {
   migrated ??= migratedCopy();
-  return drizzle({ client: new PGlite({ loadDataDir: await migrated }) });
+  return drizzle({ client: new PGlite({ loadDataDir: await migrated, extensions }) });
 }
+
+/**
+ * The Postgres extensions the migrations create, which PGlite must be given to load: pg_trgm,
+ * for search's trigram index. Neon and the Postgres 18 in CI ship it.
+ */
+export const extensions = { pg_trgm };
 
 /**
  * A canvas's whole feed, oldest first, whatever has been claimed or delivered: what a test
@@ -80,7 +87,7 @@ async function migratedCopy(): Promise<Blob> {
 }
 
 async function migrateFresh(): Promise<Blob> {
-  const client = new PGlite();
+  const client = new PGlite({ extensions });
   try {
     await migrate(drizzle({ client }), { migrationsFolder });
     return await client.dumpDataDir("none");

@@ -6,6 +6,7 @@ import type {
   CanvasPreview,
   CanvasSummary,
   Contributor,
+  HitAuthor,
   Match,
   PageTab,
   Person,
@@ -247,9 +248,23 @@ export function githubPersonId(githubUserId: number): string {
   return `github:${githubUserId}`;
 }
 
+/** A search's answer with nothing in it. */
+export function noResults(query: string): SearchResults {
+  return {
+    query,
+    canvases: [],
+    boards: [],
+    comments: [],
+    messages: [],
+    pullRequests: [],
+    people: [],
+  };
+}
+
 /**
  * Search, over what the window already has: the canvases' names, every place the query appears.
- * Boards and comments need the API's search, which isn't there yet, so they find nothing.
+ * What the window shows for a first query while the API's answer is on its way; boards,
+ * comments and the rest come only from the API (`toSearchResults`).
  */
 export function searchByName(query: string, canvases: CanvasSummary[]): SearchResults {
   const q = query.trim().toLowerCase();
@@ -261,7 +276,107 @@ export function searchByName(query: string, canvases: CanvasSummary[]): SearchRe
     }
     return matches.length ? [{ canvas, matches }] : [];
   });
-  return { query, canvases: hits, boards: [], comments: [] };
+  return { ...noResults(query), canvases: hits };
+}
+
+type SearchAnswerView = Awaited<ReturnType<Api["workspaces"]["search"]>>;
+type SearchAuthorView = SearchAnswerView["comments"][number]["author"];
+
+function hitAuthor(author: SearchAuthorView): HitAuthor {
+  if (author.kind === "agent" || author.kind === "deleted") return author.kind;
+  return toPerson(author.id, {
+    githubLogin: author.login,
+    name: author.name,
+    avatarUrl: author.avatarUrl,
+  });
+}
+
+/**
+ * A page's key in `toSearchResults`' `pageIcons`. A page's id is unique only within its canvas
+ * (a duplicated canvas keeps its pages' ids), so the key names its canvas too.
+ */
+export function pageIconKey(canvasId: string, pageId: string): string {
+  return `${canvasId}/${pageId}`;
+}
+
+/**
+ * The API's search answer as the window shows it. Each hit is put with the canvas the window
+ * lists (`canvases`: every one, active and settled, not only those a filter shows), for its
+ * preview, place and owner; the answer carries none of those. A hit on a canvas the window
+ * doesn't list is dropped, since the list is what may be shown: one deleted, or taken away,
+ * since the answer was made. `pageIcons` are the page icons the window knows, by `pageIconKey`.
+ */
+export function toSearchResults(
+  answer: SearchAnswerView,
+  canvases: readonly CanvasSummary[],
+  pageIcons: ReadonlyMap<string, string> = new Map(),
+): SearchResults {
+  const listed = new Map(canvases.map((canvas) => [canvas.id, canvas]));
+  const on = <T extends { canvasId: string }>(hits: readonly T[]) =>
+    hits.flatMap((hit) => {
+      const canvas = listed.get(hit.canvasId);
+      return canvas ? [{ hit, canvas: { id: canvas.id, name: canvas.name } }] : [];
+    });
+  return {
+    query: answer.query,
+    canvases: answer.canvases.flatMap((hit) => {
+      const canvas = listed.get(hit.canvasId);
+      if (!canvas) return [];
+      // The matches are offsets into the name the answer has; a rename landing between the two
+      // could make the list's differ, so the answer's is the one drawn.
+      return [
+        {
+          canvas: canvas.name === hit.name ? canvas : { ...canvas, name: hit.name },
+          matches: hit.matches,
+        },
+      ];
+    }),
+    boards: on(answer.boards).map(({ hit, canvas }) => ({
+      id: hit.id,
+      place: hit.kind,
+      pageId: hit.kind === "page" ? hit.id : hit.pageId,
+      name: hit.name,
+      icon: hit.kind === "page" ? (pageIcons.get(pageIconKey(hit.canvasId, hit.id)) ?? null) : null,
+      matches: hit.matches,
+      canvas,
+    })),
+    comments: on(answer.comments).map(({ hit, canvas }) => ({
+      id: hit.messageId,
+      threadId: hit.threadId,
+      pageId: hit.pageId,
+      artboardId: hit.artboardId,
+      resolved: hit.resolved,
+      snippet: hit.snippet,
+      matches: hit.matches,
+      author: hitAuthor(hit.author),
+      canvas,
+      at: hit.at,
+    })),
+    messages: on(answer.messages).map(({ hit, canvas }) => ({
+      id: hit.itemId,
+      seq: hit.itemSeq,
+      snippet: hit.snippet,
+      matches: hit.matches,
+      author: hitAuthor(hit.author),
+      canvas,
+      at: hit.at,
+    })),
+    pullRequests: on(answer.pullRequests).map(({ hit, canvas }) => ({
+      number: hit.number,
+      title: hit.title,
+      matches: hit.matches,
+      state: hit.state,
+      canvas,
+    })),
+    people: answer.people.map((person) => ({
+      id: person.userId,
+      login: person.login,
+      name: person.name,
+      avatarUrl: person.avatarUrl,
+      nameMatches: person.nameMatches,
+      loginMatches: person.loginMatches,
+    })),
+  };
 }
 
 /** The open canvas's pages as tabs; a page holding a board the agent is on is working. */

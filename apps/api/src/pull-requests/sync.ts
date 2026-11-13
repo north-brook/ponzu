@@ -158,6 +158,7 @@ export async function recordRead(
   const canvas = await recordPullRequestRead(db, {
     canvasId,
     number,
+    title,
     state,
     checks: pullRequest.checks.state,
     mergeable: pullRequest.mergeable,

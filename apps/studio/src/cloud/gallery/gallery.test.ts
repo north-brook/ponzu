@@ -135,15 +135,17 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.keyboard.press("Meta+k");
     const field = 'input[role="combobox"]';
     await page.waitForSelector(field);
-    await focusOn("Search canvases, boards and comments");
+    await focusOn("Search canvases, boards, comments and messages");
     expect(await page.$$eval("[data-canvas-row]", (els) => els.length)).toBe(6);
     await page.keyboard.type("hero");
     await page.waitForSelector('[role="listbox"]');
     const active = () => page.$eval(field, (el) => el.getAttribute("aria-activedescendant"));
     expect(await active()).toBe("search-canvas-cnv_quieter");
+    // Said for someone who can't see the list: how many there are.
+    expect(await page.textContent('[role="status"]')).toBe("5 results");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
-    expect(await active()).toBe("search-board-ab_hero_b");
+    expect(await active()).toBe("search-board-cnv_quieter-ab_hero_b");
     await page.keyboard.press("ArrowUp");
     expect(await active()).toBe("search-canvas-cnv_settled_1");
     await page.keyboard.press("Escape");
@@ -157,10 +159,139 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await open("sidebar-collapsed");
     expect(await page.$eval("#sidebar", (el) => el.hasAttribute("inert"))).toBe(true);
     await page.keyboard.press("Meta+k");
-    await focusOn("Search canvases, boards and comments");
+    await focusOn("Search canvases, boards, comments and messages");
     expect(await page.$eval("#sidebar", (el) => el.hasAttribute("inert"))).toBe(false);
     // Focused without scrolling the pane's content aside while it opens.
     expect(await page.$eval("#sidebar", (el) => el.scrollLeft)).toBe(0);
+  });
+  test("search: the arrows walk canvases, pages and boards, then comments, and Return opens", async () => {
+    await open("team-sidebar");
+    await page.keyboard.press("Meta+k");
+    const field = 'input[role="combobox"]';
+    await page.waitForSelector(field);
+    await page.keyboard.type("pricing");
+    await page.waitForSelector('[role="listbox"]');
+    const active = () => page.$eval(field, (el) => el.getAttribute("aria-activedescendant"));
+    const walked = [await active()];
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("ArrowDown");
+      walked.push(await active());
+    }
+    expect(walked).toEqual([
+      "search-canvas-cnv_pricing",
+      "search-page-cnv_quieter-pg_pricing",
+      "search-board-cnv_pricing-ab_pricing_annual",
+      "search-comment-cnv_pricing-th_rows-msg_rows",
+      "search-comment-cnv_pricing-th_seat-msg_seat",
+      // The end: it stays.
+      "search-comment-cnv_pricing-th_seat-msg_seat",
+      "search-comment-cnv_pricing-th_seat-msg_seat",
+    ]);
+    // The groups as labelled, and each row as it reads.
+    const groups = await page.$$eval('[role="listbox"] [role="group"]', (els) =>
+      els.map((group) => ({
+        label: group.querySelector("span")!.textContent,
+        rows: [...group.querySelectorAll('[role="option"]')].map((row) =>
+          row.textContent!.replace(/\s+/g, " ").trim(),
+        ),
+      })),
+    );
+    expect(groups.map((group) => group.label)).toEqual(["Canvases", "Boards", "Comments"]);
+    expect(groups[1]!.rows).toEqual([
+      "PricingPage in Quieter shop hero",
+      "Pricing, annualin Pricing page, three takes",
+    ]);
+    expect(groups[2]!.rows).toEqual([
+      "“The pricing cards now line up on one row at every width.”Claude · Pricing page, three takes · 30 m · Resolved",
+      "“Could the pricing say per seat?”Deleted user · Pricing page, three takes · 1 d",
+    ]);
+    // A page's tile is its own icon; a board's, the board tile.
+    const icons = await page.$$eval('[role="listbox"] [role="group"]:nth-of-type(2) svg', (els) =>
+      els.map((svg) => svg.innerHTML),
+    );
+    expect(icons[0]).not.toBe(icons[1]);
+    // Return opens what is selected, and closes search.
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(field, { state: "detached" });
+    expect(await page.evaluate(() => (window as { searchOpened?: string }).searchOpened)).toBe(
+      "comment:cnv_pricing/th_rows/msg_rows",
+    );
+  });
+  test("search: the arrows walk all six groups in order, and a person filters the list", async () => {
+    await open("sidebar-search-every-group");
+    const field = 'input[role="combobox"]';
+    await page.waitForSelector('[role="listbox"]');
+    const active = () => page.$eval(field, (el) => el.getAttribute("aria-activedescendant"));
+    const count = await page.$$eval('[role="option"]', (els) => els.length);
+    const walked = [await active()];
+    for (let i = 1; i < count; i++) {
+      await page.keyboard.press("ArrowDown");
+      walked.push(await active());
+    }
+    expect(walked).toEqual([
+      "search-canvas-cnv_park",
+      "search-page-cnv_park-pg_park",
+      "search-board-cnv_park-ab_park_grid",
+      "search-comment-cnv_park-th_sage-msg_sage",
+      "search-message-cnv_park-ti_park_ask",
+      "search-message-cnv_park-ti_park_answer",
+      "search-pr-cnv_park-417",
+      "search-pr-cnv_park-391",
+      "search-person-usr_ada",
+      // A colon is no part of an element's id.
+      "search-person-github-5102",
+    ]);
+    const groups = await page.$$eval('[role="listbox"] [role="group"]', (els) =>
+      els.map((group) => ({
+        id: group.getAttribute("aria-labelledby"),
+        label: group.querySelector("span")!.textContent,
+        rows: [...group.querySelectorAll('[role="option"]')].map((row) =>
+          row.textContent!.replace(/\s+/g, " ").trim(),
+        ),
+      })),
+    );
+    expect(groups.map((group) => group.label)).toEqual([
+      "Canvases",
+      "Boards",
+      "Comments",
+      "Messages",
+      "Pull requests",
+      "People",
+    ]);
+    // Each group is named by its label, by an id with no space in it.
+    expect(groups.map((group) => group.id)).toContain("search-group-pull-requests");
+    // A person's words and the agent's answer, each with who, where and when.
+    expect(groups[3]!.rows).toEqual([
+      "“Make a park planters page, three to a row like the care cards.”Maya · Park planters collection · 3 h",
+      "“I added the park planters page, three to a row, with the sizes under each one.”Claude · Park planters collection · 3 h",
+    ]);
+    // The current pull request with its state; an earlier one with none.
+    expect(groups[4]!.rows).toEqual([
+      "Park planters collection#417 · Draft · Park planters collection",
+      "Park planters, first try#391 · Park planters collection",
+    ]);
+    expect(groups[5]!.rows).toEqual(["Ada Park@adapark", "LLeo Park@leopark"]);
+    // The status counts every group's.
+    expect(await page.textContent('[role="status"].sr-only')).toBe(`${count} results`);
+    // Return on a person: search closes and the list shows only the canvases they started.
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(field, { state: "detached" });
+    expect(await page.evaluate(() => (window as { searchOpened?: string }).searchOpened)).toBe(
+      "person:usr_ada",
+    );
+    expect(
+      await page.$$eval("[data-canvas-row]", (els) =>
+        els.map((el) => el.getAttribute("data-canvas-row")),
+      ),
+    ).toEqual(["cnv_quieter"]);
+  });
+  test("search's lines: no answer, and nothing found", async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${server.url}/gallery.html?states&theme=light`);
+    await page.getByText("Search isn't answering. Try again in a moment.").waitFor();
+    await page.getByText("No results for “zebra”").waitFor();
   });
   test("the search selection keeps itself in view, and no matches says so", async () => {
     await open("sidebar-search", { width: 1100, height: 640 });
@@ -178,7 +309,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(inView).toBe(true);
     // Nothing matches: it says so.
     await page.fill('input[role="combobox"]', "zebra");
-    expect(await page.textContent('[role="status"]')).toBe("No results for “zebra”");
+    expect(await page.textContent('[role="status"]:not(.sr-only)')).toBe("No results for “zebra”");
+    // The count's region stays, empty: the line says it.
+    expect(await page.textContent('[role="status"].sr-only')).toBe("");
   });
   test("presence is one Tab stop, and each person's tip shows from the keyboard", async () => {
     await open("team-sidebar");

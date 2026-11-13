@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { SearchAnswer } from "../api.ts";
 import type { CanvasListRow, PresenceRow } from "../live/rows.ts";
 import { createFakeBackend } from "../testing/index.ts";
 import {
@@ -9,11 +10,14 @@ import {
   keepUnchanged,
   membersById,
   NO_BRANCH_YET,
+  noResults,
+  pageIconKey,
   pageTabs,
   pushableRepos,
   SCRATCH_PLACE,
   searchByName,
   toPerson,
+  toSearchResults,
   toSummary,
   toWorkspace,
   usableWorkspaces,
@@ -302,6 +306,244 @@ test("search finds every place the query is in a canvas's name, whatever its cas
       ],
     ],
   ]);
-  expect(results.boards).toEqual([]);
+  expect(results).toEqual({ ...noResults("HERO"), canvases: results.canvases });
   expect(searchByName("  ", canvases).canvases).toEqual([]);
+});
+
+function commentOf(messageId: string): SearchAnswer["comments"][number] {
+  return {
+    canvasId: "cnv_1",
+    canvasName: "Hero",
+    threadId: "th_2",
+    messageId,
+    pageId: null,
+    artboardId: null,
+    resolved: false,
+    snippet: "hero",
+    matches: [[0, 4]],
+    author: { kind: "agent" },
+    at: "2026-11-10T09:00:00.000Z",
+  };
+}
+
+test("search's answer is put with the canvases the window lists, and hits on any other dropped", () => {
+  const people = new Map();
+  const listed = [
+    toSummary(row({ id: "cnv_1", name: "Hero" }), { people }),
+    toSummary(row({ id: "cnv_2", name: "Pricing", status: "settled" }), { people }),
+  ];
+  const maya = {
+    kind: "user" as const,
+    id: "usr_maya",
+    name: " ",
+    login: "maya",
+    avatarUrl: "a.png",
+  };
+  const gone = "cnv_gone";
+  const answer: SearchAnswer = {
+    query: "hero",
+    canvases: [
+      { canvasId: "cnv_1", name: "Hero", matches: [[0, 4]] },
+      // Gone from the list since the answer was made (deleted, or its repo taken away).
+      { canvasId: gone, name: "Hero gone", matches: [[0, 4]] },
+    ],
+    boards: [
+      {
+        canvasId: "cnv_2",
+        canvasName: "Pricing",
+        kind: "page",
+        id: "pg_1",
+        pageId: null,
+        name: "Hero page",
+        matches: [[0, 4]],
+      },
+      // The same page id on another canvas (a duplicate keeps its pages' ids): not its icon.
+      {
+        canvasId: "cnv_1",
+        canvasName: "Hero",
+        kind: "page",
+        id: "pg_1",
+        pageId: null,
+        name: "Hero copy",
+        matches: [[0, 4]],
+      },
+      {
+        canvasId: "cnv_1",
+        canvasName: "Hero",
+        kind: "board",
+        id: "ab_1",
+        pageId: "pg_9",
+        name: "Hero B",
+        matches: [[0, 4]],
+      },
+      {
+        canvasId: gone,
+        canvasName: "x",
+        kind: "board",
+        id: "ab_2",
+        pageId: null,
+        name: "Hero",
+        matches: [[0, 4]],
+      },
+    ],
+    comments: [
+      {
+        ...commentOf("msg_1"),
+        threadId: "th_1",
+        pageId: "pg_9",
+        artboardId: "ab_1",
+        resolved: true,
+        snippet: "…the hero again",
+        matches: [[5, 9]],
+        author: maya,
+        at: "2026-11-10T09:30:00.000Z",
+      },
+      { ...commentOf("msg_2"), author: { kind: "agent" } },
+      { ...commentOf("msg_3"), author: { kind: "deleted" }, at: null },
+      { ...commentOf("msg_4"), canvasId: gone },
+    ],
+    messages: [
+      {
+        canvasId: "cnv_2",
+        canvasName: "Pricing",
+        itemId: "itm_1",
+        itemSeq: 7,
+        snippet: "hero",
+        matches: [[0, 4]],
+        author: { kind: "agent" },
+        at: null,
+      },
+      {
+        canvasId: gone,
+        canvasName: "x",
+        itemId: "itm_2",
+        itemSeq: 1,
+        snippet: "hero",
+        matches: [[0, 4]],
+        author: { kind: "agent" },
+        at: null,
+      },
+    ],
+    pullRequests: [
+      {
+        canvasId: "cnv_1",
+        canvasName: "Hero",
+        number: 412,
+        title: "Hero",
+        matches: [[0, 4]],
+        state: "open",
+      },
+      { canvasId: gone, canvasName: "x", number: 9, title: "Hero", matches: [[0, 4]], state: null },
+    ],
+    people: [
+      {
+        userId: "usr_maya",
+        login: "maya",
+        name: "Maya",
+        avatarUrl: null,
+        nameMatches: [],
+        loginMatches: [[0, 4]],
+      },
+    ],
+  };
+  const results = toSearchResults(
+    answer,
+    listed,
+    new Map([[pageIconKey("cnv_2", "pg_1"), "card"]]),
+  );
+  expect(results.query).toBe("hero");
+  expect(results.canvases).toEqual([{ canvas: listed[0]!, matches: [[0, 4]] }]);
+  // The list's own summary, preview and all: the answer carries none of that.
+  expect(results.canvases[0]!.canvas).toBe(listed[0]!);
+  expect(results.boards).toEqual([
+    {
+      id: "pg_1",
+      place: "page",
+      pageId: "pg_1",
+      name: "Hero page",
+      icon: "card",
+      matches: [[0, 4]],
+      canvas: { id: "cnv_2", name: "Pricing" },
+    },
+    {
+      id: "pg_1",
+      place: "page",
+      pageId: "pg_1",
+      name: "Hero copy",
+      icon: null,
+      matches: [[0, 4]],
+      canvas: { id: "cnv_1", name: "Hero" },
+    },
+    {
+      id: "ab_1",
+      place: "board",
+      pageId: "pg_9",
+      name: "Hero B",
+      icon: null,
+      matches: [[0, 4]],
+      canvas: { id: "cnv_1", name: "Hero" },
+    },
+  ]);
+  expect(results.comments).toEqual([
+    {
+      id: "msg_1",
+      threadId: "th_1",
+      pageId: "pg_9",
+      artboardId: "ab_1",
+      resolved: true,
+      snippet: "…the hero again",
+      matches: [[5, 9]],
+      // A blank name: the login, as everywhere a person is named.
+      author: { id: "usr_maya", name: "maya", login: "maya", avatarUrl: "a.png" },
+      canvas: { id: "cnv_1", name: "Hero" },
+      at: "2026-11-10T09:30:00.000Z",
+    },
+    expect.objectContaining({ id: "msg_2", author: "agent" }),
+    expect.objectContaining({ id: "msg_3", author: "deleted", at: null }),
+  ]);
+  expect(results.messages).toEqual([
+    {
+      id: "itm_1",
+      seq: 7,
+      snippet: "hero",
+      matches: [[0, 4]],
+      author: "agent",
+      canvas: { id: "cnv_2", name: "Pricing" },
+      at: null,
+    },
+  ]);
+  expect(results.pullRequests).toEqual([
+    {
+      number: 412,
+      title: "Hero",
+      matches: [[0, 4]],
+      state: "open",
+      canvas: { id: "cnv_1", name: "Hero" },
+    },
+  ]);
+  expect(results.people).toEqual([
+    {
+      id: "usr_maya",
+      login: "maya",
+      name: "Maya",
+      avatarUrl: null,
+      nameMatches: [],
+      loginMatches: [[0, 4]],
+    },
+  ]);
+});
+
+test("a canvas renamed since the answer shows the answer's name, which its matches are into", () => {
+  const listed = [toSummary(row({ id: "cnv_1", name: "Pricing" }), { people: new Map() })];
+  const answer: SearchAnswer = {
+    query: "hero",
+    canvases: [{ canvasId: "cnv_1", name: "Hero", matches: [[0, 4]] }],
+    boards: [],
+    comments: [],
+    messages: [],
+    pullRequests: [],
+    people: [],
+  };
+  const [hit] = toSearchResults(answer, listed).canvases;
+  expect(hit!.canvas).toEqual({ ...listed[0]!, name: "Hero" });
 });

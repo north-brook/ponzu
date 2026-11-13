@@ -19,6 +19,15 @@ export type PaneName = "sidebar" | "thread" | "pull_request";
 /** How a canvas came to be opened. */
 export type OpenedVia = "sidebar" | "search" | "link" | "created" | "restored";
 
+/** The group of search's results a result is in (`ResultGroup` in @ponzu/client/model/search). */
+export type SearchResultGroup =
+  | "canvases"
+  | "boards"
+  | "comments"
+  | "messages"
+  | "pullRequests"
+  | "people";
+
 /** A calm state the window says something in, by what it is, never by its words. */
 export type NoticeName =
   | "cant_reach_ponzu"
@@ -64,6 +73,11 @@ export interface AppEvents {
   };
 
   "canvas opened": { canvas_id: string; via: OpenedVia };
+  /**
+   * A search result was opened, by its group and its place in the list (from 0). Never the
+   * words searched for, nor what the result says.
+   */
+  "search result opened": { kind: SearchResultGroup; position: number };
   "page switched": { canvas_id: string };
   "pane toggled": { pane: PaneName; open: boolean; canvas_id?: string };
   "comment mode entered": { canvas_id: string };

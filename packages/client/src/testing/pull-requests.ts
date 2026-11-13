@@ -212,6 +212,12 @@ export class FakePullRequests {
     };
   }
 
+  /** The pull request's number, title and state, as search indexes it; null before one opens. */
+  get titled(): { number: number; title: string; state: Pull["state"] } | null {
+    const pull = this.pull;
+    return pull ? { number: pull.number, title: pull.title, state: pull.state } : null;
+  }
+
   tab(): Tab {
     const exists = this.commits.length > 0;
     const pull = this.pull;

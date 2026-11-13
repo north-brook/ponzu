@@ -16,7 +16,7 @@ import { overlayOpen } from "../ui/shortcut.ts";
 import { RailComposer, ReadOnlyLine } from "./composer.tsx";
 import { readDraft, restoreDraft, useDraft, writeDraft } from "./composer-rules.ts";
 import type { LineHandlers } from "./lines.tsx";
-import { ThreadSkeleton, ThreadView } from "./thread-view.tsx";
+import { type Reveal, ThreadSkeleton, ThreadView } from "./thread-view.tsx";
 
 export interface ThreadRailProps extends LineHandlers {
   canvasId: string;
@@ -27,6 +27,9 @@ export interface ThreadRailProps extends LineHandlers {
   items: ThreadItem[] | null;
   older: OlderItems;
   onLoadOlder: () => void;
+  /** A line to bring into view and mark (search's message): see ThreadView. */
+  reveal?: Reveal | null;
+  onRevealed?: (at: number) => void;
   agent: AgentActivity;
   /** What the agent waits on, oldest first, and any just closed that the viewer hasn't put away. */
   asks: Ask[];
@@ -106,6 +109,8 @@ export function ThreadRail(props: ThreadRailProps) {
           items={items}
           older={props.older}
           onLoadOlder={props.onLoadOlder}
+          reveal={props.reveal ?? null}
+          {...(props.onRevealed ? { onRevealed: props.onRevealed } : {})}
           agent={agent}
           meId={meId}
           handlers={handlers}
@@ -162,14 +167,31 @@ const LANDING = [
 /** Something a person types into: what has the keyboard there is theirs to keep. */
 const FIELD = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
 
+/** How long a hold on the thread's focus waits for the pane it was for to open. */
+const HOLD_MS = 2000;
+let heldAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * The thread pane is about to open to be read, not typed in (search opening a message): the
+ * keyboard stays where it is. Taken by the next `enterThread`, or let go after HOLD_MS.
+ */
+export function holdThreadFocus(): void {
+  heldAt = performance.now();
+}
+
 /**
  * The thread pane has just opened (`pane`, AppWindow's rail): the keyboard goes to what fills
  * the composer's slot, so opening it is ready to say something. The composer's field; a
  * question's first option, when one waits in its place; nothing for someone who can only read.
  * Never under a menu, popover or dialog, and never from a field elsewhere that has the caret
- * (the sidebar's search, a rename, text on the canvas). Without scrolling, and without a ring.
+ * (the sidebar's search, a rename, text on the canvas), and not when it opened to be read
+ * (`holdThreadFocus`). Without scrolling, and without a ring.
  */
 export function enterThread(pane: HTMLElement): void {
+  if (performance.now() - heldAt < HOLD_MS) {
+    heldAt = Number.NEGATIVE_INFINITY;
+    return;
+  }
   if (overlayOpen() || pane.inert) return;
   const active = document.activeElement;
   if (active && active !== document.body) {

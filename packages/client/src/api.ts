@@ -1,7 +1,7 @@
 import type { ClientOp, PageIcon } from "@ponzu/core";
 import type { ThreadItem } from "@ponzu/runner/protocol";
-import type { InferRequestType } from "hono/client";
-import { ApiError, networkError } from "./errors.ts";
+import type { InferRequestType, InferResponseType } from "hono/client";
+import { ApiError, abortError, networkError } from "./errors.ts";
 import type { Randomness } from "./pkce.ts";
 import { createRpc, type Fetch, type Rpc } from "./rpc.ts";
 import type { Session } from "./session.ts";
@@ -35,6 +35,28 @@ export type LinkScheme = "ponzu" | "ponzu-dev";
 export type CreateCanvasBody = InferRequestType<Rpc["v1"]["canvases"]["$post"]>["json"];
 /** What `api.claude.setDefaults` takes: the model, the effort, or both. */
 export type AgentDefaultsBody = InferRequestType<Rpc["v1"]["claude"]["defaults"]["$patch"]>["json"];
+/** What `api.workspaces.search` asks: the words, and which groups to answer (all when left out). */
+export type SearchBody = InferRequestType<
+  Rpc["v1"]["workspaces"][":id"]["search"]["$post"]
+>["json"];
+/** What a search answers: each group's hits, with match offsets into the text each shows. */
+export type SearchAnswer = InferResponseType<
+  Rpc["v1"]["workspaces"][":id"]["search"]["$post"],
+  200
+>;
+/** One group of a search's answer. */
+export type SearchGroup = NonNullable<SearchBody["groups"]>[number];
+/** The longest search query the API takes, in characters once trimmed (400 past it). */
+export const SEARCH_QUERY_MAX = 200;
+/** Every group a search answers, in the order clients show them. */
+export const SEARCH_GROUPS = [
+  "canvases",
+  "boards",
+  "comments",
+  "messages",
+  "pullRequests",
+  "people",
+] as const satisfies readonly SearchGroup[];
 /** A guided setup step that leaves no other trace (`api.onboarding`). */
 export type OnboardingStep = InferRequestType<
   Rpc["v1"]["me"]["onboarding"]["$post"]
@@ -131,6 +153,39 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
             json: { role },
           })
         ).json(),
+
+      /*
+       * Search (docs/cloud.md "Search").
+       */
+
+      /**
+       * Search the workspace's canvases the person may read, and its people: at most 8 hits in
+       * each of canvases, boards, comments and messages, and 4 in pull requests and people.
+       * `q` is 1 to 200 characters once trimmed (400 `invalid_request` otherwise); punctuation
+       * alone answers every group empty. A POST, so the words never sit in an address. Once
+       * `signal` aborts, it rejects with an `AbortError`, not an `ApiError`.
+       */
+      search: async (
+        id: string,
+        body: SearchBody,
+        opts: { signal?: AbortSignal } = {},
+      ): Promise<SearchAnswer> => {
+        const { signal } = opts;
+        if (signal?.aborted) throw abortError(signal);
+        try {
+          const answer = await v1.workspaces[":id"].search.$post(
+            { param: { id }, json: body },
+            signal ? { init: { signal } } : undefined,
+          );
+          const json = await answer.json();
+          if (signal?.aborted) throw abortError(signal);
+          return json;
+        } catch (error) {
+          // The session reports a fetch that was given up on as no answer at all: say what it is.
+          if (signal?.aborted) throw abortError(signal);
+          throw error;
+        }
+      },
     },
 
     repos: {

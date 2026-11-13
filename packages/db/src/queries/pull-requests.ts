@@ -25,6 +25,7 @@ import type { Canvas } from "./canvases.ts";
 import { onceId } from "./jobs.ts";
 import { timeParam } from "./json.ts";
 import { run } from "./run.ts";
+import { toSearchRows, upsertSearchRows } from "./search.ts";
 
 // The asset key is the permission to read a canvas's files: it is asked for by name only.
 const { assetKey: _assetKey, ...canvasColumns } = getTableColumns(canvases);
@@ -209,6 +210,8 @@ export async function getPullRequestContext(
 export interface PullRequestRead {
   canvasId: string;
   number: number;
+  /** Its title on GitHub, which search finds it by. */
+  title: string;
   state: PrState;
   checks: PrChecks;
   /** False when it conflicts with its base; null while GitHub works it out. */
@@ -234,13 +237,42 @@ export interface PullRequestRead {
  * A read that finds nothing new writes nothing, not even when it began: every write to the row
  * reaches everyone watching the workspace's canvases, and most reads (a webhook for each check)
  * find what is already there.
+ *
+ * The same statement keeps the pull request's search entry (`#<number> <title>`, keyed by its
+ * number) whether or not the row changed, writing only when the text differs, so a webhook for
+ * a check writes nothing there either. A canvas keeps the entries of its earlier pull requests.
+ * An older read can put back an older title until the next read; that is accepted.
  */
 export async function recordPullRequestRead(db: Db, read: PullRequestRead): Promise<Canvas | null> {
   const merged = read.state === "merged";
+  const rows = toSearchRows([
+    {
+      kind: "pull_request",
+      ref: String(read.number),
+      text: `#${read.number} ${read.title}`,
+      context: { kind: "pull_request", number: read.number },
+      author: null,
+      at: null,
+    },
+  ]);
+  // Not `for key share`: the update below may change the canvas's row in this same statement,
+  // and a row lock skips a row its own statement changed, which would skip the entry. A canvas
+  // deleted while this runs fails the statement on the foreign key instead, as any write to a
+  // row under it would.
+  const indexed = db
+    .$with("pr_indexed", { canvasId: sql<string>`canvas_id` })
+    .as(
+      sql`${upsertSearchRows(
+        read.canvasId,
+        JSON.stringify(rows),
+        sql`exists (select 1 from canvases where id = ${read.canvasId})`,
+      )} returning canvas_id`,
+    );
   const recorded = sql`(${canvases.prNumber}, ${canvases.prState}, ${canvases.prChecks}, ${canvases.prMergeable}, ${canvases.prAutoMerge}, ${canvases.prUpdatedAt})`;
   const found = sql`(${read.number}::integer, ${read.state}::text, ${read.checks}::text, ${read.mergeable}::boolean, ${read.autoMerge}::boolean, ${timeParam(read.updatedAt)}::timestamptz)`;
   const [row] = await run(
     db
+      .with(indexed)
       .update(canvases)
       .set({
         prNumber: read.number,

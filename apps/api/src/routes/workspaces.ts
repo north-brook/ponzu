@@ -25,6 +25,7 @@ import { refreshWorkspaceRepoAccess } from "../auth/repo-access.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
+import { ANSWER_GROUPS, QUERY_MAX, searchWorkspace } from "../search/search.ts";
 
 /** A workspace as the switcher shows it to one of its members. */
 const WorkspaceSummary = z.object({
@@ -153,6 +154,101 @@ const CanvasRow = z.object({
 
 const CanvasList = z.object({ canvases: z.array(CanvasRow) });
 
+/** What a search asks: the words, and which groups to answer (every one when left out). */
+const SearchBody = z.object({
+  q: z.string().trim().min(1).max(QUERY_MAX),
+  groups: z.array(z.enum(ANSWER_GROUPS)).max(ANSWER_GROUPS.length).optional(),
+});
+
+const MatchView = z.tuple([z.number(), z.number()]);
+const SearchAuthorView = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("user"),
+    id: z.string(),
+    name: z.string(),
+    login: z.string(),
+    avatarUrl: z.string().nullable(),
+  }),
+  z.object({ kind: z.literal("agent") }),
+  z.object({ kind: z.literal("deleted") }),
+]);
+
+/**
+ * A search's answer: ids, names and where each hit is, with the match offsets (UTF-16, end
+ * exclusive) into the text it shows. Never a canvas's asset key, preview address, repo or
+ * branch: clients draw those from the canvas list they hold, and drop a hit it does not list.
+ */
+const SearchAnswerView = z.object({
+  query: z.string(),
+  /** At most 8 of each of these four groups. */
+  canvases: z.array(
+    z.object({ canvasId: z.string(), name: z.string(), matches: z.array(MatchView) }),
+  ),
+  boards: z.array(
+    z.object({
+      canvasId: z.string(),
+      canvasName: z.string(),
+      kind: z.enum(["page", "board"]),
+      id: z.string(),
+      /** The board's page; null for a page. */
+      pageId: z.string().nullable(),
+      name: z.string(),
+      matches: z.array(MatchView),
+    }),
+  ),
+  comments: z.array(
+    z.object({
+      canvasId: z.string(),
+      canvasName: z.string(),
+      threadId: z.string(),
+      messageId: z.string(),
+      pageId: z.string().nullable(),
+      artboardId: z.string().nullable(),
+      resolved: z.boolean(),
+      /** At most about 140 characters round the first match; `matches` are into it. */
+      snippet: z.string(),
+      matches: z.array(MatchView),
+      author: SearchAuthorView,
+      at: z.date().nullable(),
+    }),
+  ),
+  messages: z.array(
+    z.object({
+      canvasId: z.string(),
+      canvasName: z.string(),
+      itemId: z.string(),
+      itemSeq: z.number(),
+      snippet: z.string(),
+      matches: z.array(MatchView),
+      author: SearchAuthorView,
+      at: z.date().nullable(),
+    }),
+  ),
+  /** At most 4. `state` only for the canvas's current pull request. */
+  pullRequests: z.array(
+    z.object({
+      canvasId: z.string(),
+      canvasName: z.string(),
+      number: z.number(),
+      title: z.string(),
+      /** Into `title`. */
+      matches: z.array(MatchView),
+      state: z.enum(PR_STATES).nullable(),
+    }),
+  ),
+  /** At most 4: people who have joined, as GitHub would show them to the person searching. */
+  people: z.array(
+    z.object({
+      userId: z.string(),
+      login: z.string(),
+      name: z.string().nullable(),
+      avatarUrl: z.string().nullable(),
+      nameMatches: z.array(MatchView),
+      loginMatches: z.array(MatchView),
+    }),
+  ),
+});
+
 const WorkspaceParam = z.object({ id: z.string().max(64) });
 const MemberParam = WorkspaceParam.extend({ userId: z.string().max(64) });
 const RoleBody = z.object({ role: z.enum(MEMBER_ROLES) });
@@ -236,6 +332,29 @@ export const workspaces = new Hono<AppEnv>()
     });
     return c.json(CanvasList.parse({ canvases }));
   })
+
+  /**
+   * Search the workspace (docs/cloud.md "Search"): its canvases' names, pages, boards and
+   * comments, people's messages and the agent's answers, and pull request titles, in the
+   * canvases the person may read (the list's rule, with repo access brought up to the minute
+   * first), and its people as GitHub would show them. A POST, so the words are never in an
+   * address that a request log or a proxy keeps. Changes nothing.
+   */
+  .post(
+    "/:id/search",
+    validate("param", WorkspaceParam),
+    validate("json", SearchBody),
+    async (c) => {
+      const { user } = c.var.actor;
+      const workspace = await requireWorkspace(c, c.req.valid("param").id);
+      const { q, groups } = c.req.valid("json");
+      const answer = await searchWorkspace(
+        { ...c.var.deps, log: c.var.log },
+        { user, workspace, query: q, ...(groups ? { groups } : {}) },
+      );
+      return c.json(SearchAnswerView.parse(answer));
+    },
+  )
 
   /**
    * Set a member's role. Admins only. Membership itself is GitHub's; the role is the one thing

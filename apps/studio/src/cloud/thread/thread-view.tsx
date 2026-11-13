@@ -53,6 +53,20 @@ interface Leaving {
 /** The working line's key among the places of what can leave. */
 const WORKING = "working-line";
 
+/**
+ * A line to bring into view and mark: by its id, or, when the thread no longer shows it, the
+ * first line shown from its seq on (the oldest held, when it is older than all of them). `at` is
+ * when it was asked: each ask is shown once.
+ */
+export interface Reveal {
+  id: string;
+  seq: number;
+  at: number;
+}
+
+/** Rows drawn above a line brought into view: what led up to it. */
+const REVEAL_ABOVE = 10;
+
 const stillMotion = () =>
   typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -67,11 +81,15 @@ const metricsOf = (el: HTMLElement): ScrollMetrics => ({
  * stops following once the person scrolls up to read; a quiet pill counts what arrived since and
  * takes them back. Only the newest rows are drawn: reading up reveals more, a page at a time,
  * without moving what is on screen, and asks for older items once every loaded one is drawn.
+ * A line asked for (`reveal`) is drawn, scrolled to the middle and washed in pith a moment;
+ * with reduced motion it is only scrolled to.
  */
 export function ThreadView({
   items,
   older,
   onLoadOlder,
+  reveal = null,
+  onRevealed,
   agent,
   meId,
   handlers,
@@ -79,6 +97,9 @@ export function ThreadView({
   items: ThreadItem[];
   older: OlderItems;
   onLoadOlder: () => void;
+  reveal?: Reveal | null;
+  /** The line `reveal` asked for at `at` has been shown: it needn't be asked for again. */
+  onRevealed?: (at: number) => void;
   agent: AgentActivity;
   meId: string;
   handlers: LineHandlers;
@@ -252,9 +273,67 @@ export function ThreadView({
     return () => observer.disconnect();
   }, [stillFollowing, toFoot, holdAnchor, noteAnchor]);
 
-  // Back at the foot with a long window drawn: let the oldest go again.
+  /*
+   * A line asked for: the window opens back to it (with a few rows above it), and once it is
+   * drawn the thread scrolls it to the middle and stops following the foot, as reading up does.
+   * Declared after the effect above, so in the frame it is drawn this scroll comes last.
+   */
+  const revealing = useRef<{ at: number; id: string } | null>(null);
+  const revealedAt = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (!reveal || revealedAt.current === reveal.at || !rows.length) return;
+    revealedAt.current = reveal.at;
+    let at = rows.findIndex((row) => row.item.id === reveal.id);
+    if (at < 0) at = rows.findIndex((row) => row.item.seq >= reveal.seq);
+    if (at < 0) at = rows.length - 1;
+    // The line, or the nearest one drawn with a place to scroll to, on either side.
+    const near = [...rows.slice(at), ...rows.slice(0, at).reverse()];
+    const target = near.find((row) => row.item.kind === "message" || row.item.kind === "assistant");
+    // Nothing with a place to scroll to: the thread stays as it is, and the ask is done.
+    if (!target) return;
+    // The window opens back far enough to draw it: the nearest can sit above the line asked for.
+    const from = Math.min(at, rows.indexOf(target));
+    if (from < start) setFirstId(rowKey(rows[Math.max(0, from - REVEAL_ABOVE)]!));
+    revealing.current = { at: reveal.at, id: target.item.id };
+  });
+  useLayoutEffect(() => {
+    const asked = revealing.current;
+    const el = scroller.current;
+    if (!asked || !el) return;
+    const line = content.current?.querySelector<HTMLElement>(
+      `:scope > [data-item="${CSS.escape(asked.id)}"]`,
+    );
+    if (!line) return;
+    revealing.current = null;
+    const box = el.getBoundingClientRect();
+    const own = line.getBoundingClientRect();
+    el.scrollTop += own.top - box.top - (box.height - own.height) / 2;
+    ours.current = el.scrollTop;
+    following.current = atFoot(metricsOf(el));
+    dispatch({ type: "scrolled", metrics: metricsOf(el) });
+    noteAnchor();
+    // Washed only where the line asked for is the one shown, and never with reduced motion.
+    if (asked.id !== reveal?.id || stillMotion()) return;
+    delete line.dataset.revealed;
+    void line.offsetWidth;
+    line.dataset.revealed = "";
+    const done = (e: AnimationEvent) => {
+      if (e.target !== line || e.animationName !== "reveal-wash-out") return;
+      delete line.dataset.revealed;
+      line.removeEventListener("animationend", done);
+    };
+    line.addEventListener("animationend", done);
+  });
   useEffect(() => {
-    if (state.following && rows.length - start > WINDOW * 2) setFirstId(null);
+    if (reveal && revealedAt.current === reveal.at && !revealing.current) onRevealed?.(reveal.at);
+  });
+
+  // Back at the foot with a long window drawn: let the oldest go again.
+  // (The ref too: a line just brought into view has stopped following before the state says so.)
+  useEffect(() => {
+    if (state.following && following.current && rows.length - start > WINDOW * 2) {
+      setFirstId(null);
+    }
   }, [state.following, rows.length, start]);
 
   const [edges, setEdges] = useState({ top: false, bottom: false });
