@@ -33,6 +33,20 @@ import {
 import { claudeAccounts, repos, users, workspaces } from "./accounts.ts";
 import { atMostBytes, createdAt, instant, type Json, oneOf, updatedAt } from "./columns.ts";
 
+/** Who drives a canvas, as its head shows it: an agent's mark, name and where it runs. */
+export interface CanvasDriverView {
+  /** Which mark the apps draw: `claude`, `openai` (Codex), `cursor`, `t3` or `other`. */
+  client: string;
+  /** "Claude Code". */
+  name: string;
+  /** The app it runs in, when it said: "T3 Code". */
+  host: string | null;
+  /** Whose grant it drives with. */
+  userId: string;
+  /** When it took the canvas, as an ISO 8601 time. */
+  since: string;
+}
+
 /** The most a row the sandbox writes and clients watch may carry in one json value. */
 const WATCHED_PAYLOAD_BYTES = 256 * 1024;
 
@@ -110,6 +124,12 @@ export const canvases = pgTable(
      * Written with `agent_blocker`, and null whenever it is.
      */
     agentBlockedUntil: instant("agent_blocked_until"),
+    /**
+     * The person's own agent driving the canvas in place of Ponzu's agent, as clients show it
+     * (docs/cloud.md, "Driving a canvas"), or null. The lease itself is `canvas_drivers`; this is
+     * written with it, so the head says who drives without a join.
+     */
+    driver: jsonb("driver").$type<CanvasDriverView>(),
     /** How many questions are open. Kept in step by the question queries. */
     needsYouCount: integer("needs_you_count").notNull().default(0),
     lastActivityAt: instant("last_activity_at").notNull().defaultNow(),

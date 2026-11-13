@@ -656,6 +656,19 @@ export type Notice =
    */
   | { type: "owner_changed"; by: Person }
   /**
+   * A person's own agent began or ended driving the canvas (docs/cloud.md, "Driving a canvas"):
+   * `took`, or how it ended: `let_go` (it let go), `taken_back` (`by` took it back), `lapsed`
+   * (30 minutes without a call), `revoked` (its owner disconnected it).
+   */
+  | {
+      type: "driver";
+      action: "took" | "let_go" | "taken_back" | "lapsed" | "revoked";
+      agent: string;
+      host: string | null;
+      owner: Person | null;
+      by: Person | null;
+    }
+  /**
    * Written by the API, once per change, as a runner session starts: the model the canvas was
    * made with is no longer one the Claude account offers, so it runs on `to` in its place
    * ("Models"). Both are model ids, each with the name Ponzu knew it by then (the id itself when

@@ -239,6 +239,13 @@
       "when": 1794605422254,
       "tag": "0033_agent_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794607005381,
+      "tag": "0034_canvas_drivers",
+      "breakpoints": true
     }
   ]
 }

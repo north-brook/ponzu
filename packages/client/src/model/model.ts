@@ -331,6 +331,19 @@ export type ThreadNotice =
   /** Someone took the canvas over once its owner had left: it runs on their Claude now. */
   | { type: "owner_changed"; by: Person }
   /**
+   * A person's own agent began driving the canvas in place of Ponzu's agent (`took`), or
+   * stopped: it let go, `by` took it back, 30 minutes passed without a call, or its owner
+   * disconnected it.
+   */
+  | {
+      type: "driver";
+      action: "took" | "let_go" | "taken_back" | "lapsed" | "revoked";
+      agent: string;
+      host: string | null;
+      owner: Person | null;
+      by: Person | null;
+    }
+  /**
    * The model the canvas was made with is no longer one its Claude account offers, so it runs
    * on `to` in its place. The names are the ones Ponzu knew then; `account` is whose Claude it
    * is, null when that is not known.

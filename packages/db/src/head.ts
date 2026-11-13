@@ -1,4 +1,5 @@
 import type { AgentState, CanvasStatus, PrChecks, PrState } from "./enums.ts";
+import type { CanvasDriverView } from "./schema/canvases.ts";
 
 /**
  * The part of a canvas that clients watch live. It is small and changes often; when `seq`
@@ -30,6 +31,11 @@ export interface CanvasHead {
    * the canvas's address for its files (`GET /v1/canvases/:id`) has changed.
    */
   assetKeyRotatedAt: Date | null;
+  /**
+   * The person's own agent driving the canvas in place of Ponzu's agent, or null
+   * (docs/cloud.md, "Driving a canvas").
+   */
+  driver: CanvasDriverView | null;
 }
 
 /**
@@ -55,6 +61,7 @@ export const CANVAS_HEAD_COLUMNS = [
   "pr_auto_merge",
   "last_activity_at",
   "asset_key_rotated_at",
+  "driver",
 ] as const;
 
 /** A head as Realtime delivers it: keyed by column, with each `bigint` as a string. */
@@ -87,5 +94,6 @@ export function toCanvasHead(row: LiveCanvasHead): CanvasHead {
       row.asset_key_rotated_at === null || row.asset_key_rotated_at === undefined
         ? null
         : new Date(row.asset_key_rotated_at as string | Date),
+    driver: (row.driver ?? null) as CanvasDriverView | null,
   };
 }

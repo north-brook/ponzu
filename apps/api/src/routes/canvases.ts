@@ -48,6 +48,7 @@ import { rotateAssetKey } from "../canvases/asset-key.ts";
 import { commitPost } from "../canvases/commit.ts";
 import { startCanvas } from "../canvases/create.ts";
 import { readCurrentDoc } from "../canvases/document.ts";
+import { endDrive } from "../canvases/drive.ts";
 import { deleteCanvasAndFiles } from "../canvases/files.ts";
 import { reverse } from "../canvases/undo.ts";
 import { EFFORTS } from "../claude/models.ts";
@@ -656,6 +657,32 @@ export const canvases = new Hono<AppEnv>()
    * row, so it asks nothing of the canvas: one just deleted, or no longer theirs to open, is left
    * as quietly as any other.
    */
+  /**
+   * Take the canvas back from the person's own agent driving it (docs/cloud.md, "Driving a
+   * canvas"): its lease ends, the thread says who took it back, and Ponzu's agent takes up what
+   * people sent meanwhile. Anyone who may steer the canvas may. 204 whether or not anyone drove it.
+   */
+  .delete("/:id/driver", access.user, validate("param", Params), async (c) => {
+    const { deps, actor } = c.var;
+    const { canvas } = await requireCanvas(c, c.req.valid("param").id, "write");
+    // An agent lets go with its own `release_canvas`, which names its grant.
+    const ended = await endDrive(
+      { ...deps, log: c.var.log },
+      {
+        canvasId: canvas.id,
+        how: actor.agent ? "let_go" : "taken_back",
+        by: actor.agent ? null : actor.user,
+        ...(actor.agent ? { grantId: actor.agent.grantId } : {}),
+      },
+    );
+    if (ended)
+      deps.analytics.capture("canvas taken back", {
+        canvas_id: canvas.id,
+        by_agent: Boolean(actor.agent),
+      });
+    return c.body(null, 204);
+  })
+
   .delete("/:id/presence", access.user, validate("param", Params), async (c) => {
     const { deps, actor } = c.var;
     await removePresence(deps.db, { canvasId: c.req.valid("param").id, userId: actor.user.id });

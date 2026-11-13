@@ -111,6 +111,12 @@ function noticeOf(
       return { ...notice, as: notice.as ? personOf(notice.as, people) : null };
     case "owner_changed":
       return { type: "owner_changed", by: personOf(notice.by, people) };
+    case "driver":
+      return {
+        ...notice,
+        owner: notice.owner ? personOf(notice.owner, people) : null,
+        by: notice.by ? personOf(notice.by, people) : null,
+      };
     case "model_changed":
       return { ...notice, account: notice.account ? personOf(notice.account, people) : null };
     default:

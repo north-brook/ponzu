@@ -87,6 +87,18 @@ export {
   recordAuthStateOutcome,
 } from "./queries/auth-states.ts";
 export {
+  type CanvasDriver,
+  DRIVER_LEASE_SECONDS,
+  type DriverClaim,
+  getCanvasDriver,
+  isCanvasDriven,
+  listGrantDrivers,
+  listLapsedDrivers,
+  releaseCanvasDriver,
+  takeCanvasDriver,
+  touchCanvasDriver,
+} from "./queries/canvas-drivers.ts";
+export {
   type AssetKeySwap,
   deleteCanvasWithFiles,
   type FilesJob,

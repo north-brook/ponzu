@@ -94,6 +94,14 @@ export interface ServerEvents {
   /** The person disconnected one of their agents in settings. */
   "agent disconnected": Record<string, never>;
 
+  /**
+   * A drive ended by hand: the person took the canvas back from their agent (`by_agent` false),
+   * or the agent let go of it (`release_canvas`, true).
+   */
+  "canvas taken back": { canvas_id: string; by_agent: boolean };
+  /** A person's own agent took a canvas to drive it (`take_canvas`). */
+  "canvas driven": { canvas_id: string };
+
   // The thread
   "message sent": {
     canvas_id: string;
