@@ -25,6 +25,9 @@ function afterPaint(): Promise<void> {
   });
 }
 
+/** The picture window's failures in a row after which a canvas stops asking it. */
+export const GIVE_UP = 2;
+
 export type PictureBridge = { draw(request: PictureRequest): Promise<PictureAnswer> };
 
 export interface Comment {
@@ -40,7 +43,12 @@ export function pictureDrawer(
 ): (comment: Comment) => Promise<Record<Theme, Blob>> {
   const here = (comment: Comment) => drawHere({ ...comment, pace: "idle" });
   if (!bridge) return here;
+  // Failures in a row. A picture window that keeps failing (one that never starts, or never
+  // draws, on some computer) would make every comment wait out its time limit and start a new
+  // window: after `GIVE_UP` in a row, this canvas's pictures are drawn here instead.
+  let failures = 0;
   return async (comment) => {
+    if (failures >= GIVE_UP) return here(comment);
     // The comment is drawn first: what goes to the picture window is copied after the next paint.
     await afterPaint();
     const doc = pictureDoc(comment.doc, comment.threadId, comment.messageId);
@@ -56,6 +64,7 @@ export function pictureDrawer(
     } catch (error) {
       answer = { ok: false, reason: "failed", message: String(error) };
     }
+    failures = answer.ok || answer.reason === "empty" ? 0 : failures + 1;
     if (answer.ok) {
       return {
         light: new Blob([new Uint8Array(answer.light)], { type: "image/webp" }),

@@ -128,6 +128,37 @@ test("nothing round the pin is no picture; a window that can't is drawn here ins
   expect(here).toHaveLength(2);
 });
 
+test("a picture window that keeps failing is no longer asked, for that canvas", async () => {
+  let asked = 0;
+  const here: Given[] = [];
+  let answer: PictureAnswer = { ok: false, reason: "failed", message: "Too long." };
+  const draw = pictureDrawer(
+    {
+      draw: async () => {
+        asked++;
+        return answer;
+      },
+    },
+    (async (given: Given) => {
+      here.push(given);
+      return files();
+    }) as never,
+  );
+  // A failure, then a picture: the count starts again.
+  await draw(comment);
+  answer = { ok: true, light: new Uint8Array([1]), dark: new Uint8Array([2]) };
+  await draw(comment);
+  answer = { ok: false, reason: "failed", message: "Too long." };
+  await draw(comment);
+  expect(asked).toBe(3);
+  // The second failure in a row: from then on, drawn here without asking.
+  await draw(comment);
+  await draw(comment);
+  expect(asked).toBe(4);
+  expect(here).toHaveLength(4);
+  expect(here.every((g) => g.pace === "idle")).toBe(true);
+});
+
 test("without a picture window, it is drawn here at the window's idle pace", async () => {
   const here: Given[] = [];
   const draw = pictureDrawer(undefined, (async (given: Given) => {
