@@ -124,7 +124,7 @@ describe("the pull request sheet", () => {
     expect(screen.getByLabelText(`Pull request #${number}`)).toBeTruthy();
     await openSheet();
     expect(screen.getByTestId("pr-number").props.children).toBe(`#${number}`);
-    expect(screen.getByText("Pricing page")).toBeTruthy();
+    expect(screen.getByTestId("pr-title").props.children).toBe("Pricing page");
     expect(screen.getByText(/→ main/)).toBeTruthy();
     expect(screen.getByText(PR_SCENE.description)).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
