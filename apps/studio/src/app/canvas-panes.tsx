@@ -107,12 +107,15 @@ export function useCanvasPanes({
   // open, comes after any jump): whichever was asked for last.
   const shown = jumped && (!place || (jumped.at ?? 0) >= (place.at ?? 0)) ? jumped : null;
   const analytics = useAnalytics();
-  const setPrTab = (open: boolean) => {
-    if (canvasId && open !== prTab) {
-      analytics.capture("pane toggled", { pane: "pull_request", open, canvas_id: canvasId });
-    }
-    setTabFor(open ? canvasId : null);
-  };
+  const setPrTab = useCallback(
+    (open: boolean) => {
+      if (canvasId && open !== prTab) {
+        analytics.capture("pane toggled", { pane: "pull_request", open, canvas_id: canvasId });
+      }
+      setTabFor(open ? canvasId : null);
+    },
+    [canvasId, prTab, analytics],
+  );
 
   // The tab is read-only: ⌘Z there has nothing to undo. Uncaught, it would reach Edit › Undo,
   // which reverts the last typing anywhere in the window (the thread's draft, beside the tab) and
@@ -175,11 +178,38 @@ export function useCanvasPanes({
     [canvasId, page, show, onOpenCanvas],
   );
 
+  /*
+   * The chrome, the rail and the boards are each drawn again only when their own props change
+   * (they are memoized): a live update to the canvas's row in the sidebar, or anything else the
+   * window redraws for, hands them the same values and functions as before.
+   */
+  const prTabProp = useMemo(
+    () => ({ open: prTab, onToggle: () => setPrTab(!prTab) }),
+    [prTab, setPrTab],
+  );
+  const openPullRequest = useCallback(() => setPrTab(true), [setPrTab]);
+  const openRepo = useCallback(
+    (fullName: string) => host.openExternal(`https://github.com/${fullName}`),
+    [host],
+  );
+  const owner = summary?.owner ?? null;
+  // Its owner and the workspace's admins, as the API allows.
+  const mayReset = owner?.id === me.id || viewerIsAdmin;
+  const resetLinks = useMemo(
+    () => (mayReset && canvasId ? () => host.api.canvases.rotateAssetKey(canvasId) : null),
+    [mayReset, canvasId, host],
+  );
+  const revealAt = link?.item && (link.at ?? 0) !== revealed ? (link.at ?? 0) : null;
+  const revealItem = link?.item;
+  const reveal = useMemo(
+    () => (revealAt !== null && revealItem ? { ...revealItem, at: revealAt } : null),
+    [revealAt, revealItem],
+  );
+  const boardsLink = shown ?? place;
+
   if (!open) return null;
   const project = summary?.project ?? null;
   const repo = project?.kind === "repo" ? project.repo : null;
-  const owner = summary?.owner ?? null;
-  const togglePrTab = () => setPrTab(!prTab);
 
   return {
     toggleRail: rail.onToggle,
@@ -198,15 +228,10 @@ export function useCanvasPanes({
         page={page}
         onPage={onPage}
         rail={rail}
-        prTab={{ open: prTab, onToggle: togglePrTab }}
+        prTab={prTabProp}
         seenThreadSeq={seenThreadSeq}
-        onOpenRepo={(fullName) => host.openExternal(`https://github.com/${fullName}`)}
-        // Its owner and the workspace's admins, as the API allows.
-        resetLinks={
-          owner?.id === me.id || viewerIsAdmin
-            ? () => host.api.canvases.rotateAssetKey(open.id)
-            : null
-        }
+        onOpenRepo={openRepo}
+        resetLinks={resetLinks}
         say={say}
       />
     ),
@@ -221,10 +246,8 @@ export function useCanvasPanes({
         onOpenArtboards={onOpenArtboards}
         onOpenComment={onOpenComment}
         onOpenPlace={onOpenPlace}
-        onOpenPullRequest={() => setPrTab(true)}
-        reveal={
-          link?.item && (link.at ?? 0) !== revealed ? { ...link.item, at: link.at ?? 0 } : null
-        }
+        onOpenPullRequest={openPullRequest}
+        reveal={reveal}
         onRevealed={setRevealed}
         say={say}
         {...(onConnectClaude ? { onConnectClaude } : {})}
@@ -241,7 +264,7 @@ export function useCanvasPanes({
             me={me}
             page={page}
             onPage={onPage}
-            {...(shown ? { link: shown } : place ? { link: place } : {})}
+            {...(boardsLink ? { link: boardsLink } : {})}
             say={say}
             onClose={onClose}
           />

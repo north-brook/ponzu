@@ -23,6 +23,7 @@ import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
 import { readDraft, writeDraft } from "../cloud/thread/composer-rules.ts";
 import { holdThreadFocus, ThreadRail } from "../cloud/thread/rail.tsx";
+import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { quietFocus } from "../cloud/ui/quiet-focus.ts";
 import { paneHeld, ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
@@ -59,6 +60,7 @@ import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
 import { useAssetsUrls, useRowPresence, useUnchanged } from "./sidebar-data.ts";
 import { filterFor, loadUi, saveUi, type UiState } from "./ui-state.ts";
 import { useOnReturn } from "./use-answer.ts";
+import { useKeptElement } from "./use-kept.ts";
 
 /*
  * The main window, signed in: the person's workspaces from `me`, one of them open with its
@@ -677,19 +679,47 @@ function WorkspaceWindow({
     },
     host.landingBeat,
   );
-  const railToggle = {
-    open: railOpen,
-    onToggle: () => {
-      analytics.capture("pane toggled", {
-        pane: "thread",
-        open: !railOpen,
-        ...(openId ? { canvas_id: openId } : {}),
-      });
-      // Pressed during a send's beat: the person's say ends it, and stands.
-      setSent(null);
-      update((now) => ({ ...now, railOpen: !railOpen }));
-    },
-  };
+  // The same object until the pane opens or closes: the chrome is drawn again only for that.
+  const railToggle = useMemo(
+    () => ({
+      open: railOpen,
+      onToggle: () => {
+        analytics.capture("pane toggled", {
+          pane: "thread",
+          open: !railOpen,
+          ...(openId ? { canvas_id: openId } : {}),
+        });
+        // Pressed during a send's beat: the person's say ends it, and stands.
+        setSent(null);
+        update((now) => ({ ...now, railOpen: !railOpen }));
+      },
+    }),
+    [railOpen, analytics, openId, update],
+  );
+  const shareMembers = useMemo(
+    () =>
+      canvasMembers(
+        detail.data?.members ?? [],
+        openSummary?.owner?.id ?? null,
+        sharePeople.data?.people,
+      ),
+    [detail.data, openSummary?.owner?.id, sharePeople.data],
+  );
+  const openCanvasAt = useCallback(
+    ({ canvasId, page, artboard }: CanvasAddress) =>
+      onOpenCanvas({
+        canvasId,
+        ...(page ? { pageId: page } : {}),
+        ...(artboard ? { artboardId: artboard } : {}),
+      }),
+    [onOpenCanvas],
+  );
+  const closeCanvas = useCallback(() => openCanvas(null), [openCanvas]);
+  // The canvas waits on the viewer's own Claude: the guided setup's card, in a dialog.
+  const connectClaude = useCallback((expired: boolean) => {
+    setClaudeExpired(expired);
+    setConnectingClaude(true);
+  }, []);
   // Another canvas opened, or the create page again, before the beat ended: the pane is left
   // closed, as the beat would have left it.
   useEffect(() => {
@@ -698,17 +728,24 @@ function WorkspaceWindow({
     setLaunch(null);
     update((now) => ({ ...now, railOpen: false }));
   }, [sent, openId, update]);
+  // Kept the same while it says the same, as the panes' other inputs are (see useCanvasPanes).
+  const workspaceName = toWorkspace(workspace).name;
+  const billingWorkspace = useMemo(
+    () => ({
+      id,
+      name: workspaceName,
+      personal: workspace.kind === "personal",
+      canManage: workspace.canManageBilling ?? false,
+    }),
+    [id, workspaceName, workspace.kind, workspace.canManageBilling],
+  );
   const panes = useCanvasPanes({
     host,
     me,
     open: lost ? null : open,
     summary: openSummary,
     people,
-    members: canvasMembers(
-      detail.data?.members ?? [],
-      openSummary?.owner?.id ?? null,
-      sharePeople.data?.people,
-    ),
+    members: shareMembers,
     workspaceKind: workspace.kind,
     viewerIsAdmin: workspace.role === "admin",
     sidebarOpen: !firstCanvas && sidebarOpen,
@@ -716,26 +753,12 @@ function WorkspaceWindow({
     page,
     onPage: switchPage,
     link,
-    onOpenCanvas: ({ canvasId, page, artboard }) =>
-      onOpenCanvas({
-        canvasId,
-        ...(page ? { pageId: page } : {}),
-        ...(artboard ? { artboardId: artboard } : {}),
-      }),
+    onOpenCanvas: openCanvasAt,
     seenThreadSeq: live.rows?.find((row) => row.id === openId)?.seenThreadSeq ?? null,
     say,
-    onClose: () => openCanvas(null),
-    // The canvas waits on the viewer's own Claude: the guided setup's card, in a dialog.
-    onConnectClaude: (expired) => {
-      setClaudeExpired(expired);
-      setConnectingClaude(true);
-    },
-    billingWorkspace: {
-      id,
-      name: toWorkspace(workspace).name,
-      personal: workspace.kind === "personal",
-      canManage: workspace.canManageBilling ?? false,
-    },
+    onClose: closeCanvas,
+    onConnectClaude: connectClaude,
+    billingWorkspace,
   });
 
   // The canvas made: its own view takes the launch's place. What was typed into the launch's
@@ -832,6 +855,87 @@ function WorkspaceWindow({
     if (lost) analytics.capture("notice shown", { notice: "no_longer_in_workspace" });
   }, [analytics, lost]);
 
+  // The sidebar and the dialogs are the same elements until what they show changes: a live
+  // update to the open canvas's row redraws its row, not the whole sidebar (use-kept.ts).
+  const sidebarContent = useKeptElement(Sidebar, {
+    me,
+    workspace: toWorkspace(workspace),
+    workspaces: workspaces.map(toWorkspace),
+    teammates: [...people.values()].filter((person) => person.id !== me.id),
+    canvases: active,
+    settled: {
+      count: settled?.length ?? 0,
+      canvases: settled,
+      expanded: settledOpen,
+    },
+    onSettledExpandedChange: setSettledOpen,
+    openCanvasId: openId,
+    collapsed: !sidebarOpen,
+    onExpand: () => update((now) => ({ ...now, sidebarOpen: true })),
+    filter: filterFor(ui, id),
+    onFilterChange: (filter) =>
+      update((now) => ({ ...now, filters: { ...now.filters, [id]: filter } })),
+    query,
+    onQueryChange: setQuery,
+    results: search.results,
+    searchBusy: search.busy,
+    searchFailed: search.failed,
+    searchMaxLength: SEARCH_QUERY_MAX,
+    onOpenResult: openResult,
+    onOpen,
+    onIntent,
+    onAction,
+    onRename,
+    onNewCanvas: () => {
+      openCanvas(null);
+      // New canvas, by its button or ⌘N, is to start typing one: the caret goes
+      // to the create page's composer, whether the page was already showing or not.
+      focusCreateComposer();
+    },
+    onSwitchWorkspace: (next) => {
+      update((now) => ({ ...now, workspaceId: next.id }));
+      // A workspace that opens on its create page is for typing into at once.
+      focusCreateComposer();
+    },
+    onAddWorkspace: addWorkspace,
+    onSettings: openSettings,
+    onPlan: openPlan,
+    onSignOut,
+  });
+  const settingsView = useKeptElement(
+    SettingsView,
+    {
+      host,
+      me,
+      user,
+      workspaces: everyWorkspace,
+      workspaceId: id,
+      open: settings.open,
+      onOpenChange: (open: boolean) => showSettings(open),
+      section: settings.section,
+      onSectionChange: (section: SettingsSection) => setSettings((now) => ({ ...now, section })),
+      onAddWorkspace: addWorkspace,
+      onGetIphone: () => setGettingIphone(true),
+    },
+    settings.opened,
+  );
+  const iphoneDialog = useKeptElement(GetIphoneDialog, {
+    open: gettingIphone,
+    onDismiss: () => setGettingIphone(false),
+  });
+  const claudeDialog = useKeptElement(ConnectClaudeDialog, {
+    host,
+    open: connectingClaude,
+    expired: claudeExpired,
+    onClose: () => setConnectingClaude(false),
+  });
+  const deleteDialog = useKeptElement(DeleteCanvasDialog, {
+    name: deleting?.canvas.name ?? "",
+    open: deleting !== null,
+    busy: deleting?.busy ?? false,
+    onCancel: () => setDeleting(null),
+    onConfirm: confirmDelete,
+  });
   return (
     <BillingWallProvider wall={wall}>
       <AppWindow
@@ -843,54 +947,7 @@ function WorkspaceWindow({
             : {
                 open: sidebarOpen,
                 onToggle: toggleSidebar,
-                content: (
-                  <Sidebar
-                    me={me}
-                    workspace={toWorkspace(workspace)}
-                    workspaces={workspaces.map(toWorkspace)}
-                    teammates={[...people.values()].filter((person) => person.id !== me.id)}
-                    canvases={active}
-                    settled={{
-                      count: settled?.length ?? 0,
-                      canvases: settled,
-                      expanded: settledOpen,
-                    }}
-                    onSettledExpandedChange={setSettledOpen}
-                    openCanvasId={openId}
-                    collapsed={!sidebarOpen}
-                    onExpand={() => update((now) => ({ ...now, sidebarOpen: true }))}
-                    filter={filterFor(ui, id)}
-                    onFilterChange={(filter) =>
-                      update((now) => ({ ...now, filters: { ...now.filters, [id]: filter } }))
-                    }
-                    query={query}
-                    onQueryChange={setQuery}
-                    results={search.results}
-                    searchBusy={search.busy}
-                    searchFailed={search.failed}
-                    searchMaxLength={SEARCH_QUERY_MAX}
-                    onOpenResult={openResult}
-                    onOpen={onOpen}
-                    onIntent={onIntent}
-                    onAction={onAction}
-                    onRename={onRename}
-                    onNewCanvas={() => {
-                      openCanvas(null);
-                      // New canvas, by its button or ⌘N, is to start typing one: the caret goes
-                      // to the create page's composer, whether the page was already showing or not.
-                      focusCreateComposer();
-                    }}
-                    onSwitchWorkspace={(next) => {
-                      update((now) => ({ ...now, workspaceId: next.id }));
-                      // A workspace that opens on its create page is for typing into at once.
-                      focusCreateComposer();
-                    }}
-                    onAddWorkspace={addWorkspace}
-                    onSettings={openSettings}
-                    onPlan={openPlan}
-                    onSignOut={onSignOut}
-                  />
-                ),
+                content: sidebarContent,
               }
         }
         chrome={panes?.chrome ?? launchView?.chrome}
@@ -952,35 +1009,11 @@ function WorkspaceWindow({
             }}
           />
         )}
-        <SettingsView
-          key={settings.opened}
-          host={host}
-          me={me}
-          user={user}
-          workspaces={everyWorkspace}
-          workspaceId={id}
-          open={settings.open}
-          onOpenChange={(open) => showSettings(open)}
-          section={settings.section}
-          onSectionChange={(section) => setSettings((now) => ({ ...now, section }))}
-          onAddWorkspace={addWorkspace}
-          onGetIphone={() => setGettingIphone(true)}
-        />
-        <GetIphoneDialog open={gettingIphone} onDismiss={() => setGettingIphone(false)} />
-        <ConnectClaudeDialog
-          host={host}
-          open={connectingClaude}
-          expired={claudeExpired}
-          onClose={() => setConnectingClaude(false)}
-        />
+        {settingsView}
+        {iphoneDialog}
+        {claudeDialog}
         {notice ? <Banner>{notice}</Banner> : null}
-        <DeleteCanvasDialog
-          name={deleting?.canvas.name ?? ""}
-          open={deleting !== null}
-          busy={deleting?.busy ?? false}
-          onCancel={() => setDeleting(null)}
-          onConfirm={confirmDelete}
-        />
+        {deleteDialog}
       </AppWindow>
     </BillingWallProvider>
   );

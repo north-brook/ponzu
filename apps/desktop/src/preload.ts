@@ -53,6 +53,7 @@ const desktop: PonzuDesktop = {
     dev: argument("dev") === "1",
     linkScheme: argument("scheme"),
     analytics: analytics(),
+    ...(argument("fake") === "1" ? { fake: true } : {}),
   },
   session: {
     state: () => ipcRenderer.invoke(CHANNELS.sessionState) as Promise<SessionState>,
