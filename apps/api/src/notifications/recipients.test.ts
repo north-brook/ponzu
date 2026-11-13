@@ -133,14 +133,45 @@ describe("the others", () => {
 
   test("billing: a team's admins; a personal workspace's person", () => {
     const members = [
-      { userId: "a", role: "admin" as const },
-      { userId: "b", role: "member" as const },
-      { userId: "c", role: "admin" as const },
+      { userId: "a", role: "admin" as const, githubUserId: 1 },
+      { userId: "b", role: "member" as const, githubUserId: 2 },
+      { userId: "c", role: "admin" as const, githubUserId: 3 },
     ];
-    expect(billingRecipients({ kind: "org", members })).toEqual(["a", "c"]);
+    expect(billingRecipients({ kind: "org", githubAccountId: 900, members })).toEqual(["a", "c"]);
     expect(
-      billingRecipients({ kind: "personal", members: [{ userId: "p", role: "admin" }] }),
+      billingRecipients({
+        kind: "personal",
+        githubAccountId: 7,
+        members: [{ userId: "p", role: "admin", githubUserId: 7 }],
+      }),
     ).toEqual(["p"]);
+  });
+
+  test("billing: a personal workspace's collaborators hear nothing, even as admins", () => {
+    const members = [
+      { userId: "collab-admin", role: "admin" as const, githubUserId: 11 },
+      { userId: "person", role: "admin" as const, githubUserId: 7 },
+      { userId: "collab", role: "member" as const, githubUserId: 12 },
+    ];
+    expect(billingRecipients({ kind: "personal", githubAccountId: 7, members })).toEqual([
+      "person",
+    ]);
+    // Its person still hears it after being made a member by someone else.
+    expect(
+      billingRecipients({
+        kind: "personal",
+        githubAccountId: 7,
+        members: members.map((member) => ({ ...member, role: "member" as const })),
+      }),
+    ).toEqual(["person"]);
+    // Its person not a member: nobody, never a collaborator in their place.
+    expect(
+      billingRecipients({
+        kind: "personal",
+        githubAccountId: 7,
+        members: members.filter((member) => member.userId !== "person"),
+      }),
+    ).toEqual([]);
   });
 
   test("never the actor, in any of them", () => {

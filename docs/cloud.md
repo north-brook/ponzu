@@ -199,7 +199,12 @@ id, which GitHub never reuses, so a read of GitHub that began before it cannot b
 the installation back. A one-minute cron reads again any installation nobody has read
 for six hours, which is how an uninstall whose webhook was lost is found.
 
-**Installing.** `POST /v1/github/install-link` returns GitHub's install page with a
+**Installing.** `POST /v1/github/install-link` returns GitHub's account picker for the App
+(`installations/select_target`: every account of the person's, to install the App on one or
+change the repos of one that has it), or its install page for one account when the app
+suggests one (`installations/new/permissions`). The picker is asked for by name because the
+plain install page skips it once the App is installed anywhere and opens that installation's
+settings, where no other account can be chosen. Either carries a
 `state` sealed by the API and recorded as a fifteen-minute, single-use auth state, and
 the app's own handle on it (`id`). GitHub sends the browser to the App's Setup URL,
 `GET /v1/github/setup`, which has no bearer token: the state says who started, the
@@ -3202,7 +3207,7 @@ goes.
 | A pull request is ready | `pr_ready` | `prReady` | the canvas's owner, and the pull request's author when they are a member | `recordRead` records it open, not a draft, checks passing and mergeable; once per head commit, and at most once per canvas and person every 30 minutes |
 | A pull request approved | `pr_approved` | `prReady` | the canvas's owner and the pull request's author, never whoever approved it | a review that approved it, from someone GitHub says can push to the repo; once per review |
 | A teammate comments | `teammate_comment` | `teammateComments` | the canvas's owner | a person other than the owner comments on it. A comment within ten minutes of the owner's unread comment ping for the canvas folds into it ("Maya and Sam left 3 comments.") and the phone's ping is replaced, not added to |
-| Billing | `billing_free_used`, `billing_cap_warning`, `billing_cap_reached`, `billing_payment_failed` | always | the workspace's admins (its person, for a personal workspace), who must still be one when it goes | billing calls `notify({ kind: "billing", workspaceId, periodStart, notice, amountCents })` on a change of its gate; once a period each, in billing's words ("Northbrook has used 80% of this month's $100 cap.") |
+| Billing | `billing_free_used`, `billing_cap_warning`, `billing_cap_reached`, `billing_payment_failed` | always | the workspace's admins (for a personal workspace, only its person: the member whose GitHub account it is, never a collaborator), who must still be one when it goes | billing calls `notify({ kind: "billing", workspaceId, periodStart, notice, amountCents })` on a change of its gate; once a period each, in billing's words ("Northbrook has used 80% of this month's $100 cap.") |
 
 A failed check, changes asked for, a stop, a lapse being sent again and a stalled runner ping
 nobody: the agent takes the first two up by itself, and the rest recover on their own. Nothing

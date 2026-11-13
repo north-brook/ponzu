@@ -1,0 +1,15 @@
+Subject: Northbrook's payment of $123.40 didn't go through
+Preview: Northbrook's payment of $123.40 didn't go through.
+
+Since yesterday
+
+Here is what Ponzu told you about in the last day.
+
+Northbrook's plan
+Northbrook's payment of $123.40 didn't go through.
+
+You get this email once a day because it is on in Ponzu's Settings.
+
+Stop these emails https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.digest.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

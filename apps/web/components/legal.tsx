@@ -111,7 +111,9 @@ export function SubprocessorSummary({ rows = SUBPROCESSORS }: { rows?: readonly 
       {rows.map((row) => (
         <li key={`${row.name} ${row.purpose}`} data-subprocessor={row.name}>
           <span className="text-ink">{row.name}</span>: {lowerFirst(row.purpose)}.
-          {row.status === "when-it-ships" ? " Not in use yet; it will be when that ships." : null}
+          {row.status === "when-it-ships"
+            ? " Not in use yet; it will be once that is switched on."
+            : null}
         </li>
       ))}
     </ul>

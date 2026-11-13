@@ -32,6 +32,7 @@
     "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@ponzu/core": "workspace:*",
     "@ponzu/db": "workspace:*",
+    "@ponzu/email": "workspace:*",
     "@ponzu/runner": "workspace:*",
     "@ponzu/sandbox": "workspace:*",
     "@posthog/ai": "^8.19.2",

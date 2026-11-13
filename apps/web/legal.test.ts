@@ -14,7 +14,13 @@ import {
   PONZU_1_POLICY,
 } from "./components/legal-status.ts";
 import { ADVISORIES, EXPIRES_DAYS, securityTxt } from "./components/security-txt.ts";
-import { CONTACT, ENTITY, LEGAL_EFFECTIVE, LEGAL_STATUS } from "./components/site.ts";
+import {
+  CONTACT,
+  ENTITY,
+  GITHUB_PRIVATE_REPORTING,
+  LEGAL_EFFECTIVE,
+  LEGAL_STATUS,
+} from "./components/site.ts";
 import { SUBPROCESSORS } from "./components/subprocessors.ts";
 import { components as mdxComponents } from "./mdx-components.tsx";
 import config from "./next.config.ts";
@@ -85,7 +91,6 @@ test("while a draft, the founder's and counsel's open notes stay in the source b
   expect(item(false, "\n")).toContain("<li>");
   expect(item(true, "Export: none. ")).toBe("<li>Export: none. \n</li>");
   expect(mdxComponents.li).toBe(Li);
-  expect(source("privacy")).toMatch(/^- <Open /m);
 });
 
 test("each page ends on its effective date, or says it is not in effect yet", () => {
@@ -106,6 +111,24 @@ test("once in effect, the pages carry a date and no open question", () => {
   expect(LEGAL_EFFECTIVE).not.toBeNull();
   expect(open).toEqual([]);
   expect(SUBPROCESSORS.filter((row) => row.confirm)).toEqual([]);
+});
+
+test("once in effect, the terms name the state whose law governs them", () => {
+  // The terms' governing law and venue read ENTITY.state; without it they can only say "the
+  // state in which Northbrook PBC is incorporated". This is the one fact still to come before
+  // the pages are in effect: set ENTITY.state in components/site.ts to the state of
+  // incorporation, as the founder gives it.
+  const terms = source("terms");
+  expect(terms).toContain("governed by the laws of {STATE}");
+  expect(terms).toContain("courts in {STATE}");
+  expect(terms).toContain("export const STATE = ENTITY.state\n  ? `the State of $");
+  if (LEGAL_DRAFT) return;
+  if (ENTITY.state === null) {
+    throw new Error(
+      `The terms are in effect (LEGAL_STATUS) but ENTITY.state in components/site.ts is null: set it to ${ENTITY.name}'s state of incorporation, which the terms' governing law names.`,
+    );
+  }
+  expect(ENTITY.state.trim()).not.toBe("");
 });
 
 test("the subprocessor list is one array, drawn whole on both pages", () => {
@@ -131,21 +154,29 @@ test("the subprocessors the program settles are listed with their status", () =>
     expect(SUBPROCESSORS.find((row) => row.name.includes(vendor))?.status).toBe("in-use");
 });
 
-test("the privacy draft claims nothing the code does not do yet", () => {
+test("the privacy policy claims nothing production does not do", () => {
   // Outside an <Open>, so a note to the founder may name what is not true yet.
   const text = source("privacy").replace(/<Open[^>]*>[\s\S]*?<\/Open>/g, "");
-  // R2_PRIVATE_BUCKET is unset on dev: checkpoints are not in a private bucket.
-  expect(text).not.toMatch(/private bucket/i);
-  expect(text).not.toMatch(/checkpoints are private/i);
-  // Whether Vercel keeps a command's env is asked in writing, not known.
+  // Production sets R2_PRIVATE_BUCKET: checkpoints are in a bucket of their own, not served.
+  expect(text).toContain("Checkpoints are kept in a storage bucket of their own");
+  // Whether Vercel keeps a command's env is not documented, and nothing says it was answered.
   expect(text).not.toMatch(/Vercel (keeps|stores|records) no/i);
-  expect(text).toContain("we have asked Vercel in writing");
-  // Nothing sends pings yet (docs/cloud.md "Notifications").
-  expect(text).toContain("Pings are not sent yet");
-  // Deleting an account revokes the GitHub grant and asks PostHog to forget the person
-  // (apps/api/src/account/delete.ts, forget.ts), and says what happens when either is down.
+  expect(text).toContain("Vercel does not document whether it keeps a record");
+  // Nothing sends pushes or email yet, and the iPhone app does not register for them
+  // (docs/cloud.md "Notifications"; apps/mobile has no push registration).
+  expect(text).toContain("nothing is sent to phones or by email yet");
+  // Deleting an account revokes the GitHub grant (apps/api/src/account/delete.ts). Production
+  // has no PONZU_POSTHOG_PERSONAL_API_KEY, so forget.ts skips PostHog: the page must not say it
+  // happens by itself, and says to write to us instead.
   expect(text).toContain("We also revoke Ponzu's authorization on your GitHub account.");
-  expect(text).toContain("We ask PostHog to delete your profile, events and recordings");
+  expect(text).not.toContain("We ask PostHog to delete your profile, events and recordings");
+  expect(text).toContain("does not yet delete what PostHog holds about you by itself");
+  // PONZU_POSTHOG_AI_CONTENT is unset on production: model calls go without their content.
+  expect(text).toContain("Never the prompts, the replies");
+  // The production PostHog project keeps IP addresses ("Discard client IP data" is off).
+  expect(text).toContain("Our PostHog project does not discard it.");
+  // Ponzu for iPhone 1.0.0 sends nothing (apps/mobile/lib/telemetry.ts, canTrack = false).
+  expect(text).toContain("Ponzu for iPhone** sends nothing to PostHog in this version");
   // The settings switch is built (users.share_usage, apps/api/src/analytics/analytics.ts's
   // withoutOptedOut, the runner's trace flag), and says what it stops, and what it does not.
   expect(text).toContain("turn off Settings › Account › Share usage data in the desktop app");
@@ -194,17 +225,28 @@ test("the Ponzu 1 policy is kept at its own address", () => {
 
 test("security.txt has every field RFC 9116 asks for, and expires in the future", () => {
   const now = new Date("2026-11-12T00:00:00Z");
-  const lines = securityTxt(now).trimEnd().split("\n");
-  expect(lines).toEqual([
-    `Contact: mailto:${CONTACT.security}`,
-    `Contact: ${ADVISORIES}`,
+  const rest = [
     `Expires: ${new Date(now.getTime() + EXPIRES_DAYS * 86_400_000).toISOString()}`,
     "Policy: https://ponzu.design/security",
     "Preferred-Languages: en",
     "Canonical: https://ponzu.design/.well-known/security.txt",
+  ];
+  // GitHub's private reporting is listed only once it is on for the repository.
+  expect(securityTxt(now, true).trimEnd().split("\n")).toEqual([
+    `Contact: mailto:${CONTACT.security}`,
+    `Contact: ${ADVISORIES}`,
+    ...rest,
   ]);
+  expect(securityTxt(now, false).trimEnd().split("\n")).toEqual([
+    `Contact: mailto:${CONTACT.security}`,
+    ...rest,
+  ]);
+  expect(securityTxt(now)).toBe(securityTxt(now, GITHUB_PRIVATE_REPORTING));
+  // The security page offers it on the same switch.
+  expect(source("security")).toContain("{GITHUB_PRIVATE_REPORTING ? <>, or report it privately");
   expect(ADVISORIES).toBe("https://github.com/north-brook/ponzu/security/advisories/new");
-  const expires = new Date(lines[2]!.slice("Expires: ".length));
+  const lines = securityTxt(now, false).trimEnd().split("\n");
+  const expires = new Date(lines[1]!.slice("Expires: ".length));
   expect(expires.getTime()).toBeGreaterThan(now.getTime());
   // The RFC: "less than a year into the future".
   expect(expires.getTime() - now.getTime()).toBeLessThan(365 * 86_400_000);

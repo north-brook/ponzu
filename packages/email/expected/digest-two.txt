@@ -1,0 +1,19 @@
+Subject: Kettle onboarding and Northbrook's plan: 3 things since yesterday
+Preview: Pull request #41 is ready to merge.
+
+Since yesterday
+
+Here is what Ponzu told you about in the last day.
+
+Kettle onboarding
+Ponzu has a question for you. https://ponzu.design/canvases/cnv_1?open=thread
+Pull request #41 is ready to merge. https://ponzu.design/canvases/cnv_1?open=thread
+
+Northbrook's plan
+Northbrook has used 80% of this month's $100 cap.
+
+You get this email once a day because it is on in Ponzu's Settings.
+
+Stop these emails https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.digest.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

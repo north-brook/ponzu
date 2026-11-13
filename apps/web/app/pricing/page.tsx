@@ -39,7 +39,7 @@ const FAQ: readonly { q: string; a: ReactNode }[] = [
   },
   {
     q: "Is the iPhone app extra?",
-    a: "No. Billing lives on the Mac.",
+    a: "No. Billing lives in the desktop app.",
   },
   {
     q: "What happens at the cap?",
@@ -62,7 +62,7 @@ export default function Page() {
           Pay for what runs.
         </h1>
         <p className="m-0 max-w-[620px] text-[19px]/[31px] text-balance text-muted">
-          Everyone gets everything: the Mac and iPhone apps, unlimited canvases, teams. Your own
+          Everyone gets everything: the desktop and iPhone apps, unlimited canvases, teams. Your own
           Claude plan runs the model; Ponzu charges only while a canvas&apos;s sandbox is awake.
         </p>
       </header>
