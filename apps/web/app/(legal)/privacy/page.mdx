@@ -64,7 +64,7 @@ When you sign in, GitHub tells us, through our sign-in provider WorkOS, your Git
 
 ### Suggested prompts for a repository
 
-To suggest what to make in a repository, we send a short summary of it to Anthropic, on Ponzu's own Anthropic account: its description, topics and main language, its file layout, its README, up to four package manifests and one theme file, and for a small repository the start of up to two other files. The suggestions are kept with the repository for everyone in the workspace who can read it.
+To suggest what to make in a repository, we send a short summary of it to Anthropic, on Ponzu's own Anthropic account: its description, topics and main language, its file layout, its README, up to four package manifests and one theme file, and for a small repository the start of up to two other files. The suggestions are kept with the repository for everyone in the workspace who can open its canvases.
 
 ### Your Claude credential
 
@@ -119,7 +119,7 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
 
 ## Who can see your work
 
-- A canvas belongs to a repository. The people GitHub lets read that repository, who are in its workspace in Ponzu, can open the canvas; the people who can push to it can steer the agent. A Scratch canvas has no repository and is yours alone.
+- A canvas belongs to a repository. The people GitHub has given that repository to, with any permission, read-only included, can open the canvas if they are in its workspace in Ponzu: its owner, its collaborators (added directly, as outside collaborators or through a team), and the members of the organization that owns it whom GitHub lets read it. For a public repository, every member of that organization can open it too. That a repository is public does not by itself let anyone else open its canvases. The people who can push to it can steer the agent. A Scratch canvas has no repository and is yours alone.
 - A canvas's files are served from ponzu.cloud at addresses no one can guess. Anyone who is given such an address can open that file. The canvas's owner or a workspace admin can reset its file links in Share: its files move to new addresses, and the old ones stop working about fifteen minutes later (a copy already cached may still be served for a while).
 - A picture of a canvas placed in a pull request can be seen by whoever can see the pull request on GitHub.
 
