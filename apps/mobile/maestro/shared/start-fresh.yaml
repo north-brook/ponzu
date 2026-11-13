@@ -1,0 +1,31 @@
+appId: design.ponzu.app.dev
+---
+# shared/start.yaml for a flow that needs the app as on a new phone: its data
+# cleared (the ping ask's history with it), and iOS not yet asked about
+# notifications, so the app's own ask and iOS's prompt can show.
+- launchApp:
+    clearState: true
+    permissions:
+      microphone: deny
+      speech: deny
+      notifications: unset
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: ${DEV_CLIENT}
+      - runFlow:
+          when:
+            visible: "Open in .Ponzu Dev.\\?"
+          commands:
+            - tapOn: Open
+      - extendedWaitUntil:
+          visible:
+            id: "(launch|sign-in|canvases|xmark)"
+          timeout: 60000
+- runFlow:
+    when:
+      visible:
+        id: xmark
+    commands:
+      - tapOn:
+          id: xmark

@@ -1,0 +1,16 @@
+{
+  "Simulator Target Bundle": "design.ponzu.app.dev",
+  "aps": {
+    "alert": { "title": "Onboarding", "body": "Ponzu finished what you asked." },
+    "sound": "default",
+    "thread-id": "cnv_0000000000000012"
+  },
+  "body": {
+    "v": 1,
+    "n": "ntf_maestro_3",
+    "k": "finished",
+    "c": "cnv_0000000000000012",
+    "w": "ws_0000000000000007",
+    "o": "thread"
+  }
+}

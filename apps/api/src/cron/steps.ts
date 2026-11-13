@@ -7,6 +7,7 @@ import { jobsStep } from "./steps/jobs.ts";
 import { maintenanceStep } from "./steps/maintenance.ts";
 import { pruneNotificationsStep } from "./steps/prune-notifications.ts";
 import { pullRequestSweepStep } from "./steps/pull-request-sweep.ts";
+import { recapsStep } from "./steps/recaps.ts";
 import { receiptsStep } from "./steps/receipts.ts";
 import { resolveQuestionsStep } from "./steps/resolve-questions.ts";
 import { retentionStep } from "./steps/retention.ts";
@@ -37,6 +38,11 @@ export interface CronStep {
   /** Runs once an hour, at this minute past it (0 to 59). Wins over `everyMinutes`. */
   atMinute?: number;
   /**
+   * Whether the step is on at all. A step that answers false is not run, records no slot and
+   * is left out of the answer, so a feature that is off writes and answers nothing.
+   */
+  enabled?(run: CronDeps, now: Date): boolean;
+  /**
    * Does the step's work, and answers counts of what it did. Runs may overlap, and a run may
    * be repeated, so the work must take only what nobody else holds.
    */
@@ -53,6 +59,7 @@ export const CRON_STEPS: readonly CronStep[] = [
   resolveQuestionsStep,
   pruneNotificationsStep,
   digestsStep,
+  recapsStep,
   maintenanceStep,
   pullRequestSweepStep,
   archivesStep,
@@ -85,6 +92,7 @@ export async function runCronSteps(
   const answer: CronAnswer = { steps: {} };
   const runStep = async (step: CronStep) => {
     try {
+      if (step.enabled && !step.enabled(deps, now)) return;
       const slot = slotOf(step, now);
       if (slot === "skip") return;
       if (

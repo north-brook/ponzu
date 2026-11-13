@@ -1,5 +1,5 @@
-import { router, Stack } from "expo-router";
-import { useRef } from "react";
+import { router, Stack, useIsFocused } from "expo-router";
+import { useEffect, useRef } from "react";
 import { type HostInstance, Pressable, View } from "react-native";
 import { CanvasList } from "../../../components/canvas-list";
 import { Lockup } from "../../../components/chrome";
@@ -7,6 +7,7 @@ import { useCanvasList } from "../../../lib/cloud/canvases";
 import { useFirstCanvas } from "../../../lib/cloud/use-first-canvas";
 import { PICKER } from "../../../lib/copy";
 import { select, tick } from "../../../lib/haptics";
+import { setListNotice } from "../../../lib/list-notice";
 import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
 import { useTheme } from "../../../lib/theme";
 
@@ -27,6 +28,11 @@ export default function Canvases() {
   const m = useMargin();
   const header = useRef<HostInstance>(null);
   useFirstCanvas(canvases);
+  // A line said on arriving (lib/list-notice.ts) goes once the list is left.
+  const focused = useIsFocused();
+  useEffect(() => {
+    if (!focused) setListNotice(null);
+  }, [focused]);
   const openSettings = () => {
     select();
     router.push("/settings");

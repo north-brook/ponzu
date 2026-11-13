@@ -122,6 +122,47 @@ test("sends one email to Resend with the key, the idempotency key and every part
   expect(logs).toEqual([]);
 });
 
+test("Reply-To and tags go as Resend's reply_to and tags; none are sent when there are none", async () => {
+  answers.push(json(200, { id: "5e4d5e4d-0000-4000-8000-000000000001" }));
+  await mail().send({
+    ...message,
+    replyTo: "hello@ponzu.design",
+    tags: [
+      { name: "kind", value: "billing" },
+      { name: "env", value: "dev" },
+    ],
+  });
+  expect(seen[0]!.body).toEqual({
+    from: "Ponzu <ping@ponzu.design>",
+    to: ADDRESS,
+    subject: message.subject,
+    html: message.html,
+    text: message.text,
+    headers: message.headers,
+    reply_to: "hello@ponzu.design",
+    tags: [
+      { name: "kind", value: "billing" },
+      { name: "env", value: "dev" },
+    ],
+  });
+  // The first test pins the body with neither: no `reply_to: undefined`, no empty `tags`.
+  answers.push(json(200, { id: "5e4d5e4d-0000-4000-8000-000000000002" }));
+  await mail().send({ ...message, tags: [] });
+  expect(Object.keys(seen[1]!.body)).not.toContain("tags");
+  expect(Object.keys(seen[1]!.body)).not.toContain("reply_to");
+});
+
+test("a tag Resend would refuse is refused before anything is sent", async () => {
+  for (const tag of [
+    { name: "kind", value: "a b" },
+    { name: "kínd", value: "x" },
+    { name: "", value: "x" },
+  ]) {
+    await expect(mail().send({ ...message, tags: [tag] })).rejects.toThrow("A Resend tag");
+  }
+  expect(seen).toEqual([]);
+});
+
 test("Resend's errors become codes, with nothing they quote", async () => {
   const cases: [Answer, MailError["code"], number | null, string | null][] = [
     [
@@ -144,6 +185,17 @@ test("Resend's errors become codes, with nothing they quote", async () => {
       json(422, { statusCode: 422, name: "validation_error", message: `Invalid to: ${ADDRESS}` }),
       "rejected",
       422,
+      "validation_error",
+    ],
+    // Resend's answer to a key restricted to another domain, or a test address it refuses.
+    [
+      json(403, {
+        statusCode: 403,
+        name: "validation_error",
+        message: `You can only send testing emails to your own address, not ${ADDRESS}`,
+      }),
+      "rejected",
+      403,
       "validation_error",
     ],
     [

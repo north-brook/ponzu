@@ -1,0 +1,84 @@
+appId: design.ponzu.app.dev
+name: pull-request
+---
+# The pull request sheet on the fake's Pricing page (seed `pull-request`): its
+# checks passed, Theo approved, two comments, three files. The stack's pull
+# request button opens the sheet; Status and the files read as the board has
+# them; the checks and a file's diff open inside the sheet and Back returns.
+# Merge asks first in the system's action sheet: Cancel merges nothing, and
+# Merge then merges it: the button goes and the sheet says Merged.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=pull-request
+- extendedWaitUntil:
+    visible: "Pricing page, .*site.*"
+    timeout: 30000
+- tapOn: "Pricing page, .*site.*"
+- extendedWaitUntil:
+    notVisible:
+      id: canvas-placeholder
+    timeout: 30000
+- tapOn:
+    id: stack-pr
+- extendedWaitUntil:
+    visible:
+      id: pr-sheet
+    timeout: 10000
+- extendedWaitUntil:
+    visible: "3 checks passed"
+    timeout: 10000
+- assertVisible: "Puts the three plans side by side.*"
+- assertVisible: "theo approved"
+- assertVisible: "2 comments"
+- assertVisible: "3 files"
+- assertNotVisible: ".*Ready to merge.*"
+# Every check, inside the sheet, and Back.
+- tapOn:
+    id: pr-checks
+- extendedWaitUntil:
+    visible: "Passed: ci / visual"
+    timeout: 10000
+- tapOn:
+    id: pr-back
+# A file's diff: added and removed lines, read as such.
+- extendedWaitUntil:
+    visible: "src/components/plans.tsx"
+    timeout: 10000
+- tapOn: "src/components/plans.tsx"
+- extendedWaitUntil:
+    visible: "Added: .*PlanRow.*"
+    timeout: 10000
+- assertVisible: "Removed: .*Pro.*"
+- tapOn:
+    id: pr-back
+# Merge asks first. Cancel: nothing merged, the button is back.
+- extendedWaitUntil:
+    visible: "Merge #\\d+"
+    timeout: 10000
+- tapOn: "Merge #\\d+"
+- extendedWaitUntil:
+    visible: "Merge #\\d+ into main\\?"
+    timeout: 10000
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    notVisible: "Merge #\\d+ into main\\?"
+    timeout: 10000
+- assertVisible: "Merge #\\d+"
+# Merge, and Merge in the system's sheet: merged once, the button goes.
+- tapOn: "Merge #\\d+"
+- extendedWaitUntil:
+    visible: "Merge #\\d+ into main\\?"
+    timeout: 10000
+- tapOn: "Merge"
+- extendedWaitUntil:
+    notVisible:
+      id: pr-action
+    timeout: 10000
+- assertVisible: "· Merged.*"
+# Close: back to the canvas.
+- tapOn:
+    id: pr-close
+- extendedWaitUntil:
+    notVisible:
+      id: pr-sheet
+    timeout: 10000
+- assertNotVisible: ".*Cannot update a component.*"

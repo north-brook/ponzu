@@ -652,6 +652,36 @@ function evaluateEnv(desired: VercelDesired, name: string, env: ObservedEnv[]): 
           )
         : f.ok("env.sensitive", "every secret on the Production target is stored as sensitive"),
     );
+    out.push(...evaluateEmailEnv(production, varsFix));
+  }
+  return out;
+}
+
+/**
+ * Production's email settings (docs/production.md › Email), from names alone: the allowlist is
+ * dev's and is ignored on production, so it must not be there; and whether `billing` is paused
+ * while billing is on needs both values, which this check never reads, so a person confirms it
+ * (the API also logs `email_env_problem` at boot when it is so).
+ */
+function evaluateEmailEnv(production: ReadonlySet<string>, varsFix: string): Finding[] {
+  const out: Finding[] = [];
+  out.push(
+    production.has("PONZU_EMAIL_ALLOW")
+      ? f.fail(
+          "env.email_allow",
+          "PONZU_EMAIL_ALLOW is set on the Production target, where the API ignores it",
+          `remove it: ${varsFix}`,
+        )
+      : f.ok("env.email_allow", "PONZU_EMAIL_ALLOW is not set on the Production target"),
+  );
+  if (production.has("PONZU_EMAIL_PAUSED") && production.has("PONZU_BILLING")) {
+    out.push(
+      f.manual(
+        "env.email_paused",
+        "PONZU_BILLING and PONZU_EMAIL_PAUSED are both set on the Production target; their values are not read here",
+        "confirm that PONZU_EMAIL_PAUSED does not hold billing while PONZU_BILLING is on, and that the API's boot log has no email_env_problem (docs/production.md › Email)",
+      ),
+    );
   }
   return out;
 }
