@@ -61,6 +61,7 @@ export function Sheet({
   right = 0,
   maxWidth,
   bottomBar = 0,
+  panel,
   away = false,
   onAway,
   bare = false,
@@ -96,6 +97,12 @@ export function Sheet({
    * touches, or above the keyboard once that's higher.
    */
   bottomBar?: number;
+  /**
+   * Docked as a panel this wide at the trailing edge (the chat in a window with room for it beside
+   * the canvas, lib/duo-layout.ts `chatPanel`): from `top` to 8pt above the bottom, or above the
+   * keyboard, every corner round, coming in from the side. It leaves `right` clear, as a sheet does.
+   */
+  panel?: number;
 }) {
   const { color } = useTheme();
   const { width, height: screenH } = useWindowDimensions();
@@ -172,6 +179,22 @@ export function Sheet({
     Math.max(BARE_FOOT, bottomBar + BARE_LIFT, lift.value + BARE_LIFT),
   );
   const style = useAnimatedStyle(() => {
+    if (panel !== undefined) {
+      return {
+        right: right + 8,
+        width: panel,
+        bottom: 8 + Math.max(bottomBar, lift.value),
+        borderRadius: 24,
+        paddingHorizontal: 16,
+        paddingTop: 10,
+        paddingBottom: 16,
+        gap,
+        transform: [
+          { translateX: enter.value * (panel + right + 16) },
+          { translateY: Math.max(0, drag.value) },
+        ],
+      };
+    }
     if (bare) {
       const side = floats ? inset : 12;
       return {
@@ -222,6 +245,11 @@ export function Sheet({
     // The top of the sheet from the bottom of the screen: its bottom edge plus its height.
     if (bare) {
       runOnJS(report)(Math.round(bareBottom.value + h.value));
+      return;
+    }
+    // Beside the canvas, not over its foot: nothing on the canvas needs to clear it.
+    if (panel !== undefined) {
+      runOnJS(report)(0);
       return;
     }
     const under = floats ? 0 : KEYBOARD_CORNER * docked.value;

@@ -32,8 +32,10 @@ export interface DuoLayout {
 
 /** The narrowest window that's iPhone Duo's inner display: wider than any iPhone. */
 const INNER = 600;
-/** The narrowest window with room for the comments panel (344pt) beside the canvas. */
+/** The narrowest window with room for the comments panel (`PANEL_WIDTH`) beside the canvas. */
 const PANEL = 900;
+/** The comments panel's width: the chat, docked beside the canvas in a window with room. */
+export const PANEL_WIDTH = 344;
 
 export function duoLayout(
   window: { width: number; height: number },
@@ -92,6 +94,14 @@ export function sheetMax(layout: DuoLayout, width: number): number | undefined {
     : undefined;
 }
 const WIDE_SHEET = 700;
+
+/**
+ * Whether the chat docks as a panel beside the canvas (`PANEL_WIDTH`, the comments panel's slot)
+ * rather than rising as the sheet: a window with room for both, flat. Folded, it stays a sheet.
+ */
+export function chatPanel(layout: DuoLayout): boolean {
+  return layout.panel && !layout.split;
+}
 
 /**
  * Where comments' button sits among the system's bar items: on the rail it

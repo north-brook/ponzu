@@ -1,17 +1,18 @@
-import type { AgentChange, Presence } from "@ponzu/core";
+import type { AgentChange } from "@ponzu/core";
 import { useHinge } from "expo-hinge";
 import { useKeepAwake } from "expo-keep-awake";
 import { useEffect, useRef, useState } from "react";
 import { useWindowDimensions } from "react-native";
 import { SensorType, useAnimatedReaction, useAnimatedSensor } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { agentWorking, isStill, listenForStill, standbyOn, standbyPose } from "./standby";
+import { isStill, listenForStill, standbyOn, standbyPose } from "./standby";
 
 /**
  * Whether standby shows (lib/standby.ts): the pose from the window and the
  * hinge, the phone set down from gravity (Reanimated's sensor, CoreMotion
- * underneath), and an agent working here from presence. `force` is
- * development's `?standby=1`, for the simulator, which has no motion.
+ * underneath), and `working`, Ponzu at work on a board on the page on screen
+ * (`cloudStandbyPath`). `force` is the fake backend's `?standby=1`, for the
+ * simulator, which has no motion.
  *
  * Gravity is read only while the pose and an agent already hold (`listen`,
  * which the screen answers by rendering `<StillSensor>`): an iPhone is never
@@ -19,21 +20,20 @@ import { agentWorking, isStill, listenForStill, standbyOn, standbyPose } from ".
  * JS threads ten times a second for as long as a design is open.
  */
 export function useStandby(
-  presence: Presence[],
-  file: string,
+  working: boolean,
   force = false,
 ): { standby: boolean; listen: boolean; setStill: (still: boolean) => void } {
   const window = useWindowDimensions();
   const hinge = useHinge();
   const [still, setStill] = useState(false);
   const pose = standbyPose(window, hinge?.status ?? null);
-  const working = agentWorking(presence, file);
   const listen = listenForStill(pose, working);
   // Not listening, the last reading means nothing: picked up and set down again, it's read anew.
   useEffect(() => {
     if (!listen) setStill(false);
   }, [listen]);
-  return { standby: force || standbyOn(pose, still, working), listen, setStill };
+  // Forced, it stands in for the pose and the phone set down, never for Ponzu at work.
+  return { standby: (force && working) || standbyOn(pose, still, working), listen, setStill };
 }
 
 /** The display stays on while standby shows, as StandBy keeps it. */
