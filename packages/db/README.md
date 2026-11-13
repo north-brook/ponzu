@@ -82,7 +82,11 @@ const result = await commitOps(db, { canvasId, expectedSeq, actor, ops });
   when a job is due, which its caller then sets `runAt` by); convert one when a module
   comes to depend on its timing, and do not add to them. (An event claim depends on no time: it
   hands an event to each runner once.)
-- `@ponzu/db/testing` exports `createTestDb()`: a migrated PGlite database, about 60 ms each.
+- `@ponzu/db/testing` exports `createTestDb()`: a migrated PGlite database, about 60 ms each,
+  and `createEmptyTestDb()`, an empty one. Both load a copy kept in the temporary directory,
+  which `bun test` makes before any test starts (`src/test-preload.ts`, preloaded by the root
+  `bunfig.toml`), so no test runs initdb or the migrations inside its timeout. A test that
+  needs a Postgres takes one of these, never `new PGlite()`.
 - `@ponzu/db/types` is for clients: the fixed lists (`AGENT_STATES`, `EVENT_PRIORITIES`, …),
   their types and the canvas head. It imports no driver and no Drizzle. The package root
   does, so a browser or phone bundle must not import a value from it.

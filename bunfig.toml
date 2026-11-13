@@ -1,0 +1,3 @@
+[test]
+# The test databases are made before any test starts, not inside the first one's timeout.
+preload = ["./packages/db/src/test-preload.ts"]
