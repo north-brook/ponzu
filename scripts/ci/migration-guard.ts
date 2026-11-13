@@ -235,6 +235,9 @@ export function judgeTree(m: Migrations): Problem[] {
  */
 const LOCK_TIMEOUT = /^SET\s+(?:LOCAL\s+|SESSION\s+)?LOCK_TIMEOUT\s*(?:=|\bTO\b)\s*'?\s*(\d+)/;
 const setsLockTimeout = (code: string) => Number(LOCK_TIMEOUT.exec(code)?.[1] ?? 0) > 0;
+/** Any statement that changes lock_timeout, to a value, to DEFAULT, or back with RESET. */
+const CHANGES_LOCK_TIMEOUT =
+  /^(?:SET\s+(?:LOCAL\s+|SESSION\s+)?LOCK_TIMEOUT\b|RESET\s+(?:LOCK_TIMEOUT|ALL)\b)/;
 
 /**
  * The first statement that names one of `existing` before any `lock_timeout` is set. A name
@@ -249,8 +252,15 @@ export function lockProblems(file: string, sql: string, existing: string[]): Pro
       `"${quote(name)}"|\\b(?:TABLE|ON|REFERENCES|INTO|UPDATE|FROM|JOIN|TRUNCATE)\\s+(?:IF\\s+EXISTS\\s+)?(?:ONLY\\s+)?(?:PUBLIC\\.)?${quote(name)}\\b`,
     ),
   }));
+  // Whether a positive lock_timeout holds at this statement. A later SET to zero or DEFAULT, or
+  // a RESET, turns it off again, so every statement is judged by the newest setting before it.
+  let timeout = false;
   for (const statement of statements(sql)) {
-    if (setsLockTimeout(statement.code)) return [];
+    if (CHANGES_LOCK_TIMEOUT.test(statement.code)) {
+      timeout = setsLockTimeout(statement.code);
+      continue;
+    }
+    if (timeout) continue;
     const hit = patterns.find((p) => p.test.test(statement.code));
     if (hit) {
       return [
@@ -518,7 +528,16 @@ async function renumber(base: string): Promise<number> {
 
   // The schema and the migrations agree: a second generate finds nothing to do.
   const before = readFileSync(join(dir, "meta/_journal.json"), "utf8");
-  await run(["bun", "run", "db:generate", "--name", "renumber_check"], join(ROOT, "packages/db"));
+  const second = await run(
+    ["bun", "run", "db:generate", "--name", "renumber_check"],
+    join(ROOT, "packages/db"),
+  );
+  if (second.code !== 0) {
+    console.error(
+      `The second db:generate failed (exit ${second.code}), so nothing proves the schema and the migrations agree.\n${second.out}`,
+    );
+    return 1;
+  }
   const again = readMigrations(dir);
   const extra = again.journal.entries.at(-1);
   if (extra && extra.tag !== entry.tag) {

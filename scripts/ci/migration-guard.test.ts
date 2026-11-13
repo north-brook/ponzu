@@ -236,6 +236,19 @@ describe("the lock timeout", () => {
     }
   });
 
+  test("a lock_timeout turned off again does not cover the statements after it", () => {
+    for (const off of [
+      "SET LOCAL lock_timeout = 0;",
+      "SET lock_timeout TO DEFAULT;",
+      "RESET lock_timeout;",
+    ]) {
+      const sql = `SET LOCAL lock_timeout = '5s';${BREAK}\n${off}${BREAK}\nALTER TABLE "users" ADD COLUMN "plan" text;`;
+      expect(lockProblems("x.sql", sql, tables).map((p) => p.rule)).toEqual(["lock_timeout"]);
+    }
+    const back = `SET LOCAL lock_timeout = 0;${BREAK}\nSET LOCAL lock_timeout = '5s';${BREAK}\nALTER TABLE "users" ADD COLUMN "plan" text;`;
+    expect(lockProblems("x.sql", back, tables)).toEqual([]);
+  });
+
   test("a lock_timeout set after the first lock is too late", () => {
     const sql = `ALTER TABLE "users" ADD COLUMN "plan" text;${BREAK}\nSET LOCAL lock_timeout = '5s';`;
     expect(lockProblems("x.sql", sql, tables).map((p) => p.rule)).toEqual(["lock_timeout"]);
