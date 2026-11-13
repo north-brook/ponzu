@@ -333,8 +333,8 @@ GitHub's, by numeric ids, and reaches the table one of two ways:
   list GitHub cut short (past 2,000 repos) says nothing of the repos it left out, so
   the oldest of those whose answer a reader acts on (one that lets them read, or a
   repo with a canvas), up to 20 at a time, are asked about as the App; for those a
-  `read` stands for a member of the organization (asked with that list) and, for anyone
-  else, only on a repo that is private (GitHub answers `read` there only to someone it
+  `read` stands for a member of the organization or the personal account itself (asked with
+  that list) and, for anyone else, only on a repo that is private (GitHub answers `read` there only to someone it
   gave the repo), since nothing else can say whether it was given. A repo the cut-short
   list left out and did not get to asking about is settled the same way when it is
   opened, never by an answer kept from before.
@@ -346,9 +346,12 @@ GitHub's, by numeric ids, and reaches the table one of two ways:
   (above), which also keeps its answers. When their GitHub token is dead nothing can
   settle it: it stands on a private repo (where GitHub answers `read` only to someone it
   gave the repo) and is `none` on a public one. Wherever a `read` stands because the repo
-  is private, the App first asks GitHub whether it still is (`GET /repos/{owner}/{repo}`
-  with a token for that repo alone), since one made public a moment ago is still private
-  in Ponzu's copy while GitHub answers `read` for anybody; an answer it cannot get is no. For someone who never signed in (a
+  is private, the App first asks GitHub whether it still is (`GET /repositories/{id}`, with
+  the token its permission question uses: that repo alone, metadata only), since one made
+  public a moment ago is still private in Ponzu's copy while GitHub answers `read` for
+  anybody. A repo the App no longer reaches is no. While GitHub fails, the answer kept
+  stands for ten minutes, as when the permission question fails; for one of the repos a
+  cut-short list asks about, a failure is no. For someone who never signed in (a
   review's author) it is `none`; only whether they can push is ever asked of them.
 
 Whether a repo is public is the App's word, kept in `repos.private` from every read of

@@ -88,9 +88,9 @@ const reachable = ({ installationId, suspendedAt }: AppInstallation) =>
  *
  * `known` is the kept answer when the caller read it already (`getCanvasAccess` reads it with
  * the canvas); left out, it is read here. `unlisted` is for a repo a cut-short list of the
- * person's left out, which their list cannot settle: a `read` then stands on a private repo
- * (`givenRead`) and, on a public one, only for someone GitHub gives every public repo of the
- * account (`readsPublic`).
+ * person's left out, which their list cannot settle: a `read` then stands for someone GitHub
+ * gives every public repo of the account (`readsPublic`), and otherwise only on a repo GitHub
+ * confirms is private now (`givenRead`).
  */
 export async function repoPermission(
   deps: RepoAccessDeps,
@@ -138,7 +138,13 @@ export async function repoPermission(
   }
   if (permission === "read") {
     if (unlisted) {
-      permission = (await givenRead(deps, { ...unlisted, installationId, repo })) ? "read" : "none";
+      // One of many asked about for a cut-short list: a GitHub failure here is no, not a reason
+      // to fail the whole list.
+      const given = await givenRead(deps, { ...unlisted, installationId, repo }).catch((error) => {
+        deps.log.warn("repo_visibility_unread", { repo: repo.fullName, error: String(error) });
+        return false;
+      });
+      permission = given ? "read" : "none";
     } else if (user.id === null) {
       return "none";
     } else {
@@ -285,27 +291,19 @@ async function givenRead(
 }
 
 /**
- * Whether GitHub says, now, that a repo is private: asked as the App, with a token for that repo
- * alone and only its metadata. Any failure is no, the tighter answer.
+ * Whether GitHub says, now, that a repo is private: asked as the App, with the token its
+ * permission question uses (that repo alone, metadata only), by the repo's id. A repo the
+ * installation no longer reaches is no. A GitHub failure throws, so a caller's fallback decides:
+ * `repoPermission` keeps an answer younger than ten minutes, as it does when its own question
+ * fails, and a cut-short list's question about one repo among many answers no.
  */
 async function privateNow(
   deps: RepoAccessDeps,
-  {
-    installationId,
-    repo,
-  }: { installationId: number; repo: { githubRepoId: number; fullName: string } },
+  { installationId, repo }: { installationId: number; repo: { githubRepoId: number } },
 ): Promise<boolean> {
-  try {
-    const { token } = await deps.github.createInstallationToken({
-      installationId,
-      repositoryIds: [repo.githubRepoId],
-      permissions: { metadata: "read" },
-    });
-    return (await deps.github.getRepositoryAbout(token, repo.fullName)).private;
-  } catch (error) {
-    deps.log.warn("repo_visibility_unread", { repo: repo.fullName, error: String(error) });
-    return false;
-  }
+  return (
+    (await deps.github.isRepoPrivate({ installationId, repositoryId: repo.githubRepoId })) === true
+  );
 }
 
 /** Whether a permission lets its holder steer a canvas: send messages, answer, merge. */

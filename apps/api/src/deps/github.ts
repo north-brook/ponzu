@@ -170,6 +170,12 @@ export interface Github extends GithubPullRequests {
    */
   getRepoPermission(input: RepoPermissionQuery): Promise<RepoPermission>;
   /**
+   * As the App, with the token `getRepoPermission` asks with (this one repository, `metadata:
+   * read`): whether GitHub says the repository is private now. Null when the installation no
+   * longer reaches it. A GitHub failure throws.
+   */
+  isRepoPrivate(input: { installationId: number; repositoryId: number }): Promise<boolean | null>;
+  /**
    * As the App: one installation as GitHub has it now, or null once it is gone. This is the
    * word to trust over a webhook's payload, which may be older than what happened since.
    */
@@ -236,8 +242,6 @@ export interface GithubRepositoryAbout {
   language: string | null;
   defaultBranch: string;
   archived: boolean;
-  /** Whether GitHub says it is private now. */
-  private: boolean;
 }
 
 export interface GithubTree {
@@ -587,6 +591,27 @@ export function createGithub({
       return asked;
     },
 
+    async isRepoPrivate({ installationId, repositoryId }) {
+      try {
+        const { data } = await asApp(
+          { installationId, repositoryId },
+          { metadata: "read" },
+          (token) =>
+            send("app", () =>
+              octokit.request("GET /repositories/{repository_id}", {
+                repository_id: repositoryId,
+                headers: bearer(token),
+              }),
+            ),
+        );
+        return (data as { private?: unknown }).private === true;
+      } catch (error) {
+        if (error instanceof NoInstallationToken) return null;
+        if (error instanceof UpstreamError && error.status === 404) return null;
+        throw error;
+      }
+    },
+
     async getInstallation(installationId) {
       const jwt = await app.jwt();
       try {
@@ -706,7 +731,6 @@ export function createGithub({
         language: stringOrNull(repository.language),
         defaultBranch: repository.default_branch,
         archived: repository.archived === true,
-        private: repository.private === true,
       };
     },
 

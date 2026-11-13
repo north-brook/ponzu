@@ -457,6 +457,13 @@ export class FakeGithub {
         decodeURIComponent(permission[2]!),
       );
     }
+    // A repository by id, for a token that reaches it.
+    const byId = /^\/repositories\/(\d+)$/.exec(pathname);
+    if (method === "GET" && byId) {
+      const repository = repositories.find(({ id }) => id === Number(byId[1]));
+      if (!repository) return Response.json({ message: "Not Found" }, { status: 404 });
+      return Response.json(repositoryJson(repository));
+    }
     const contents = this.#serveContents(token, repositories, method, url);
     if (contents) return contents;
     // An account by id needs no permission at all.

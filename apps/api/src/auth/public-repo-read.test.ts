@@ -20,6 +20,7 @@ import {
   type SignedInPerson,
   type TestApp,
 } from "../testing/index.ts";
+import { repoPermission } from "./repo-access.ts";
 
 /*
  * Who may see a canvas on a PUBLIC repository (docs/cloud.md, "Identity and access"): only
@@ -595,6 +596,42 @@ describe("when the person's own list cannot settle a read", () => {
     const opened = await call(t, reader.headers, "GET", `/v1/canvases/${world.canvas.id}`);
     expect(opened.status).toBe(200);
     expect(opened.body.access).toBe("read");
+  });
+
+  test("still private, its token dead, GitHub failing: the read kept ten minutes ago stands, and no longer", async () => {
+    const world = await orgWorld("private");
+    const reader = world.people.outsideReader!;
+    const open = () => call(t, reader.headers, "GET", `/v1/canvases/${world.canvas.id}`);
+    expect((await open()).body.access).toBe("read");
+    t.github.revokeTokens(reader.github.id);
+
+    // Whether the repo is still private cannot be asked: the answer kept stands, as it would if
+    // the permission question itself had failed.
+    t.clock.advance(2 * 60_000);
+    t.github.failNext(`/repositories/${world.main.fake.id}`, 502);
+    const during = await open();
+    expect(during.status).toBe(200);
+    expect(during.body.access).toBe("read");
+
+    // Past ten minutes it does not: GitHub's failure is thrown, as for the permission question.
+    // (Asked directly: the test's own Ponzu session would have expired by then.)
+    t.clock.advance(9 * 60_000);
+    t.github.failNext(`/repositories/${world.main.fake.id}`, 502);
+    await expect(
+      repoPermission(t.deps, {
+        user: {
+          id: reader.userId,
+          githubUserId: reader.github.id,
+          githubLogin: reader.github.login,
+        },
+        repo: {
+          id: world.main.id,
+          githubRepoId: world.main.fake.id,
+          fullName: world.main.fullName,
+        },
+        installation: { installationId: world.installation.id, suspendedAt: null },
+      }),
+    ).rejects.toMatchObject({ name: "UpstreamError" });
   });
 
   test("a list cut short before a public repo it never reached keeps an organization member's read", async () => {
