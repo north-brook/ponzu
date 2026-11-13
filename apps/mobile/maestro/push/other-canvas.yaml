@@ -1,0 +1,21 @@
+appId: design.ponzu.app.dev
+name: push-other-canvas
+---
+# Part 4, the other side of part 3: still on the Pricing page, run.sh now sends
+# a finished ping about Onboarding. Its banner shows, and the tap opens
+# Onboarding's chat, which has nothing waiting.
+- repeat:
+    while:
+      visible:
+        id: needs-you
+    times: 15
+    commands:
+      - tapOn:
+          point: "50%,8%"
+          retryTapIfNoChange: false
+- extendedWaitUntil:
+    visible:
+      id: chat-sheet
+    timeout: 20000
+- assertNotVisible:
+    id: needs-you

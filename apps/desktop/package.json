@@ -2,7 +2,7 @@
   "name": "@ponzu/desktop",
   "productName": "Ponzu",
   "private": true,
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Ponzu desktop app",
   "homepage": "https://ponzu.design",
   "type": "module",

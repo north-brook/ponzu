@@ -3,3 +3,10 @@
 // never `@ponzu/canvas` or `@ponzu/render`; bundle.test.ts holds it to that. It is apart from the
 // main entry because only an app that shows a canvas needs it.
 export { CloudSource, type CloudSourceOptions, type Unsaved } from "./cloud-source.ts";
+export {
+  CommentPictures,
+  type CommentPicturesOptions,
+  commentsIn,
+  type LocalPicture,
+  type Theme as PictureTheme,
+} from "./comment-pictures.ts";

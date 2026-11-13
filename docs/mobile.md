@@ -166,6 +166,54 @@ workspace's usage this period, read only: the total, the Mac's line under it
 and the bar, with nothing to raise, add or pay, and no word sending anyone to
 pay elsewhere.
 
+### Search
+
+The Search tab (`app/(tabs)/(search)/search.tsx`, `components/search-results.tsx`,
+with its rules in `lib/search.ts` and its data in `lib/use-search.ts`) has the
+system's search field in its header, "Search canvases".
+
+- **Before typing**, the six canvases changed most recently (settled ones
+  too), with no label: the 64×48 preview, the name, and one line in board
+  3.2's grammar, `[state · ] age [ · branch or Scratch's place]`. The state is
+  "Asking about <the first open question's header>" while the canvas waits on
+  the person (with no branch; "Waiting for you" until its question has been
+  read), "Claude is working" with the age "now" while the agent works or
+  wakes, and "Settled" for a settled one. The board's "Claude" for a canvas
+  the agent changed last is not drawn: the list's rows don't say who did.
+- **Typing** sends the words once typing has rested 150 ms, in the body of
+  `POST /v1/workspaces/:id/search` (never in an address), through
+  `ponzuQueries.search`, asking for `canvases`, `boards`, `comments` and
+  `messages`. The previous answer stays until the next lands. Words longer
+  than the API takes (200 characters, as the Mac's field caps them) are
+  searched by their start. Until the canvases list is held, an answer waits
+  for it, since a hit is shown only on a canvas the list holds.
+- **Sections.** Canvases (the preview, the name with its match marked, the
+  Mac's line "repo · branch", and the needs-you count in a yuzu pill),
+  Boards (a page's or board's mark, "Page in <canvas>" or "in <canvas>", as
+  the Mac says), and Threads: messages and comments together, newest first, at
+  most 8, each with who said it ("Claude" for the agent, "Deleted user" for
+  someone gone), the canvas, the age, and the words around the match. A
+  section with nothing is left out. A hit on a canvas the list doesn't hold is
+  dropped. Matches are on the pith ground.
+- **A press** (a tick) opens the canvas; a page; a board on its page, in
+  focus; a comment at its pin with its thread open (`page`, `artboard`,
+  `thread`, as a ping about it does); a message with the chat sheet up at it
+  (`sheet=chat&message=<seq>`).
+- **When the API can't answer.** Until an answer comes, the canvases the phone
+  holds are matched by name with search's own text rules
+  (`@ponzu/core/search-text`: folded, every word, a short word only at a
+  word's start). With no search route (404, an API from before it), those
+  names are all there is: Boards and Threads never show, and no match says
+  "No results for “q”". With an error, or with no network (the request is
+  held, so it is treated as no answer rather than left searching), the names
+  still show; with none, "Search isn't answering. Try again in a moment."
+  "Searching…" shows only when nothing can be shown for 300 ms.
+- The list keeps clear of the keyboard (`automaticallyAdjustKeyboardInsets`),
+  and a drag puts the keyboard away.
+
+The words that say the same thing as the Mac's ⌘K are its words, checked by
+`lib/copy.test.ts` against the studio's source.
+
 ### New canvas
 
 New canvas (`app/new.tsx`) is a full screen pushed over the list from the
@@ -284,15 +332,15 @@ background and resumed in front. Offline, it keeps the last rows.
 
 From settings, each step tried whatever the one before did
 (`lib/cloud/sign-out.ts`): this phone's device row (once pings have
-registered one), the session, the cached answers in memory and on disk, the
-live queries, the offline canvases and every `ponzu.*` AsyncStorage key but
-the ping ask's and the cached images, analytics' identity (none yet), then
-the sign-in screen.
+registered one for the person signing out), the session, the cached answers
+in memory and on disk, the live queries, the offline canvases and every
+`ponzu.*` AsyncStorage key but the ping ask's, the app icon's number and the
+cached images, analytics' identity (none yet), then the sign-in screen.
 
 ### Links
 
 `lib/links.ts` is the only reader of links: deep links (through
-`app/+native-intent.tsx`), and later pushes and the links in a thread. A link
+`app/+native-intent.tsx`), pings (below) and the links in a thread. A link
 must use this build's own scheme, so `ponzu://` opens nothing in Ponzu Dev and
 `ponzu-dev://` nothing in Ponzu. It takes:
 
@@ -309,6 +357,122 @@ path the build has no screen for does the same (`app/+not-found.tsx`). The
 grammar is `@ponzu/core/links`, the one the Mac and the API share, and
 `lib/links.ts` is the only file that imports it.
 
+### Pings
+
+Pings are push notifications, sent by the API through Expo's push service
+(docs/cloud.md, "Notifications"). The phone's side is `lib/push/`:
+
+| File | What it does |
+| --- | --- |
+| `ask.ts` | When to ask about pings, pure. |
+| `register.ts` | This phone as one of the person's devices, over injected iOS and API adapters. |
+| `payload.ts` | What a ping carries, and where a tap on it goes. The only reader of `@ponzu/core/push`. |
+| `foreground.ts` | How a ping that arrives with the app open shows. |
+| `route.ts` | When a held tap may go, and how it moves the app. |
+| `native.ts` | The only file that touches `expo-notifications`, `expo-application` and `expo-device`. |
+| `pings.tsx` | `PingsProvider` in `app/_layout.tsx`, which puts these together for whoever is signed in. |
+
+**Off until the API sends pings.** Everything but taps waits on `GET /v1/me`'s
+`features.push`, which is true only once the API has an Expo access token.
+While it is false, which is production today, the phone asks nothing,
+registers nothing, sends no heartbeat, sets no badge, shows no Notifications
+section in Settings and says nothing of focus in a canvas's presence. It does
+just what it did before pings. A tap can only come from a ping that was sent,
+so taps are always handled.
+
+**The ask** (`components/ping-ask.tsx`, onboarding §4.12) never comes at launch
+or in setup. It comes after a new comment sent from this phone reaches the
+API, only while iOS hasn't been asked: "Hear back when Ponzu replies?", "Your
+comment is on its way. Ponzu can ping you when it answers, asks a question, or
+a pull request is ready.", **Turn on notifications** and **Not now**. Turn on
+brings iOS's own prompt (alert, sound and badge). Not now, or a swipe down, is
+kept at `ponzu.pingAsk`, which outlives sign-out. The sheet then comes back
+once, after a comment at least seven days later, and never again. Settings is
+the way in after that. If iOS already allows pings, there is no sheet: the
+phone registers. If iOS refused, there is no sheet: Settings says "Turned off
+in iOS Settings" with **Open iOS Settings**. Replies in a thread don't bring the
+ask, so it never covers a thread's sheet.
+
+**Registering** (`POST /v1/me/devices`) happens at launch and again whenever
+iOS's answer has changed by the time the app comes forward. It sends
+`platform: "ios"`, the Expo push token from `getExpoPushTokenAsync` with the
+EAS project id (tried three times), `pushEnvironment` from
+`getIosPushNotificationServiceEnvironmentAsync`, the Keychain install id, the
+model name (`expo-device`), and `<version>+<update id or embedded>`. The
+device's id is kept at `ponzu.device` together with whose it is, so a sign-in
+as someone else never patches or deletes the last person's device.
+
+- **The simulator** has no APNs environment (null), so nothing is registered
+  there. A ping sent with `xcrun simctl push` still arrives and can be tapped.
+- **Refused in iOS:** a device already registered is patched `blocked: true`.
+- **A new token** (Expo's listener): the device is patched with it.
+- **409 `push_token_taken`:** noted once to analytics as "device token
+  conflict", without the token, and not tried again in that run.
+- **In front:** `PUT /v1/me/devices/:id/active` at once and every minute, so a
+  ping waits for the person at their Mac only when they are there. A device
+  the API forgot (404) registers again.
+- **The app icon's number** is `badge` from `GET /v1/me/notifications` (open
+  needs-you questions across every workspace). It is set each time the app
+  comes forward, and cleared at sign-out.
+
+**What a ping carries.** The API sends title, body and `data`; Expo puts `data`
+under `body`, and iOS hands the app:
+
+```json
+{ "aps": { "alert": { "title": "Pricing page", "body": "Ponzu has a question for you." },
+           "badge": 1, "sound": "default", "thread-id": "cnv_…" },
+  "body": { "v": 1, "n": "ntf_…", "k": "needs_you", "c": "cnv_…", "w": "ws_…",
+            "o": "thread", "q": "q_…" } }
+```
+
+expo-notifications gives `body` as `request.content.data` and the whole thing
+as `request.trigger.payload`. `payload.ts` reads the first, else the second's
+`body`. The data is `PushData` v1 (`@ponzu/core/push`): ids only, so nothing
+anyone wrote crosses Expo or Apple. Nothing else in a ping is trusted. Its
+words are never read and no link in it is followed. A tap goes where
+`linkOfPush` says, through `lib/links.ts`'s routes:
+
+| `o` | Opens |
+| --- | --- |
+| `thread` | the canvas, its chat sheet (at `q`'s question when there is one) |
+| `pull-request` | the canvas, its pull request sheet |
+| `comment` | the canvas, at `p`/`a`, with the pin `t`'s thread open |
+| `usage` | Settings |
+
+A ping from a newer API this build can't read opens the canvas it names, if any.
+One that names nothing this app opens goes to the canvases with "That canvas
+isn't available to you.", and so does a canvas from a ping that the person can
+no longer open (the canvas route carries `ping=<notification id>`, which links
+never do). The tap reads the notification (`POST /v1/me/notifications/:id/read`
+with `via: "ios"`).
+
+**Taps** are heard from launch (`getLastNotificationResponse`, then the
+response listener). A tap is held until the person is signed in, through setup
+and off the launch screen. One that arrives when nobody is signed in, once the
+Keychain is read, is dropped, and so is one held when the person signs out. A
+tap for the canvas already on screen sets its params in place, so its chat or
+pull request sheet opens over it. Any other tap is pushed over where the app
+is.
+
+**In the foreground** a ping about the canvas on screen (the screen on top,
+the app in front) shows no banner and no Notification Center row. Any other
+ping shows its banner silently. Opening a canvas clears its pings from
+Notification Center. While the API sends pings, the canvas's presence carries
+`focused`, so the API holds pings about it back.
+
+**Settings › Notifications** (`components/settings-notifications.tsx`)
+appears only while the API sends pings. It shows "Ping me when" with the Mac's
+rows and words (A teammate comments only for someone in a team), saved as
+flipped. Under "Where" is this iPhone: its Pings toggle, "Turned off in iOS
+Settings" with the way there, or "Not turned on yet" with **Turn on
+notifications**.
+
+**Not proven yet:** a real ping from Expo to a real iPhone. That needs the
+founder's EAS push credentials, an Expo access token on the API, and a build
+with them. The simulator runs prove taps and foreground handling with
+`xcrun simctl push` (`maestro/push/`). The ping's data reaches the app
+exactly as Expo would deliver it, but nothing proves Apple's or Expo's side.
+
 ### The fake backend
 
 `lib/cloud/backend.fake.ts` is Ponzu Cloud in memory: the client's own
@@ -322,8 +486,15 @@ Signing in on the fake goes through the real auth session when
 back with `code=fake` (`maestro/authorize.ts`); without one, the browser is
 skipped. `ponzu-dev://dev?seed=<scenario>` (`app/dev.tsx`) puts the app in a
 state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
-`setup-where` (Lee, whose own account has no Ponzu yet) and `setup-claude`
-(Ava, with no Claude). Only a fake build takes that link. With the authorize
+`setup-where` (Lee, whose own account has no Ponzu yet), `setup-claude`
+(Ava, with no Claude), `canvases` (Maya's list in every state), `chat`
+(the Pricing page's thread with a turn running), `needs-you` (the Pricing
+page waiting on two questions, a plan and a permission), `pull-request` (its
+pull request ready to merge), `pings` (`needs-you` on an API that sends
+pings) and `search` (the `chat` thread, and Maya's comment on the Plans
+board, to be found). Every other scenario is an API that sends none. With `&relaunch=1`
+the next launch is put in the same state too, once, so a flow can end the app
+and open it from a ping. Only a fake build takes that link. With the authorize
 page running, the fake's install links open its `/install` page, which comes
 back as a finished install. A component test can put the person's Claude plan
 at a limit with `backend.limitClaude(until)`.
@@ -340,8 +511,7 @@ something to draw.
 
 A row opens `app/canvas/[id].tsx` (`lib/canvas/open.ts`), and so do links
 and, later, pushes, with `page`, `artboard`, `sheet`, `question`, `thread` and
-`message`. Comments work (below); the chat sheet and the pull request sheet
-come with their own slices.
+`message`. Comments, the chat and the pull request sheet work (below).
 
 - **The replica is on the React Native side.** `lib/canvas/use-canvas.ts`
   opens a `CloudSource` (`@ponzu/client/canvas`) for the signed-in person,
@@ -371,9 +541,11 @@ come with their own slices.
   the pages' native menu, and the floating stack bottom right: the pull
   request (once there is one), Comment, and Chat (the shared `railSignal`: the
   needs-you count, else the turning slice while the agent wakes or works).
-  The chat and pull request sheets aren't built yet, so those two are shown
-  and unavailable. A double-tapped board has the screen and the chrome steps
-  aside.
+  Chat opens the chat sheet, and the pull request its own sheet. The
+  needs-you count sits in a yuzu pill on
+  Chat's top-right edge, and Chat's VoiceOver label says it ("Chat, Ponzu has
+  2 questions"). A double-tapped board has the
+  screen and the chrome steps aside.
 - **Proofs.** `bun test apps/mobile/lib/canvas` runs the bridge over the real
   `CloudSource` and the client's fake backend, with a stand-in page that
   applies what it's sent as the real one does. `canvas/page.webkit.test.ts`
@@ -422,6 +594,23 @@ unsent pin offers Open, Move and Discard draft.
   unavailable and VoiceOver says why ("You can look at this canvas. Steering
   it takes push access to <repo>."), a hold does nothing, and a thread's sheet
   shows that line in place of its reply field, with Resolve unavailable.
+- **The picture of where it was left** (iPhone design slice 12). Each
+  comment and reply sent from the phone gets the picture the Mac gives its
+  own: the area round the pin, light and dark, at `COMMENT_PICTURE`'s size.
+  The canvas page draws it with the Mac's code (packages/canvas's
+  `comment-picture.tsx`, by path in `canvas/picture.ts`), as PNG, since
+  WebKit's canvas can't write WebP (asked for WebP it writes PNG, which the
+  page refuses as a wrong type rather than mislabel). The app asks with
+  `picture` as the comment's op is made, and the page answers `picture` with
+  each theme's base64, `none` when there is nothing round the pin, or
+  `failed`. `lib/canvas/pictures.ts` does the rest with the client's
+  `CommentPictures` (shared with the Mac): upload as `light.png` and
+  `dark.png`, then attach once the API has the comment. The chat shows the
+  drawn picture at once from here. Nothing about sending waits on it: a
+  picture the page can't draw in 30 seconds, or that can't be uploaded or
+  attached (offline, or an API from before PNG was taken), is let go of,
+  and the comment reads "On <place>". The page draws one at a time and
+  calls no API.
 - **Proofs.** `bun test apps/mobile/lib/canvas/comments.test.ts` runs each op
   over the real `CloudSource` and the fake backend (shown at once, refused,
   read only, offline then landed, a reply reopening) and the drafts over a
@@ -430,8 +619,178 @@ unsent pin offers Open, Move and Discard draft.
   with a stand-in web view: Comment, a tap, Send puts the op on the page at
   once; a refused one comes back with its words; a read-only canvas disables
   Comment. `canvas/page.webkit.test.ts` checks a tap after Comment drops a
-  pin in WebKit. `maestro/comment.yaml` and `comment-modes.yaml` run the
-  flows on a simulator, on spare only.
+  pin in WebKit, and draws a comment's picture there: two PNGs, 480 × 320,
+  with no policy violation. `lib/canvas/pictures.test.ts` runs the pictures
+  over the real `CloudSource` and a stand-in page (kept as PNG, a reply's
+  too, and none kept when the page has nothing, fails or never answers);
+  `rntests/comments.rntest.tsx` checks the screen asks the page after the
+  op and the chat shows the picture. `maestro/comment.yaml` and
+  `comment-modes.yaml` run the flows on a simulator, on spare only;
+  `comment.yaml` ends on the chat showing the picture the simulator's
+  WebKit drew.
+
+### The chat
+
+Chat opens the canvas's one thread in a sheet near full height, over the
+header's glass (iPhone design §9): a grabber, the thread and the composer,
+nothing else. A link or push with `sheet=chat` opens it too, at
+`message=<seq>` when it names one (older pages are read until that message is
+held). Only Chat gives its field the keyboard. A swipe down, or VoiceOver's
+escape, closes it, and closing marks the thread read as far as it held
+(`seen` with `threadSeq`).
+
+- **The thread** (`lib/chat/thread-store.ts`) is the `canvas.thread` live
+  query beside the newest page of history, with older pages read as it is
+  scrolled to the top while the live rows aren't there. It is the Mac's
+  thread store on the phone's API object.
+- **The lines** (`lib/chat/lines.ts`) are the Mac's rules from
+  `@ponzu/client/model` (`shownItems`, `toThreadItem`, `threadRows`): a
+  person's message is a bubble on the right, with the sender's avatar on its
+  corner once more than one person has written; a comment is the picture of
+  where it was left above its words, and pressing it closes the sheet and
+  opens that pin's thread; Ponzu's reply is plain text drawn from Markdown;
+  what Ponzu says on the way is quieter and in italics while the turn runs,
+  then goes; there are no tool lines. An open question is not shown in the
+  thread (it belongs in the composer's place, which the next slice builds).
+- **The foot**, most pressing first: a billing blocker (its neutral first
+  sentence and "This canvas waits.", never a way to pay), the owner's Claude
+  (not connected, signed out, at its plan's limit), the sandbox (waiting for
+  a machine, paused, failed), then the working line (the turning slice and
+  what the agent is doing, "Waking up", or "Thinking" from the moment a
+  message is sent).
+- **Markdown** (`lib/prose.ts`, drawn by `lib/markdown.tsx`) is parsed by the
+  Mac's parser and rules: micromark with GitHub's flavour and no footnotes,
+  HTML as text, images as links named by their alt text, quotes three deep
+  and emphasis four, and plain text for anything the Mac would refuse to
+  parse. A link survives only to http, https or mailto. A link to a page or
+  board of this canvas (`https://ponzu.design/canvases/<id>?page=…` or
+  `?artboard=…`, read by `threadLink` in `lib/links.ts`) closes the sheet and
+  goes there; one to another canvas opens it; any other opens in Safari's
+  sheet (mail in Mail). The one difference from the Mac: React Native's URL
+  is partial, so an address is matched whole by a pattern.
+- **The composer** is the comment field (`components/composer.tsx`, typed or
+  said) with Attach at its leading edge (pictures from the library, uploaded
+  to the canvas and sent as the message's `attachments`) and, at its trailing
+  edge, Send when there are words or Stop while a turn is live and the field
+  is empty. A message mid-run goes straight in. A message shows at once as the
+  person's bubble; one that doesn't go takes its bubble away and leaves its
+  words in the field and its pictures over it, with "Couldn't send. Tap to try
+  again." under it (tapping sends again). A billing refusal shows its first
+  sentence and "This canvas waits." The unsent words are a draft on disk
+  (`draftKey.chat`). On a canvas the person may only look at, or offline, the
+  field is one quiet line instead.
+- **Proofs.** `bun test apps/mobile/lib/prose.test.ts` (what a link may go
+  to, images, HTML, depth limits, and the Mac's `parseable` and `settled`
+  compared on the same texts), `lib/links.test.ts` (`threadLink`),
+  `lib/chat` (the store over the fake backend; the lines and the foot).
+  `rntests/chat.rntest.tsx` renders the canvas screen against the fake with
+  the agent's turns played by the test: the lines, the aside going when the
+  turn ends, Stop, a message mid-run, a picture, a send that fails and is
+  sent again, a billing refusal, a board link and an outside link, the read
+  only line, and closing marking the thread read. `maestro/chat.yaml` (seed
+  `chat`) runs it on a simulator, on spare only.
+
+### Needs you
+
+While the agent waits on a person, what it asks takes the chat composer's
+place (`components/needs-you.tsx`, iPhone design §10): one page at a time
+under its own header, a yuzu dot before it and the pager `‹ n/m ›` after it
+when more than one page waits. Each question of a multiple-choice ask is a
+page; a plan, a permission, a secret or a hand-off is one. The rules for what
+is answerable and what each answer says are the Mac's, from
+`@ponzu/client/model` (`answer.ts`), and so are the card's words
+(`lib/copy.ts` `NEEDS_YOU`, held to the Mac's source by `copy.test.ts`).
+
+- **The kinds.** A question: its options on one track, the chosen raised with
+  a tick (several on a multi-select, "Choose any."), and a note ("Add a note,
+  or answer in words") that goes with them or is the answer. A plan: its first
+  paragraph, "Read the plan" for the rest, Approve or Keep planning, and a
+  note. A permission: its title, description and tool, Allow or Deny, and a
+  note. A secret: a secure field whose value goes by its own route
+  (`answerSecret`), never in the thread or an answer's body. A hand-off: Open
+  its web address in Safari's sheet (only `http` and `https`), or Not now.
+- **Sending.** Send answers the page in view and moves on; an ask goes once
+  its last page is answered, and only once however often Send is pressed
+  (`lib/chat/ask-store.ts`). Its live row then goes, and when none are left
+  the composer is back.
+- **Someone else first.** A question a teammate answers elsewhere leaves with
+  its live row. If the person had started on it, or their answer comes back
+  409 `question_closed`, it leaves and the next shows, with one line under the
+  slot: "Sam already answered this.", or "Someone already answered this." when
+  Ponzu can't say who, or "Claude moved on, so this needs no answer." for one
+  the run withdrew.
+- **An answer that doesn't go** keeps what was chosen and typed, with the
+  Mac's reason under the slot. A billing refusal shows only its first
+  sentence and "This canvas waits."
+- **Read only or offline**, the card still shows what is asked, its options
+  unpressable, and the read-only or offline line is in the field's place.
+- **Links.** A push or link with `question=<id>` opens the chat at that
+  question's page, and one naming another question while the card is up
+  turns the pager to it.
+- **Proofs.** `bun test apps/mobile/lib/chat/ask-store.test.ts` (order, sent
+  once, a teammate's answer untouched and started, a 409 naming who answered,
+  one naming nobody, a withdrawn question, an answer that doesn't go then
+  does, a secret by its own route). `rntests/needs-you.rntest.tsx` renders the
+  canvas screen against the fake: one question with no pager, four pages with
+  the pager through a multi-select, a plan and a permission, a note alone as
+  the answer, Send pressed twice, a teammate answering elsewhere, a 409, a
+  push's question, a later push's question with the card up, a secret by its
+  own route, and read-only. `rntests/canvas-stack.rntest.tsx` covers the
+  count on Chat. `maestro/needs-you.yaml` (seed `needs-you`) runs it on a
+  simulator, on spare only.
+
+### The pull request
+
+Once the canvas has a pull request, the top of the floating stack opens its
+sheet (`components/pr-sheet.tsx`, iPhone design §11, board 3.10). So does a
+pull request's line in the chat (which marks the thread read as a swipe
+does), and a link or push with `sheet=pull-request`. It reads
+`GET /v1/canvases/:id/pull-request` through the client's `pullRequest` query,
+which is kept on disk, so a canvas opened again shows its last answer at once.
+It reads again whenever the canvas's head says the pull request moved or the
+agent's turn changed.
+
+- **What it shows.** The state's mark (purple once merged) and the number,
+  Open on GitHub and Close; the title, `branch → base` and what became of it;
+  the description, GitHub's Markdown drawn as the chat draws Ponzu's (links
+  leave only for the web, with Ponzu's own markers taken out as on the Mac,
+  `bodyForTab`); Status, a card of the checks, the reviews and the comments;
+  and the files with their counts. Each row opens a drill-in inside the sheet
+  with a glass Back: every check (failed first, never folded), the reviews,
+  the conversation (read-only: there is no reply field), or a file's unified
+  diff (`components/diff.tsx`), read by the Mac's rules from
+  `@ponzu/client/model` (`diff.ts`, moved there from the studio so both apps
+  read a diff the same way), in mono, scrolling sideways.
+- **The one action.** The foot is what the API's `nextAction` says, read as
+  the Mac's chrome reads it (`lib/pull-request.ts`), in the Mac's words:
+  Ready, Auto-merge, Update branch and Merge go to GitHub as the person;
+  Fix checks and Resolve ask Claude in the chat, in the Mac's words
+  (`agentAsk`), once for a commit ("Asked Claude in the chat."), however
+  often the sheet is closed and opened while the app runs. What the foot
+  offers comes from a read made since the sheet opened, or a kept answer the
+  canvas's head still agrees with (`offeredTab`, as the Mac's chrome), so an
+  answer kept from before a merge or push elsewhere offers nothing. Auto-merge
+  once on waits on GitHub and says "Merges once the checks pass". Merged,
+  closed or none: no button. Create PR is the Mac's. Held back by the repo's
+  rules with no auto-merge, there is nothing to press and one line: "This
+  needs the Mac to merge past …". On a canvas the person can only look at, or
+  offline, that line is in the button's place.
+- **Merging.** Merge asks first in the system's action sheet, "Merge #412
+  into main?" with Merge and Cancel, and never offers a bypass. It goes out
+  with the commit the sheet showed, so a push while the question is up is
+  refused by the API, not merged. One press at a time: a double tap asks
+  once and merges once. While it is on its way the label stays, the button
+  dims and a spinner takes its icon's place; one that didn't happen says
+  GitHub's reason in one line above it (`prActionError`, or a billing
+  refusal's first sentence and "This canvas waits.").
+- **Proofs.** `bun test apps/mobile/lib/pull-request.test.ts` runs every state
+  over the client's fake GitHub (draft, running, failed, conflicted, behind,
+  held by the rules, merged, read-only), the status rows, the confirm, a
+  double tap, Cancel, a push during the question, and the asks once a
+  commit. `rntests/pull-request.rntest.tsx` renders the canvas screen against
+  the fake for the same states, the drill-ins, a teammate's merge elsewhere,
+  the link and the chat's line. `maestro/pull-request.yaml` (seed
+  `pull-request`) runs it on a simulator, on spare only.
 
 ## Variants
 
@@ -518,7 +877,7 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 | Haptic | When |
 | --- | --- |
 | `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup; a workspace picked; the Settled tray opened or closed; a canvas reopened; the project control or Attach pressed; a project, model or effort picked; a send stopped to ask first |
-| `tick` | A canvas opened; Back; a board coming into focus or leaving it; a comment's pin dropped; New canvas opened; a new canvas sent |
+| `tick` | A canvas opened (from the list or a search result); Back; a board coming into focus or leaving it; a comment's pin dropped; New canvas opened; a new canvas sent |
 | `success` | A comment or reply sent; a thread resolved; a new canvas made |
 | `thud` | Sign out; a draft discarded; a canvas settled |
 | `fail` | A sign-in that failed; a comment that didn't send; a settle or reopen that didn't take; a new canvas that couldn't be made |

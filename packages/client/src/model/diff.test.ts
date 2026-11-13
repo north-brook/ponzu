@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { CheckRun } from "../model.ts";
 import { changedSpans, orderChecks, parsePatch, type Span } from "./diff.ts";
+import type { CheckRun } from "./model.ts";
 
 const PATCH = `@@ -13,6 +13,5 @@ export function Hero() {
  export function Hero() {

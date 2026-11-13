@@ -27,9 +27,12 @@ export function pageHtml(html: string, origin: string): string {
 }
 
 /**
- * Whether the web view may go to `url`: the page's own first load (its base URL) and a blank
- * frame, nothing else. A tap on a link in a board goes nowhere, here or in Safari.
+ * Whether the web view may go to `url`: the page's own first load (its base URL), a blank frame,
+ * and a frame whose document the page's own script wrote (`about:srcdoc`: the drawing of a
+ * comment's picture reads default styles in one, canvas/picture.ts), nothing else. Neither frame
+ * loads anything from anywhere, and the page's policy holds in both. A tap on a link in a board
+ * goes nowhere, here or in Safari.
  */
 export function allowLoad(url: string, base: string): boolean {
-  return url === base || url === "about:blank";
+  return url === base || url === "about:blank" || url === "about:srcdoc";
 }

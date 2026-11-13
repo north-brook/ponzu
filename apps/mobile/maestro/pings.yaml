@@ -1,0 +1,87 @@
+appId: design.ponzu.app.dev
+name: pings
+---
+# Pings on an API that sends them (seed `pings`), on a phone iOS hasn't asked
+# yet. Nothing asks at launch. After the first comment from the phone, the ask
+# comes in onboarding's words; Turn on notifications brings iOS's own prompt,
+# and Allow closes the ask. (The simulator has no APNs environment, so nothing
+# is registered.) Settings then shows Notifications in the Mac's words. The
+# other flows run on an API that sends no pings and never see any of this.
+- runFlow: shared/start-fresh.yaml
+- openLink: ponzu-dev://dev?seed=pings
+- extendedWaitUntil:
+    visible: "Pricing page, .*site.*"
+    timeout: 30000
+# Nothing asked at launch.
+- assertNotVisible:
+    id: ping-ask
+- assertNotVisible: ".*Would Like to Send You Notifications.*"
+- tapOn: "Pricing page, .*site.*"
+- extendedWaitUntil:
+    notVisible:
+      id: canvas-placeholder
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Plans"
+    timeout: 30000
+- tapOn:
+    id: stack-comment
+- tapOn: "Plans"
+- extendedWaitUntil:
+    visible:
+      id: comment-sheet
+    timeout: 10000
+- runFlow:
+    when:
+      visible:
+        id: to-type
+    commands:
+      - tapOn:
+          id: to-type
+- tapOn:
+    id: comment-input
+- inputText: "Hear me back"
+- tapOn:
+    id: send
+- extendedWaitUntil:
+    visible:
+      id: ping-ask
+    timeout: 15000
+- assertVisible: "Hear back when Ponzu replies?"
+- assertVisible: "Your comment is on its way. Ponzu can ping you when it answers, asks a question, or a pull request is ready."
+- assertVisible: "Not now"
+- tapOn: "Turn on notifications"
+# iOS's own prompt ("“Ponzu Dev” Would Like to Send You Notifications").
+- extendedWaitUntil:
+    visible: "Allow"
+    timeout: 10000
+- tapOn: "Allow"
+- extendedWaitUntil:
+    notVisible:
+      id: ping-ask
+    timeout: 10000
+# The stack is back, with the canvas as it was.
+- extendedWaitUntil:
+    visible:
+      id: stack-chat
+    timeout: 10000
+- tapOn:
+    id: back
+- extendedWaitUntil:
+    visible:
+      id: lockup
+    timeout: 10000
+- tapOn:
+    id: lockup
+- extendedWaitUntil:
+    visible:
+      id: settings
+    timeout: 10000
+- scrollUntilVisible:
+    element: "Ping me when"
+    direction: DOWN
+    timeout: 10000
+# The sheet opens at half height: the first rows show without scrolling.
+- assertVisible: "Ponzu needs you"
+- assertVisible: "Ponzu replies to my comment"
+- assertNotVisible: ".*Cannot update a component.*"

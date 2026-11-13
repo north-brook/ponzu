@@ -17,6 +17,7 @@ import {
 } from "@ponzu/db";
 import {
   COMMENT_PICTURE,
+  COMMENT_PICTURE_FILES,
   type CommentPicture,
   MAX_TEXT,
   type QuestionBody,
@@ -43,6 +44,7 @@ import { validate } from "../http/validate.ts";
 import { questionsClosed } from "../notifications/badge.ts";
 import { Complete, MAX_UPLOAD_FILES, UploadFile } from "../runner/protocol.ts";
 import { requestWake } from "../sandboxes/wake.ts";
+import { COMMENT_PICTURE_NAMES } from "../uploads/files.ts";
 import { commentRef, completeUploads, presignUploads } from "../uploads/uploads.ts";
 
 /*
@@ -88,6 +90,12 @@ const CommentParams = Params.extend({
   messageId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
 });
 const PictureBody = z.object({ files: z.array(UploadFile).length(2) });
+/**
+ * What a comment's picture's files must be, as a refusal says it: the Mac's WebP or the
+ * iPhone's PNG (its WebKit can't write WebP), one of each theme.
+ */
+const PICTURE_FILES_WORDS =
+  "A comment's picture is its light.webp and its dark.webp, or its light.png and its dark.png.";
 const PictureView = z.object({
   picture: z.object({
     light: z.string(),
@@ -468,8 +476,8 @@ export const canvasThread = new Hono<AppEnv>()
 
   /**
    * Addresses for the picture of where the person left a comment (`light.webp` and
-   * `dark.webp`), which their app draws as the comment is sent. Asked for whether or not the
-   * comment's op has been committed yet.
+   * `dark.webp` from the Mac, `light.png` and `dark.png` from the iPhone), which their app draws
+   * as the comment is sent. Asked for whether or not the comment's op has been committed yet.
    */
   .post(
     "/:id/comments/:messageId/picture",
@@ -482,9 +490,21 @@ export const canvasThread = new Hono<AppEnv>()
       const { canvas } = await requireCanvas(c, id, "write");
       const assetKey = await getCanvasAssetKey(deps.db, canvas.id);
       if (!assetKey) throw new ApiError(404, "not_found", "There is no such canvas.");
-      const files = c.req
-        .valid("json")
-        .files.map((file) => ({ ...file, kind: "comment" as const, comment: messageId }));
+      const declared = c.req.valid("json").files;
+      // One light and one dark, of one format: the Mac's WebP or the iPhone's PNG.
+      const names = declared.map((file) => file.name).sort();
+      const pair = Object.values(COMMENT_PICTURE_FILES).some(
+        ({ light, dark }) => names[0] === dark && names[1] === light,
+      );
+      // A name of neither format is refused by its own rule (checkUpload) below.
+      if (!pair && declared.every((file) => COMMENT_PICTURE_NAMES.includes(file.name))) {
+        throw new ApiError(400, "invalid_request", PICTURE_FILES_WORDS);
+      }
+      const files = declared.map((file) => ({
+        ...file,
+        kind: "comment" as const,
+        comment: messageId,
+      }));
       const placed = await presignUploads(
         deps,
         { canvasId: canvas.id, assetKey },
@@ -551,7 +571,7 @@ export const canvasThread = new Hono<AppEnv>()
 
 /**
  * A comment's picture from its two files, the light and the dark, each a picture of this
- * comment's; refused when they are anything else.
+ * comment's and both of one format; refused when they are anything else.
  */
 function pictureOf(
   messageId: string,
@@ -564,11 +584,18 @@ function pictureOf(
   };
   const light = of("light");
   const dark = of("dark");
-  if (!light || !dark || files.length !== 2 || new Set(ids).size !== 2) {
+  const format = (ref: string) => ref.slice(ref.lastIndexOf(".") + 1);
+  if (
+    !light ||
+    !dark ||
+    format(light) !== format(dark) ||
+    files.length !== 2 ||
+    new Set(ids).size !== 2
+  ) {
     throw new ApiError(
       400,
       "invalid_request",
-      "A comment's picture is its light.webp and its dark.webp, uploaded for that comment.",
+      `${PICTURE_FILES_WORDS.slice(0, -1)}, uploaded for that comment.`,
     );
   }
   return { light, dark, width: COMMENT_PICTURE.width, height: COMMENT_PICTURE.height };

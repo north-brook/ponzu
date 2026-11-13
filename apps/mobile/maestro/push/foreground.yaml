@@ -1,0 +1,17 @@
+appId: design.ponzu.app.dev
+name: push-foreground
+---
+# Part 3: with the Pricing page on screen, run.sh sends a pull request ping
+# about it every couple of seconds while this taps where a banner would be. A
+# ping about the canvas on screen shows no banner, so nothing is tapped and the
+# pull request sheet never opens: the chat stays as it was.
+- repeat:
+    times: 6
+    commands:
+      - tapOn:
+          point: "50%,8%"
+          retryTapIfNoChange: false
+- assertNotVisible:
+    id: pr-sheet
+- assertVisible:
+    id: needs-you
