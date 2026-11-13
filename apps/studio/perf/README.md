@@ -42,6 +42,11 @@ They are the numbers to trust, and most regressions show here before they show i
 lean on timing (how many frames a redraw lands in, how React batches) and wander between rounds;
 a count is called a change when it moves 3% and its rounds don't overlap the base's.
 
+**Tiles** are how much was drawn again: tiles rastered (on the GPU's main thread) over the scenario,
+and after a gesture, in the rest when the canvas redraws sharp (`restTiles`, with `restGpuMs`,
+`restMainMs` and `sharpMs`, the time to the last of them). The `*.zoom-in` scenarios pinch in and
+stop, so the redraw at the new zoom is measured whole.
+
 **Times** are the runner's: frame rate, p95 frame, long frames, main-thread, style, layout, paint,
 raster and GPU milliseconds, latencies. CI builds the base beside the head and runs them in turn,
 three rounds each, the order swapped every round. A time is called a change only when it moved 10%

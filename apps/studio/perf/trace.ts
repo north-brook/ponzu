@@ -80,6 +80,10 @@ export interface TraceSummary {
   rasterMs: number;
   /** The GPU process's main thread. */
   gpuMs: number;
+  /** Tiles rastered (out of process, on the GPU's main thread): what a redraw cost, as a count. */
+  tiles: number;
+  /** When the last tile was rastered, in the trace's µs (0 for none). */
+  lastTileTs: number;
   /** Style recalculations, and how many elements they restyled in all. */
   recalcs: number;
   restyled: number;
@@ -89,6 +93,20 @@ export interface TraceSummary {
   paints: number;
   /** The longest single task on the main thread. */
   longestTaskMs: number;
+}
+
+/**
+ * The trace's time of the first `console.timeStamp(label)` the page made, in µs; NaN if none.
+ * The gestures mark where they end, so the rest after can be told from the gesture.
+ */
+export function stamp(events: TraceEvent[], label: string): number {
+  const e = events.find((e) => e.name === "TimeStamp" && e.args?.data?.message === label);
+  return e ? e.ts : Number.NaN;
+}
+
+/** `summarize` over what started at or after `ts` (µs) only. */
+export function summarizeAfter(events: TraceEvent[], ts: number): TraceSummary {
+  return summarize(events.filter((e) => e.ph === "M" || e.ts >= ts));
 }
 
 export function summarize(events: TraceEvent[]): TraceSummary {
@@ -108,6 +126,8 @@ export function summarize(events: TraceEvent[]): TraceSummary {
     gcMs: 0,
     rasterMs: 0,
     gpuMs: 0,
+    tiles: 0,
+    lastTileTs: 0,
     recalcs: 0,
     restyled: 0,
     layouts: 0,
@@ -155,6 +175,9 @@ export function summarize(events: TraceEvent[]): TraceSummary {
       }
     } else if (e.name === "RasterTask") {
       s.rasterMs += ms;
+    } else if (e.name === "RasterDecoderImpl::DoRasterCHROMIUM") {
+      s.tiles++;
+      s.lastTileTs = Math.max(s.lastTileTs, e.ts + e.dur);
     } else if (
       thread === "CrGpuMain" &&
       e.name === "ThreadControllerImpl::RunTask" &&

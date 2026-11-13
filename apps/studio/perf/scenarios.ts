@@ -20,7 +20,7 @@ import {
 } from "./app.ts";
 import { BOARDS, type BoardKind, CORPUS_TOKENS } from "./corpus.ts";
 import { frameStats, median, percentile, round } from "./metrics.ts";
-import { summarize, traced } from "./trace.ts";
+import { stamp, summarize, summarizeAfter, traced } from "./trace.ts";
 
 export type Surface = "canvas" | "panes" | "thread" | "sidebar" | "sandbox";
 export type Measured = Record<string, number>;
@@ -136,17 +136,25 @@ const REST_MS = 700;
  * Plays `play` (in the page) and the rest after it, traced. The frame numbers are the gesture's;
  * `settleMs` is the worst frame of the rest.
  */
-async function gesture(s: Studio, play: () => Promise<unknown>): Promise<Measured> {
+async function gesture(
+  s: Studio,
+  play: () => Promise<unknown>,
+  restMs = REST_MS,
+): Promise<Measured> {
   const { page, cdp } = s;
   const { value, events } = await traced(cdp, async () => {
     const t0 = await page.evaluate(() => window.__pz.now());
     const commits0 = await page.evaluate(() => window.__pz.commits);
     await play();
-    const t1 = await page.evaluate(() => window.__pz.now());
+    // Marked in the trace too, so what the rest cost can be told from the gesture's.
+    const t1 = await page.evaluate(() => {
+      console.timeStamp("pz-rest");
+      return window.__pz.now();
+    });
     await page.evaluate(async (ms) => {
       const end = window.__pz.now() + ms;
       while (window.__pz.now() < end) await window.__pz.frame();
-    }, REST_MS);
+    }, restMs);
     const t2 = await page.evaluate(() => window.__pz.now());
     const r = await page.evaluate(() => ({
       frames: window.__pz.frames,
@@ -159,6 +167,8 @@ async function gesture(s: Studio, play: () => Promise<unknown>): Promise<Measure
     };
   });
   const t = summarize(events);
+  const rest = stamp(events, "pz-rest");
+  const after = summarizeAfter(events, rest);
   const frames = Math.max(1, value.during.frames);
   return {
     fps: value.during.fps,
@@ -172,6 +182,11 @@ async function gesture(s: Studio, play: () => Promise<unknown>): Promise<Measure
     paintMs: round(t.paintMs),
     rasterMs: round(t.rasterMs),
     gpuMs: round(t.gpuMs),
+    tiles: t.tiles,
+    restTiles: after.tiles,
+    restGpuMs: round(after.gpuMs),
+    restMainMs: round(after.mainMs),
+    sharpMs: after.tiles ? round((after.lastTileTs - rest) / 1000) : 0,
     longestTaskMs: round(t.longestTaskMs, 1),
     restyledPerFrame: round(t.restyled / frames),
     laidOutPerFrame: round(t.laidOut / frames),
@@ -274,6 +289,8 @@ function canvasSuite(canvas: string, extra: Scenario[] = [], gestures = true): S
               headline: ["fps", "mainMs", "restyledPerFrame"],
               run: (s: Studio) => pinch(s),
             },
+            // In to about 3.3 times the zoom, and stop: every board on screen drawn again, bigger.
+            zoomAndStop(`${canvas}.zoom-in`, "Pinch in and stop", 40, -1.5),
             {
               id: `${canvas}.pan`,
               title: "Pan",
@@ -354,8 +371,44 @@ async function zoomTo(s: Studio, percent: number): Promise<void> {
   await settled(s.page);
 }
 
+/**
+ * A pinch that stops somewhere else: `frames` frames of `dy` (negative zooms in), from `from`%
+ * if given, then a long rest, so the redraw at the new zoom (the settle) is measured whole.
+ * The zoom is put back as it was, unmeasured.
+ */
+function zoomAndStop(
+  id: string,
+  title: string,
+  frames: number,
+  dy: number,
+  from?: number,
+): Scenario {
+  return {
+    id,
+    title,
+    headline: ["fps", "restTiles", "sharpMs"],
+    run: async (s) => {
+      const back = await zoomPercent(s.page);
+      if (from) await zoomTo(s, from);
+      const m = await gesture(
+        s,
+        () => s.page.evaluate(([n, d]) => window.__pz.wheel(n!, d!, true), [frames, dy]),
+        1500,
+      );
+      await zoomTo(s, back);
+      return m;
+    },
+  };
+}
+
 const website: Suite = {
-  ...canvasSuite("website", [resize("sidebar"), resize("thread"), commitText]),
+  ...canvasSuite("website", [
+    resize("sidebar"),
+    resize("thread"),
+    commitText,
+    // From 100% out to about 16% in one gesture: the bitmap drawn again on the way.
+    zoomAndStop("website.zoom-out", "Pinch out a long way", 60, 1.5, 100),
+  ]),
   // As the person had it: the two pages fitted, about 13%.
   setup: async (s) => {
     const { state } = await openCanvas(s, "website");
