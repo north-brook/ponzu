@@ -197,10 +197,17 @@ export async function recordCheckpoint(
      */
     keepSession?: boolean;
     keepWorkspace?: boolean;
+    /**
+     * The newest event (`events.seq`) the session held when the runner took the transcript's
+     * archive. Recorded as `saved_through`, never above the newest event delivered by now, so a
+     * runner cannot count as held what never went out. Absent: every event delivered by now.
+     */
+    heldThrough?: number | null;
   },
 ): Promise<{ saved: SavedPoint | null; replaced: SavedPoint | null } | null> {
   const keepSession = point.keepSession === true;
   const keepWorkspace = point.keepWorkspace === true;
+  const heldThrough = point.heldThrough ?? null;
   const columns = (of: string) =>
     sql.raw(
       ["saved_turn as turn", "saved_at as at", "saved_claude_session_id as claude_session_id"]
@@ -229,9 +236,14 @@ export async function recordCheckpoint(
                  then before.session_upload_id else ${point.sessionUploadId}::text end,
                workspace_upload_id = case when ${keepWorkspace}::boolean
                  then before.workspace_upload_id else ${point.workspaceUploadId}::text end,
-               -- What it holds: the runner saves once a turn has settled, so every event that
-               -- had gone into the session by now.
-               saved_through = (select max(e.seq) from events e
+               -- What it holds: what the runner said its session held as it took the archive,
+               -- never above what had gone out by now; else, as a runner that does not say,
+               -- every event that had gone into the session by now (it saves once a turn has
+               -- settled).
+               saved_through = (select case when ${heldThrough}::bigint is null
+                                             or max(e.seq) is null then max(e.seq)
+                                        else least(${heldThrough}::bigint, max(e.seq)) end
+                                  from events e
                                  where e.canvas_id = before.canvas_id
                                    and e.delivered_at is not null)
           from before

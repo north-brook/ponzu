@@ -194,6 +194,7 @@ export const Checkpoint: z.ZodType<CheckpointRequest> = z.object({
   session: UploadId.nullable(),
   workspace: UploadId.nullable(),
   keep: z.object({ session: z.boolean().optional(), workspace: z.boolean().optional() }).optional(),
+  heldThrough: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 });
 
 const When = z.iso.datetime({ offset: true });

@@ -71,6 +71,18 @@ export type StartEnv = {
  */
 export const RUNNER_HEADER = "x-ponzu-runner";
 
+/**
+ * `POST /v1/runner/session`'s body. Every field may be absent: a runner from before it sends
+ * `{}`, and an API from before it reads no body.
+ */
+export interface SessionRequest {
+  /**
+   * This boot of the machine (`/proc/sys/kernel/random/boot_id`), which tells one process's
+   * retried call from another process's. The API does not use it yet.
+   */
+  boot?: string;
+}
+
 /** `POST /v1/runner/session`: everything the runner needs to start, and its lease. */
 export interface RunnerSession {
   /**
@@ -228,6 +240,14 @@ export interface CheckpointRequest {
    * checkpoint never carries less than the one before it. Absent: keep nothing.
    */
   keep?: { session?: boolean; workspace?: boolean };
+  /**
+   * The newest event (`seq`) the session held when its archive was taken: every event the runner
+   * was handed up to it had gone into the session, or never goes into one. The API records it
+   * as what the checkpoint holds, never above the newest event delivered by then. Absent (a
+   * runner from before it, or one that cannot say): every event delivered when the checkpoint
+   * is recorded.
+   */
+  heldThrough?: number;
 }
 
 export interface CheckpointResponse {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.3](https://github.com/north-brook/ponzu/compare/v2.3.2...v2.3.3) (2026-11-13)
+
+
+### Performance Improvements
+
+* **studio:** a comment, a reply or a commit draws only the thread lines and boards it changed ([#599](https://github.com/north-brook/ponzu/issues/599)) ([1a648a5](https://github.com/north-brook/ponzu/commit/1a648a537f76517b7bfea93ebbf2d5649c9d3156))
+
 ## [2.3.2](https://github.com/north-brook/ponzu/compare/v2.3.1...v2.3.2) (2026-11-13)
 
 

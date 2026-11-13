@@ -2,17 +2,24 @@ import type { Api, ApiError, KeyValueStorage, Live, Session } from "@ponzu/clien
 import type {
   DeepLink,
   MenuCommand,
+  PictureHostBridge,
   PonzuDesktop,
   SessionPersistence,
   SignInResult,
 } from "@ponzu/desktop/bridge";
 import type { Beat } from "../cloud/create/landing.ts";
 import type { Lights } from "../cloud/window/chrome.tsx";
+import type { PictureBridge } from "./picture-drawer.ts";
 
 declare global {
   interface Window {
     /** Set by the desktop app's preload script (apps/desktop/src/bridge.ts). */
     ponzuDesktop?: PonzuDesktop;
+    /**
+     * Set instead, in the desktop app's hidden picture window, by its own preload
+     * (apps/desktop/src/picture-preload.ts): the studio there only draws comments' pictures.
+     */
+    ponzuPictureHost?: PictureHostBridge;
   }
 }
 
@@ -87,6 +94,12 @@ export interface Host {
    * LANDING_BEAT_MS.
    */
   landingBeat?: Beat;
+  /**
+   * Where comments' pictures are drawn out of this window (picture-drawer.ts): the desktop
+   * shell's hidden picture window. Absent where there is none (a browser, an older shell): the
+   * window draws them itself.
+   */
+  pictures?: PictureBridge;
 }
 
 /** The shell's notifications, with the app's version for registering this install. */

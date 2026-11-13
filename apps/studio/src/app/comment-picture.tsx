@@ -1,4 +1,8 @@
-import { drawCommentPicture as draw, CommentScene as Scene } from "@ponzu/canvas/comment-picture";
+import {
+  drawCommentPicture as draw,
+  type Pace,
+  CommentScene as Scene,
+} from "@ponzu/canvas/comment-picture";
 import type { Doc } from "@ponzu/core";
 import { COMMENT_PICTURE } from "@ponzu/runner/protocol";
 import type { ComponentProps } from "react";
@@ -13,6 +17,8 @@ export {
   commentIn,
   hasPictureArea,
   NoPicture,
+  type Pace,
+  pictureDoc,
   type Theme,
 } from "@ponzu/canvas/comment-picture";
 
@@ -21,12 +27,16 @@ export function CommentScene(props: Omit<ComponentProps<typeof Scene>, "size">) 
   return <Scene {...props} size={COMMENT_PICTURE} />;
 }
 
-/** The picture of where a comment was left, in both themes, as WebP at twice its size. */
+/**
+ * The picture of where a comment was left, in both themes, as WebP at twice its size. In the
+ * person's own window, `pace: "idle"` (see `Pace`).
+ */
 export function drawCommentPicture(given: {
   doc: Doc;
   threadId: string;
   messageId: string;
   assetBase?: string | undefined;
+  pace?: Pace;
 }) {
   return draw({ ...given, size: COMMENT_PICTURE, type: "image/webp" });
 }

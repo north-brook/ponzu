@@ -172,3 +172,47 @@ test("an upload asks where, puts the bytes there without the token, then confirm
   expect(seen[1]?.headers.authorization).toBeUndefined();
   expect(seen[2]?.body).toEqual({ ids: ["up_1"] });
 });
+
+test("the session sends what it is given, and a checkpoint reads what it held after its archive is up", async () => {
+  const order: string[] = [];
+  const { http, seen } = api((s) => {
+    order.push(`${s.method} ${new URL(s.url).pathname}`);
+    if (s.url.endsWith("/session")) return json({ runnerId: "rnr_1" });
+    if (s.url.endsWith("/uploads"))
+      return json({
+        files: [
+          { id: "up_1", put: { url: "https://r2.test/put?sig=1", headers: {} }, expiresAt: "" },
+        ],
+      });
+    if (s.url.startsWith("https://r2.test")) return new Response(null, { status: 200 });
+    return json({ saved: { turn: 1 } });
+  });
+  await http.session({ boot: "boot-a" });
+  expect(seen[0]?.body).toEqual({ boot: "boot-a" });
+  await http.saveCheckpoint({
+    turn: 1,
+    claudeSessionId: "s1",
+    wipCommit: null,
+    session: new Uint8Array([1]),
+    workspace: null,
+    heldThrough: () => {
+      order.push("read held");
+      return 12;
+    },
+  });
+  expect(order).toEqual([
+    "POST /v1/runner/session",
+    "POST /v1/runner/uploads",
+    "PUT /put",
+    "read held",
+    "POST /v1/runner/checkpoint",
+  ]);
+  expect(seen.at(-1)?.body).toEqual({
+    turn: 1,
+    claudeSessionId: "s1",
+    wipCommit: null,
+    session: "up_1",
+    workspace: null,
+    heldThrough: 12,
+  });
+});

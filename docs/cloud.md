@@ -999,7 +999,7 @@ logs `sandbox_move_held` with why, and the canvas moves at a later wake:
 | Why (`reason`) | What happens next |
 |---|---|
 | it is awake or getting there | nothing: an awake sandbox is never recreated, so no turn is ever cut. It moves at the first wake after it next sleeps. |
-| `checkpoint_behind`: an event went into the session after the last checkpoint was recorded (`canvas_runners.saved_through` against the delivered events' `seq`; a `stop` or a `push`, which never go into the session, does not count) | it wakes on its own image, its runner saves after its next turn and at the sleep, and the wake after that moves it |
+| `checkpoint_behind`: an event went into the session after the last checkpoint's archive was taken (`canvas_runners.saved_through`, what the runner said the archive held or, from a runner that does not say, what had been delivered when it was recorded, against the delivered events' `seq`; a `stop` or a `push`, which never go into the session, does not count) | it wakes on its own image, its runner saves after its next turn and at the sleep, and the wake after that moves it |
 | `no_checkpoint`: its runner never saved one | it stays: a recreate would lose its conversation and what is only on its disk |
 
 **When: at the wake, not ahead of it.** A sweep that recreated sleeping sandboxes as soon as an
@@ -1140,7 +1140,30 @@ stop (`ponzu-stop`, above):
   disk, flushed (`~/.ponzu/checkpoint.json`). Before it sends one it writes the marker again with
   the turn it is sending as `pending`: a marker one behind the API's that says that turn is
   pending is a stop that came between the API's answer and the write, logged `marker_lag`, not a
-  rollback. Nothing is saved when nothing changed since the last.
+  rollback. Nothing is saved when nothing changed since the last: each file is told by its size,
+  times and inode, and one written in the last two seconds is hashed too, read a megabyte at a
+  time, up to 8 MB. A recent file larger than that is told by size, times and inode alone (an edit
+  of the same size in the same clock tick is then saved by the checkpoint after it leaves those
+  two seconds), and the runner logs `checkpoint_hash_skipped` with how many, their bytes and up
+  to ten paths.
+- **What it holds.** With a transcript, the checkpoint always names, as a number, the newest
+  event (`seq`) the session held as the archive was taken (`heldThrough`): the newest it had
+  taken in then (the newest event this runner saw go in, or the canvas's head as of a claim that
+  was not full, since every event below it was handed over or delivered before), below the oldest
+  event the runner was handed and has not seen go into the session, and below any that goes in
+  while the archive is packed or uploaded. Always a number, because the API records the call when
+  it lands: an event that goes into the session while the call is on its way is not in the
+  archive. An event that never goes into a session (a stop, a push) moves the newest taken in
+  but lowers nothing, as the API's check leaves those out. When the transcript fails to pack (GNU
+  tar refuses a file that changed as it read it, as when a turn is writing the transcript), the
+  checkpoint keeps the one before and sends what that one held: the `heldThrough` this runner
+  last sent with a transcript, or 0 when it has sent none. The API records it as
+  `canvas_runners.saved_through`, never above the newest event delivered by then, which is what a
+  recreate goes by ("How images roll out"). A checkpoint without it counts every event delivered
+  when it is recorded, as before: one with no transcript at all, one from a runner from before
+  it, and one whose transcript is over the 64 MB cap. That last conversation is no longer saved
+  (above), and a number frozen at its last saved transcript would keep the canvas off every new
+  image for good.
 - **Never less than the last.** A part a checkpoint cannot carry (a transcript too large or not on
   this disk, work that could not be saved or did not change, a checkout that could not be had)
   is kept from the checkpoint before (`keep`), with its session id or commit, so a checkpoint
@@ -1588,7 +1611,9 @@ Every route but the session's, the bundle, the upload `PUT` and the runner's own
 ### Session
 
 `POST /v1/runner/session` is the runner's first call: everything it needs to start, and the
-lease.
+lease. Its body is `{ boot? }`: this boot of the machine (`/proc/sys/kernel/random/boot_id`),
+which runners send so that a later API can tell a retried call of one process from another
+process's. The API does not read it yet, and a runner from before it sends `{}`.
 
 ```
 RunnerSession = {
@@ -1725,8 +1750,14 @@ page, both with packages/canvas's `comment-picture.tsx`), uploads it with `POST
 `dark.webp` or `light.png` and `dark.png`, at most 2 MB each, staged and copied under
 `comments/` when attached) and attaches it with `…/picture/complete` once the comment's op is committed
 (404 before that); the first picture attached is the one it keeps. Sending a comment never waits
-on it. A comment with no picture (from before pictures, or one that couldn't be drawn or kept)
-says where it was left instead. Older comment items may carry `board`, a copy of the board an
+on it. The desktop app draws it in a hidden window of its own, with its own renderer and an
+in-memory session (apps/desktop/src/pictures.ts), so drawing it never holds up the person's
+window and leaves nothing there; that window closes after a few pictures or 20 s with none. A
+studio without it (a browser, the tests), or one whose picture window failed (and, after two
+failures in a row, for the rest of that canvas's opening), draws the picture in its own window, a
+step at a time when the window is idle. A comment deleted before its picture is kept gets none. A
+comment with no picture (from before pictures, or one that couldn't be drawn or kept) says where
+it was left instead. Older comment items may carry `board`, a copy of the board an
 earlier thumbnail drew; nothing reads it.
 
 A client renders the thread from these alone, and never shows a tool's input or output.
@@ -1916,7 +1947,11 @@ not recorded, are deleted. An archive id must be this runner's upload of that pu
 as declared (404 `not_found`). `wipCommit` is the work in progress's commit, for a repo canvas,
 which the `workspace` archive carries as a bundle. `keep: { session?, workspace? }` keeps the
 last checkpoint's transcript (with its session id) or work (with its commit) in place of one this
-checkpoint does not carry. Holds to the lease (409 `superseded`). Safe to repeat.
+checkpoint does not carry. `heldThrough` (optional, a whole number) is the newest event the
+session held when the transcript's archive was taken ("Saving the sandbox", "What it holds"); the
+API records the smaller of it and the newest event delivered by now as what the checkpoint holds,
+and without it, the newest event delivered by now. Holds to the lease (409 `superseded`). Safe
+to repeat.
 
 `POST /v1/runner/restore` answers the last checkpoint with an address per archive that reads it
 for ten minutes, and its size and SHA-256, which the runner checks. `POST /v1/runner/restored`
@@ -4097,14 +4132,8 @@ retired. The stages it went through:
 - A runner that is answered 409 `superseded` while it starts exits 78 and stays down until the
   dead-runner sweep (90 seconds unheard) puts the sandbox to sleep and wakes it on a new
   environment. A session call retried after a lost answer, with the first landing after the
-  retry, would do it; a session call that names the starting process would close that.
-- A recreate onto a new image goes by whether the last checkpoint holds every event delivered
-  into the session, and the API counts as held what had been delivered when the checkpoint was
-  recorded. An event the runner took into a new turn while it was still uploading the checkpoint
-  of the last is counted as held though it is not. The turn's own checkpoint, or the one the sleep
-  saves, records it soon after; only when both of those fail and the canvas is recreated before
-  another is saved is that turn missing from the conversation after it (the thread still has it).
-  The runner naming, with each checkpoint, the newest event it holds would close it.
+  retry, would do it; a session call that names the starting process would close that. Runners
+  now send their boot id with the session call, and the API does not use it yet.
 - Until `R2_PRIVATE_BUCKET` is set, checkpoint archives sit in the assets bucket under a random
   key (above). Work in progress pushed to `refs/ponzu/wip/<canvas>` by the first version of this
   (dev only) stays on those repositories until someone deletes the refs.

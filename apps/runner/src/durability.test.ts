@@ -247,3 +247,78 @@ test("a new sandbox, with nothing on its disk, starts from the last checkpoint",
     existsSync(join(second.config, "projects", "-home-agent-work-scratch", `${SESSION}.jsonl`)),
   ).toBe(true);
 });
+
+test("the session names this boot, and a message taken in while a checkpoint uploads is not counted as held", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const s = await start(api, d);
+  // `start` gives the runner the boot `boot-b`.
+  expect(api.sessionRequests).toEqual([{ boot: "boot-b" }]);
+  s.run.ready(SESSION);
+  const first = api.push({ kind: "message", payload: { text: "One" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await writeTranscript(d.config, ['{"turn":1}']);
+  s.run.say("m1", "Done.");
+  // The checkpoint's archive is on its way up for a while: a new message comes in meanwhile.
+  api.delays.set("saveCheckpoint", 400);
+  s.run.end();
+  await until(() => api.calls.includes("saveCheckpoint"));
+  const second = api.push({ kind: "message", payload: { text: "Two" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => api.checkpoints.length === 1);
+  expect(api.checkpoints[0]).toMatchObject({ turn: 1, heldThrough: first.seq });
+  expect(second.seq).toBeGreaterThan(first.seq);
+});
+
+test("a runner without a boot sends the session what a runner from before did", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const agent = new ScriptedAgent();
+  const runner = new Runner({
+    api: api.client(),
+    agent,
+    prepare: async () => d.work,
+    stateDir: d.stateDir,
+    log: () => {},
+    timing: FAST,
+  });
+  open.push(runner);
+  await runner.start();
+  expect(api.sessionRequests).toEqual([{}]);
+});
+
+test("an event delivered while the checkpoint's call is on its way is never counted as held", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const s = await start(api, d);
+  s.run.ready(SESSION);
+  // A turn whose message is in the session, and nothing else handed over: the mark has nothing
+  // below the newest event to stop at.
+  const first = api.push({ kind: "message", payload: { text: "One" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => api.delivered.includes(first.id));
+  await writeTranscript(d.config, ['{"turn":1}']);
+  s.run.say("m1", "Done.");
+  // The archive is up and what it held is read; the call that records it is slow.
+  api.recordDelayMs = 400;
+  s.run.end();
+  await until(() => api.calls.includes("saveCheckpoint"));
+  await Bun.sleep(30);
+  expect(api.checkpoints).toHaveLength(0);
+  // Meanwhile a new message is taken into a new turn and delivered.
+  const second = api.push({ kind: "message", payload: { text: "Two" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => api.delivered.includes(second.id));
+  expect(api.checkpoints).toHaveLength(0);
+
+  await until(() => api.checkpoints.length === 1);
+  // The checkpoint said what it held as a number, and the API's record stays below the event
+  // delivered while it was on its way, which the archive lacks.
+  expect(api.checkpoints[0]).toMatchObject({ turn: 1, heldThrough: first.seq });
+  expect(api.savedThrough).toBe(first.seq);
+  expect(api.savedThrough!).toBeLessThan(second.seq);
+});

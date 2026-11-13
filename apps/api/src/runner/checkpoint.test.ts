@@ -1,7 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { beginSandbox, getCanvasAssetKey, moveSandbox } from "@ponzu/db";
+import {
+  appendEvent,
+  beginSandbox,
+  canvasRunners,
+  getCanvasAssetKey,
+  getCheckpointCover,
+  moveSandbox,
+  newId,
+} from "@ponzu/db";
 import {
   call,
   canvasWithRunner,
@@ -282,5 +290,70 @@ describe("checkpoints", () => {
     await t.backgroundDone();
     expect(t.storage.objects.has(recorded.key)).toBe(false);
     expect(t.storage.objects.has(unrecorded.key)).toBe(false);
+  });
+});
+
+describe("what a checkpoint holds", () => {
+  /**
+   * A canvas whose runner was handed three messages and acknowledged the first two, as one that
+   * took the second into a turn: the third is still on its way into the session.
+   */
+  async function handed() {
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
+    const seqs: number[] = [];
+    for (const text of ["one", "two", "three"]) {
+      const event = await appendEvent(t.db, {
+        canvasId: canvas.id,
+        kind: "message",
+        priority: "now",
+        payload: { text },
+        userId: ws.people.maya!.userId,
+      });
+      seqs.push(event.seq);
+    }
+    const claimed = await send(runner, "POST", "/events/claim", { claimId: newId("clm") });
+    const ids = claimed.body.events.map((event: { id: string }) => event.id);
+    const acked = await send(runner, "POST", "/events/ack", {
+      ids: ids.slice(0, 2),
+      claudeSessionId: "sess-1",
+    });
+    expect(acked.status).toBe(200);
+    const through = async () =>
+      (await t.db.select().from(canvasRunners)).find((row) => row.canvasId === canvas.id)!
+        .savedThrough;
+    const cover = () => getCheckpointCover(t.db, canvas.id);
+    return { runner, seqs, through, cover };
+  }
+
+  test("a runner that does not say what it held counts every event delivered by now, as before", async () => {
+    const { runner, seqs, through, cover } = await handed();
+    const recorded = await send(runner, "POST", "/checkpoint", point(1));
+    expect(recorded.status).toBe(200);
+    expect(await through()).toBe(seqs[1]!);
+    expect(await cover()).toBe("covered");
+  });
+
+  test("a runner that says records what its session held when the archive was taken", async () => {
+    const { runner, seqs, through, cover } = await handed();
+    const recorded = await send(runner, "POST", "/checkpoint", point(1, { heldThrough: seqs[0] }));
+    expect(recorded.status).toBe(200);
+    expect(recorded.body.saved.turn).toBe(1);
+    expect(await through()).toBe(seqs[0]!);
+    // The second message went out but not into this archive: a recreate waits for a later one.
+    expect(await cover()).toBe("behind");
+  });
+
+  test("never above what was delivered: undelivered events are never counted as held", async () => {
+    const { runner, seqs, through } = await handed();
+    await send(runner, "POST", "/checkpoint", point(1, { heldThrough: seqs[2]! + 50 }));
+    expect(await through()).toBe(seqs[1]!);
+  });
+
+  test("a held mark that is not a seq is refused", async () => {
+    const { runner } = await handed();
+    for (const heldThrough of [-1, 1.5, "3", null])
+      expect((await send(runner, "POST", "/checkpoint", point(1, { heldThrough }))).status).toBe(
+        400,
+      );
   });
 });

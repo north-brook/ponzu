@@ -6,6 +6,7 @@ import type { Beat } from "../cloud/create/landing.ts";
 import { signedInCache } from "./desktop-host.ts";
 import type { Host, HostNotifications } from "./host.ts";
 import { linksWithInstalls } from "./installs.ts";
+import type { PictureBridge } from "./picture-drawer.ts";
 
 /*
  * The studio in a plain browser, for development and the headless test: Ponzu Cloud in memory
@@ -95,6 +96,11 @@ export interface FakeMac {
 declare global {
   interface Window {
     ponzuFake?: FakeWorld;
+    /**
+     * The desktop's picture window, as a headless test plays it (another page, in picture mode),
+     * set before the studio loads. Without it, pictures are drawn in the window, as in a browser.
+     */
+    ponzuFakePictures?: PictureBridge;
   }
 }
 
@@ -106,6 +112,7 @@ declare global {
  * link or banner reaches the shell.
  */
 export function fakeHost(opts: { shell?: PonzuDesktop } = {}): Host {
+  const pictures = window.ponzuFakePictures ?? opts.shell?.pictures;
   const backend = createFakeBackend();
   const me = backend.addPerson({ login: "maya", name: "Maya Ortiz" });
   const teammate = backend.addPerson({ login: "sam", name: "Sam Lee" });
@@ -325,6 +332,9 @@ export function fakeHost(opts: { shell?: PonzuDesktop } = {}): Host {
     docStorage: opts.shell ? signedInCache(session, window.localStorage) : null,
     notifications: mac?.host ?? null,
     ...(landingBeat ? { landingBeat } : {}),
+    // A headless test's picture page, else the Mac app's picture window when a test build runs
+    // on this fake (PONZU_FAKE_BACKEND), so spare measures pictures where a release draws them.
+    ...(pictures ? { pictures } : {}),
   };
 }
 
