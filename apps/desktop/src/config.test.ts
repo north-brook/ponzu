@@ -71,6 +71,19 @@ describe("the environment a build bakes", () => {
     expect(DEV_ENVIRONMENT).toEqual(dev);
   });
 
+  test("Ponzu Dev talks to dev's API at api-dev.ponzu.design, never production's", () => {
+    // What `PONZU_VARIANT=dev bun run package:dir` bakes and prints as "Talks to dev (…)".
+    const file = environmentsFile(ENVIRONMENTS_FILE);
+    expect(bakeEnvironment(file, "dev")).toMatchObject({
+      name: "dev",
+      apiUrl: "https://api-dev.ponzu.design",
+    });
+    expect(DEV_ENVIRONMENT.apiUrl).toBe("https://api-dev.ponzu.design");
+    expect(
+      configFor(true, {}, built({ variant: "dev", environment: DEV_ENVIRONMENT })).apiUrl,
+    ).toBe("https://api-dev.ponzu.design");
+  });
+
   test("once release names production, a release bakes production and Ponzu Dev stays on dev", () => {
     const file = environmentsFile(FILLED);
     expect(bakeEnvironment(file, "release")).toEqual({

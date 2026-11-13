@@ -5,14 +5,17 @@ import {
   DEFAULT_API_URL,
   ENVIRONMENTS,
   EnvError,
+  environmentPair,
   FORBIDDEN_ENV,
   OPTIONAL_ENV,
   REQUIRED_ENV,
   readEnv,
   SYSTEM_ENV,
   sandboxScope,
+  vercelEnvironmentFor,
 } from "./env.ts";
 import { FEATURES_OFF } from "./features.ts";
+import { createLogger, type LogLine } from "./http/log.ts";
 
 const complete = {
   DATABASE_URL: "postgres://user:hunter2@ep-example-pooler.us-east-1.aws.neon.tech/neondb",
@@ -52,7 +55,8 @@ test("a complete environment is read into one typed value", () => {
     // The image is the one this build ships; without the Vercel triple, sandboxes use OIDC.
     sandbox: {
       image: current.image,
-      apiUrl: "https://api.ponzu.design",
+      // Off Vercel and unset, runners call dev: a local API runs on dev's database.
+      apiUrl: "https://api-dev.ponzu.design",
       idleSeconds: 300,
       limits: { perWorkspace: 5, perOwner: 3 },
       scope: sandboxScope(complete.DATABASE_URL),
@@ -293,6 +297,32 @@ test("a sandbox's scope is the database's, through whichever of its hosts", () =
   expect(sandboxScope(pooled.replace("/neondb", "/otherdb"))).not.toBe(sandboxScope(pooled));
 });
 
+test("the scope is byte for byte what production's live sandboxes were named with", () => {
+  // Production's sandboxes are live and named pz-<scope>-…; a different value for the same
+  // database orphans every one of them. These values are what main's sandboxScope gave
+  // (915dab2a, the first 12 hex of sha256(host without -pooler + path)), computed with that
+  // code, not with this one. Whatever environment reads the URL, the scope is the same.
+  const fixed = [
+    ["postgres://user:hunter2@ep-example-pooler.us-east-1.aws.neon.tech/neondb", "d4ba16981c10"],
+    ["postgres://other:secret@ep-example.us-east-1.aws.neon.tech/neondb", "d4ba16981c10"],
+    ["postgres://user:pw@ep-example-dev-pooler.us-east-1.aws.neon.tech/neondb", "f333cdb04c0a"],
+  ] as const;
+  for (const [url, scope] of fixed) {
+    expect(sandboxScope(url)).toBe(scope);
+    for (const environment of ["production", "dev", "preview"]) {
+      const env = readEnv({
+        ...complete,
+        ...deployed,
+        DATABASE_URL: url,
+        PONZU_ENVIRONMENT: environment,
+        VERCEL_TARGET_ENV: environment,
+      });
+      expect(env.sandbox.scope).toBe(scope);
+    }
+    expect(readEnv({ ...complete, DATABASE_URL: url }).sandbox.scope).toBe(scope);
+  }
+});
+
 test("everything missing is named at once, and an empty value counts as missing", () => {
   const { DATABASE_URL: _url, CRON_SECRET: _cron, ...rest } = complete;
   const error = (() => {
@@ -452,7 +482,8 @@ test("a deployment that says both starts, and reports them", () => {
   expect(env.sandbox.apiUrl).toBe("https://api-dev.ponzu.design");
   expect([...ENVIRONMENTS]).toEqual(["production", "dev", "preview", "local"]);
   for (const name of ["production", "dev", "preview"] as const) {
-    expect(readEnv({ ...complete, ...deployed, PONZU_ENVIRONMENT: name }).environment).toBe(name);
+    const on = { ...complete, ...deployed, PONZU_ENVIRONMENT: name, VERCEL_TARGET_ENV: name };
+    expect(readEnv(on).environment).toBe(name);
   }
 });
 
@@ -508,7 +539,7 @@ test("the required, optional, system and forbidden names are exact and do not ov
     "VERCEL_PROJECT_ID",
     "VERCEL_TEAM_ID",
   ]);
-  expect([...SYSTEM_ENV]).toEqual(["VERCEL", "VERCEL_GIT_COMMIT_SHA"]);
+  expect([...SYSTEM_ENV]).toEqual(["VERCEL", "VERCEL_GIT_COMMIT_SHA", "VERCEL_TARGET_ENV"]);
   expect([...FORBIDDEN_ENV]).toEqual(["VERCEL_TOKEN", "BOAT_API_KEY", "PONZU_SANDBOX_SNAPSHOT"]);
   const all = [...REQUIRED_ENV, ...OPTIONAL_ENV, ...SYSTEM_ENV, ...FORBIDDEN_ENV];
   expect(new Set(all).size).toBe(all.length);
@@ -520,4 +551,134 @@ test("a deployment with exactly the required names starts", () => {
     [...REQUIRED_ENV, "VERCEL"].map((name) => [name, values[name]!]),
   );
   expect(problem(onlyRequired)).toBe("read");
+});
+
+// --- PONZU_ENVIRONMENT against VERCEL_TARGET_ENV -------------------------------------------------
+
+/** readEnv on Vercel with this pair, and the one `environment_pair` line it logged. */
+function boot(environment: string | undefined, target: string | undefined) {
+  const lines: LogLine[] = [];
+  const source: Record<string, string | undefined> = {
+    ...complete,
+    ...deployed,
+    PONZU_ENVIRONMENT: environment,
+    VERCEL_TARGET_ENV: target,
+  };
+  let outcome = "read";
+  try {
+    readEnv(source, { log: createLogger((line) => lines.push(line)) });
+  } catch (thrown) {
+    expect(thrown).toBeInstanceOf(EnvError);
+    outcome = (thrown as Error).message;
+  }
+  return { outcome, lines };
+}
+
+test("each environment belongs on the Vercel environment of its own name", () => {
+  expect(vercelEnvironmentFor("production")).toBe("production");
+  expect(vercelEnvironmentFor("preview")).toBe("preview");
+  expect(vercelEnvironmentFor("dev")).toBe("dev");
+});
+
+test("on Vercel, every pair that agrees starts, and logs that it agrees", () => {
+  for (const name of ["production", "preview", "dev"]) {
+    const { outcome, lines } = boot(name, name);
+    expect(outcome).toBe("read");
+    expect(lines).toEqual([
+      {
+        level: "info",
+        event: "environment_pair",
+        environment: name,
+        vercelEnvironment: name,
+        onVercel: true,
+        agrees: true,
+      },
+    ]);
+  }
+});
+
+test("on Vercel, every pair that disagrees never starts, and logs both names", () => {
+  const vercelNames = ["production", "preview", "dev", "development", "staging"];
+  for (const environment of ["production", "preview", "dev"]) {
+    for (const target of vercelNames.filter((name) => name !== environment)) {
+      const { outcome, lines } = boot(environment, target);
+      expect(outcome).toBe(
+        `The API cannot start. PONZU_ENVIRONMENT is ${environment}, which belongs on Vercel's "${environment}" environment, but VERCEL_TARGET_ENV says this deployment runs in "${target}".`,
+      );
+      expect(lines).toEqual([
+        {
+          level: "error",
+          event: "environment_pair",
+          environment,
+          vercelEnvironment: target,
+          onVercel: true,
+          agrees: false,
+        },
+      ]);
+    }
+  }
+});
+
+test("dev's values on the Production target never start, nor production's anywhere but there", () => {
+  // The two mistakes one project makes possible: a dev deployment promoted or deployed --prod
+  // with dev's values, and production's values (and so production's database) on dev.
+  expect(boot("dev", "production").outcome).toContain("PONZU_ENVIRONMENT is dev");
+  expect(boot("production", "dev").outcome).toContain("PONZU_ENVIRONMENT is production");
+  expect(boot("production", "preview").outcome).toContain("PONZU_ENVIRONMENT is production");
+});
+
+test("every environment with the name unset starts, and the line says it was unset", () => {
+  // Production too: no deployment has logged VERCEL_TARGET_ENV yet (E6), and refusing an unset
+  // name would take production down on its next deploy if Vercel did not set it.
+  expect(boot("production", "").outcome).toBe("read");
+  for (const name of ["production", "dev", "preview"]) {
+    const { outcome, lines } = boot(name, undefined);
+    expect(outcome).toBe("read");
+    expect(lines[0]).toMatchObject({
+      level: "info",
+      environment: name,
+      vercelEnvironment: null,
+      agrees: true,
+    });
+  }
+});
+
+test("a VERCEL_TARGET_ENV that is no environment's name is refused and never quoted", () => {
+  const { outcome, lines } = boot("dev", "Dev hunter2");
+  expect(outcome).toBe("The API cannot start. VERCEL_TARGET_ENV is malformed.");
+  expect(JSON.stringify(lines)).not.toContain("hunter2");
+  expect(lines[0]).toMatchObject({ vercelEnvironment: "malformed", agrees: false });
+});
+
+test("a malformed PONZU_ENVIRONMENT is logged as malformed, never quoted", () => {
+  const { outcome, lines } = boot("staging-hunter2", "dev");
+  expect(outcome).toBe("The API cannot start. PONZU_ENVIRONMENT is malformed.");
+  expect(JSON.stringify(lines)).not.toContain("hunter2");
+  expect(lines[0]).toMatchObject({ environment: "malformed", vercelEnvironment: "dev" });
+});
+
+test("off Vercel the pair is logged but never compared", () => {
+  // `vercel env pull` can write VERCEL_TARGET_ENV into a laptop's file; it means nothing there.
+  const lines: LogLine[] = [];
+  const env = readEnv(
+    { ...complete, PONZU_ENVIRONMENT: "dev", VERCEL_TARGET_ENV: "development" },
+    { log: createLogger((line) => lines.push(line)) },
+  );
+  expect(env.environment).toBe("dev");
+  expect(lines).toEqual([
+    {
+      level: "info",
+      event: "environment_pair",
+      environment: "dev",
+      vercelEnvironment: "development",
+      onVercel: false,
+      agrees: true,
+    },
+  ]);
+  expect(environmentPair({ PONZU_ENVIRONMENT: "production" }).problem).toBeNull();
+});
+
+test("without a logger readEnv logs nothing, and the boot passes one", () => {
+  const index = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  expect(index).toContain("readEnv(process.env, { log: createLogger(consoleSink) })");
 });

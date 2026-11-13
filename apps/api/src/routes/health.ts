@@ -2,6 +2,7 @@ import { countAppliedMigrations, EXPECTED_MIGRATIONS, pingDb } from "@ponzu/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
+import { lastCronRun } from "../cron/heartbeat.ts";
 import { ENVIRONMENTS } from "../env.ts";
 import type { AppEnv } from "../http/context.ts";
 
@@ -25,6 +26,12 @@ const Health = z.object({
    */
   migrations: z.object({ applied: z.number().int().nullable(), expected: z.number().int() }),
   database: z.boolean(),
+  /**
+   * When the minute's cron last ran on this database (`cron/heartbeat.ts`), as an ISO time; null
+   * when it never has or the database could not be asked. Production's uptime check reads it. It
+   * does not change `status`: a deployment's own health does not depend on its scheduler.
+   */
+  cron: z.object({ lastRanAt: z.string().nullable() }),
 });
 
 const DATABASE_TIMEOUT_MS = 3_000;
@@ -54,12 +61,13 @@ function bundleHash(read: () => { sha256: string }): string | null {
 export const health = new Hono<AppEnv>().get("/", access.public, async (c) => {
   const { db, clock, config, runnerBundle } = c.var.deps;
   const deadline = clock.timeout(DATABASE_TIMEOUT_MS);
-  const [reached, applied] = await Promise.all([
+  const [reached, applied, lastRanAt] = await Promise.all([
     within(
       pingDb(db).then(() => true),
       deadline,
     ),
     within(countAppliedMigrations(db), deadline),
+    within(lastCronRun(db), deadline),
   ]);
   const database = reached === true;
   const migrations = { applied: applied ?? null, expected: EXPECTED_MIGRATIONS };
@@ -72,6 +80,7 @@ export const health = new Hono<AppEnv>().get("/", access.public, async (c) => {
     runnerBundle: bundleHash(runnerBundle),
     migrations,
     database,
+    cron: { lastRanAt: lastRanAt?.toISOString() ?? null },
   });
   return c.json(body, database ? 200 : 503);
 });

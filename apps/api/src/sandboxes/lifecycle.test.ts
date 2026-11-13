@@ -11,7 +11,7 @@ import {
   type SweptSandbox,
 } from "@ponzu/db";
 import { IMAGE_COMMANDS, RUNNER_HEADER, RUNNER_PORT } from "@ponzu/runner/protocol";
-import { canvasSandboxName } from "@ponzu/sandbox";
+import { canvasSandboxName, SandboxError, type Sandboxes } from "@ponzu/sandbox";
 import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import {
   createTestApp,
@@ -32,7 +32,7 @@ import {
 import { sandboxSpec, wakeCanvas } from "./orchestrate.ts";
 import { finishRetire, holdForRetire, retire } from "./retire.ts";
 import { putToSleep } from "./stop.ts";
-import { extendBy, LAPSED_GIVE_UP, STALLED_MS, STALLED_SAID, STEPS } from "./sweep.ts";
+import { extendBy, LAPSED_GIVE_UP, reconcile, STALLED_MS, STALLED_SAID, STEPS } from "./sweep.ts";
 
 /*
  * A canvas's sandbox from its first message to its retirement, through the routes and the
@@ -782,7 +782,76 @@ describe("reconcile", () => {
     expect((await t.sandboxes.status(theirs))?.status).toBe("running");
     await t.sandboxes.remove(theirs);
   });
+
+  test("a listing widened past this scope still stops and removes nothing of another's, and says so", async () => {
+    // Another deployment's sandboxes in the same project: one whose canvas this database has
+    // never heard of (reconcile would remove it as an orphan), and one named for a canvas of
+    // ours that is asleep here (reconcile would stop it as a leak).
+    const ours = await awakeCanvas();
+    await idleToSleep(ours.runner);
+    const other = "0123456789ab";
+    const orphan = canvasSandboxName(other, "cnv_theirs00000001");
+    const twin = canvasSandboxName(other, ours.canvas.id);
+    await t.sandboxes.up(orphan, sandboxSpec(TEST_IMAGE));
+    await t.sandboxes.up(twin, sandboxSpec(TEST_IMAGE));
+    try {
+      // A later change that lists every name, on a module with no guard of its own.
+      const widened: Sandboxes = {
+        ...bound(t.sandboxes),
+        list: (_prefix, options) => t.sandboxes.list("pz-", options),
+      };
+      await reconcile({ ...t.deps, sandboxes: widened });
+      expect((await t.sandboxes.status(orphan))?.status).toBe("running");
+      expect((await t.sandboxes.status(twin))?.status).toBe("running");
+      expect(t.logs.filter((l) => l.event === "sandbox_out_of_scope").map((l) => l.name)).toEqual(
+        expect.arrayContaining([orphan, twin]),
+      );
+    } finally {
+      await t.sandboxes.remove(orphan);
+      await t.sandboxes.remove(twin);
+    }
+  });
+
+  test("the deployment's own module refuses another scope's names and a wider listing", async () => {
+    const theirs = canvasSandboxName("0123456789ab", "cnv_theirs00000002");
+    const up = await t.sandboxes.up(theirs, sandboxSpec(TEST_IMAGE));
+    const at = { name: theirs, sessionId: up.sessionId };
+    try {
+      const refused = async (work: Promise<unknown>) =>
+        work.then(
+          () => "done",
+          (error: unknown) => (error instanceof SandboxError ? error.code : String(error)),
+        );
+      const mine = t.deps.sandboxes;
+      expect(await refused(mine.list("pz-"))).toBe("out_of_scope");
+      expect(await refused(mine.list(`pz-${TEST_SCOPE}`))).toBe("out_of_scope");
+      expect(await refused(mine.status(theirs))).toBe("out_of_scope");
+      expect(await refused(mine.stop(at))).toBe("out_of_scope");
+      expect(await refused(mine.remove(theirs))).toBe("out_of_scope");
+      expect(await refused(mine.exec(at, { cmd: "true", timeoutMs: 1_000 }))).toBe("out_of_scope");
+      expect((await t.sandboxes.status(theirs))?.status).toBe("running");
+      expect(t.sandboxes.commands(theirs)).toHaveLength(0);
+    } finally {
+      await t.sandboxes.remove(theirs);
+    }
+  });
 });
+
+/** The fake's methods bound to it, as a plain `Sandboxes` a test can override one call of. */
+function bound(fake: TestApp["sandboxes"]): Sandboxes {
+  return {
+    up: fake.up.bind(fake),
+    status: fake.status.bind(fake),
+    list: fake.list.bind(fake),
+    start: fake.start.bind(fake),
+    exec: fake.exec.bind(fake),
+    writeFile: fake.writeFile.bind(fake),
+    readFile: fake.readFile.bind(fake),
+    extend: fake.extend.bind(fake),
+    stop: fake.stop.bind(fake),
+    remove: fake.remove.bind(fake),
+  };
+}
 
 describe("a turn that never came", () => {
   test("a message delivered with nothing after it is not slept on: it is said and sent again", async () => {

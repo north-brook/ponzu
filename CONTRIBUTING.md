@@ -10,6 +10,15 @@ The desktop app: `cd apps/desktop && bun run start`, against the real API
 ([apps/desktop/README.md](apps/desktop/README.md)). The iPhone app:
 `cd apps/mobile && bunx expo run:ios`, see [docs/mobile.md](docs/mobile.md).
 
+The API is one Vercel project, `ponzu-api`, with two environments: dev, its
+custom environment `dev` at `api-dev.ponzu.design`, deployed from `main`; and
+production, its Production target at `api.ponzu.design`, deployed only from
+`main` with the founder's approval. Deploy dev only with
+`vercel deploy --environment dev`, never `--prod`; `vercel promote`,
+`vercel rollback` and `vercel alias set` belong to the production runbook
+alone. See [apps/api/README.md](apps/api/README.md#deploying) and
+[docs/production.md](docs/production.md#one-project-two-environments).
+
 ## Pull requests
 
 PRs are squash-merged, and **the PR title becomes the commit on `main`**, so it

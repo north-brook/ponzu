@@ -1,6 +1,18 @@
 import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { type KeyValueStorage, SESSION_KEY } from "../session.ts";
 
+/** Dev's API, on the ponzu-api project's dev environment. */
+export const DEV_API_URL = "https://api-dev.ponzu.design";
+
+/**
+ * Where an opt-in live test runs: PONZU_API_URL, else dev's. Never production's by default:
+ * after launch api.ponzu.design is production, and a live test makes, wakes and deletes real
+ * canvases. Running one against production takes naming it.
+ */
+export function liveApiUrl(env: Record<string, string | undefined> = process.env): string {
+  return (env.PONZU_API_URL || DEV_API_URL).replace(/\/+$/, "");
+}
+
 /**
  * The session `bun run dev:signin` saved (apps/api/scripts), as a session's storage, for the
  * opt-in live tests. A refresh writes the rotated pair back to the file whole or not at all: a

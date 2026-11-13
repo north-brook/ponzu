@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { loadInfra } from "../desired.ts";
 import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import {
   type CertificateReader,
@@ -59,7 +60,7 @@ describe("evaluate on what was recorded", () => {
       [
         "pending",
         "dns.api.ponzu.design",
-        "api.ponzu.design still serves dev until founder step D11 moves it",
+        "api.ponzu.design is still listed as dev's in infra/environments.json",
       ],
       ["pending", "dns.assets.ponzu.cloud", "answers 525: no bucket answers behind it"],
       [
@@ -207,5 +208,17 @@ describe("fetchDns", () => {
     expect(certs).toEqual(["assets.ponzu.cloud", "ponzu.design"]);
     expect(observed.checkedAt).toBe("2026-11-12T12:00:00.000Z");
     expect(observed.hosts.map((h) => h.host)).toEqual(["assets.ponzu.cloud", "ponzu.design"]);
+  });
+});
+
+describe("today's infra, in one project", () => {
+  test("each environment checks its own API domain, and production's is not waiting on dev", () => {
+    const today = loadInfra();
+    const api = (env: "dev" | "production") =>
+      dnsDesired({ env, infra: today })
+        .hosts.filter((h) => h.role === "api")
+        .map((h) => [h.host, h.notYet ?? null]);
+    expect(api("dev")).toEqual([["api-dev.ponzu.design", null]]);
+    expect(api("production")).toEqual([["api.ponzu.design", null]]);
   });
 });

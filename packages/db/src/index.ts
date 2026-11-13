@@ -153,11 +153,15 @@ export {
   enqueueJob,
   failAbandonedJobs,
   failJob,
+  HEARTBEAT_KIND,
   hasWaitingJob,
+  heartbeatId,
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
   onceId,
+  readHeartbeat,
+  recordHeartbeat,
   recordOnce,
 } from "./queries/jobs.ts";
 export {

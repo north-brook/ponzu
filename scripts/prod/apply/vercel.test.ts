@@ -21,6 +21,7 @@ import {
   planFirewall,
   planProject,
   planSecrets,
+  productionTargetOnly,
   publicEnv,
   STANDARD_PROTECTION,
   secretNames,
@@ -49,7 +50,7 @@ function devRoutes(): Routes {
 
 /** Production's project before founder step D2: Vercel answers 404. */
 const missingProd: Routes = {
-  "GET /v9/projects/ponzu-api-prod": new Reply(404, {
+  "GET /v9/projects/ponzu-api": new Reply(404, {
     error: { code: "not_found", message: "Project not found" },
   }),
 };
@@ -58,15 +59,15 @@ const missingProd: Routes = {
 function prodRoutes(envs: object[] = []): Routes {
   const project = {
     ...fixture("dev-project.json"),
-    name: "ponzu-api-prod",
+    name: "ponzu-api",
     id: "prj_prod",
     env: envs,
   };
   return {
-    "GET /v9/projects/ponzu-api-prod": project,
+    "GET /v9/projects/ponzu-api": project,
     "GET /v9/projects/prj_prod/domains": { domains: [] },
     "GET /v1/security/firewall/config/active": infra["vercel-firewall.json"],
-    "GET /v10/projects/ponzu-api-prod/env": { envs },
+    "GET /v10/projects/ponzu-api/env": { envs },
   };
 }
 
@@ -87,7 +88,7 @@ describe("vercel-project", () => {
         method: "POST",
         url: `${API}/v11/projects?slug=northbrook`,
         body: {
-          name: "ponzu-api-prod",
+          name: "ponzu-api",
           framework: "hono",
           rootDirectory: "apps/api",
           serverlessFunctionRegion: "iad1",
@@ -97,7 +98,7 @@ describe("vercel-project", () => {
       },
       {
         method: "PATCH",
-        url: `${API}/v9/projects/ponzu-api-prod?slug=northbrook`,
+        url: `${API}/v9/projects/ponzu-api?slug=northbrook`,
         body: { nodeVersion: "26.x" },
       },
     ]);
@@ -132,8 +133,8 @@ describe("vercel-project", () => {
   test("--yes sends exactly what the dry run printed, through the SDK", async () => {
     const net = fakeNetwork({
       ...missingProd,
-      "POST /v11/projects": { id: "prj_new", name: "ponzu-api-prod" },
-      "PATCH /v9/projects/ponzu-api-prod": { id: "prj_new" },
+      "POST /v11/projects": { id: "prj_new", name: "ponzu-api" },
+      "PATCH /v9/projects/ponzu-api": { id: "prj_new" },
     });
     const plan = await planProject(applyContext("production", { VERCEL_TOKEN: TOKEN }, net.fetch));
     for (const change of plan.changes) await change.send();
@@ -216,7 +217,7 @@ describe("vercel-env", () => {
     expect(plan.changes.map((c) => c.request)).toEqual([
       {
         method: "POST",
-        url: `${API}/v10/projects/ponzu-api-prod/env?slug=northbrook`,
+        url: `${API}/v10/projects/ponzu-api/env?slug=northbrook`,
         body: [
           plain("PONZU_ENVIRONMENT", "production"),
           plain("PONZU_API_URL", "https://api.ponzu.design"),
@@ -253,16 +254,34 @@ describe("vercel-env", () => {
     const requests = plan.changes.map((c) => c.request);
     expect(requests[1]).toEqual({
       method: "PATCH",
-      url: `${API}/v9/projects/ponzu-api-prod/env/env_b?slug=northbrook`,
+      url: `${API}/v9/projects/ponzu-api/env/env_b?slug=northbrook`,
       body: { value: "ponzu-assets" },
     });
     expect((requests[0]!.body as { key: string }[]).map((b) => b.key)).toContain("GITHUB_APP_SLUG");
     expect(plan.notes).toContain('PONZU_ENVIRONMENT is "production"');
   });
 
-  test("dev's variables are all sensitive: nothing is overwritten, each says why", async () => {
+  test("dev shares production's project, so nothing is written and nothing is read", async () => {
     const net = fakeNetwork(devRoutes());
-    const plan = await planEnv(applyContext("dev", { VERCEL_TOKEN: TOKEN }, net.fetch));
+    const ctx = applyContext("dev", { VERCEL_TOKEN: TOKEN }, net.fetch);
+    const plan = await planEnv(ctx);
+    expect(plan.changes).toEqual([]);
+    expect(plan.notes).toEqual([productionTargetOnly(ctx) ?? "not refused"]);
+    expect(plan.notes[0]).toContain("writes only the Production target");
+    const secrets = await planSecrets({ ...ctx, args: ["generate", "--names", "CRON_SECRET"] });
+    expect(secrets.changes).toEqual([]);
+    expect(net.seen).toEqual([]);
+    // The read after --yes fails rather than pass with nothing written.
+    expect((await vercelEnvArea.verify!(ctx)).map((l) => l.status)).toEqual(["fail"]);
+  });
+
+  test("dev's variables are all sensitive: nothing is overwritten, each says why", async () => {
+    // As it was with two projects: dev in a project of its own.
+    const net = fakeNetwork(devRoutes());
+    const ctx = applyContext("dev", { VERCEL_TOKEN: TOKEN }, net.fetch);
+    const own = structuredClone(ctx.infra);
+    own["environments.json"].environments.production.vercelProject = "another-project";
+    const plan = await planEnv({ ...ctx, infra: own });
     const posted = (plan.changes[0]?.request.body ?? []) as { key: string }[];
     // Only names dev does not have at all are added; what is there is never replaced.
     for (const key of posted.map((p) => p.key)) {
@@ -288,7 +307,7 @@ describe("vercel-env", () => {
     expect(lines.map((l) => [l.status, l.says])).toEqual([
       [
         "pending",
-        "ponzu-api-prod does not exist yet: run apply.ts vercel-project --env production first (founder step D2)",
+        "ponzu-api does not exist yet: run apply.ts vercel-project --env production first (founder step D2)",
       ],
     ]);
   });
@@ -341,7 +360,7 @@ describe("secrets generate", () => {
     expect(plan.changes.map((c) => c.request)).toEqual(
       GENERATED_SECRETS.map((key) => ({
         method: "POST",
-        url: `${API}/v10/projects/ponzu-api-prod/env?slug=northbrook`,
+        url: `${API}/v10/projects/ponzu-api/env?slug=northbrook`,
         body: [{ key, value: NOT_YET_GENERATED, type: "sensitive", target: ["production"] }],
       })),
     );
@@ -352,7 +371,7 @@ describe("secrets generate", () => {
   test("--yes sends 32 fresh random bytes each, sensitive, Production only, redacted first", async () => {
     const net = fakeNetwork({
       ...prodRoutes(),
-      "POST /v10/projects/ponzu-api-prod/env": { created: [] },
+      "POST /v10/projects/ponzu-api/env": { created: [] },
     });
     const ctx = applyContext("production", { VERCEL_TOKEN: TOKEN }, net.fetch, [
       "generate",
@@ -362,8 +381,8 @@ describe("secrets generate", () => {
     for (const change of (await planSecrets(ctx)).changes) await change.send();
     const sent = written(net.seen);
     expect(sent.map((s) => s.url)).toEqual([
-      `${API}/v10/projects/ponzu-api-prod/env`,
-      `${API}/v10/projects/ponzu-api-prod/env`,
+      `${API}/v10/projects/ponzu-api/env`,
+      `${API}/v10/projects/ponzu-api/env`,
     ]);
     const bodies = sent.map((s) => (s.body as Record<string, unknown>[])[0]!);
     expect(bodies.map((b) => [b.key, b.type, b.target])).toEqual([

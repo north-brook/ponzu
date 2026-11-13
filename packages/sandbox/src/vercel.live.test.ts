@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { APIError, Sandbox } from "@vercel/sandbox";
 import { systemClock } from "./clock.ts";
 import { SandboxError } from "./errors.ts";
-import { testSandboxName } from "./names.ts";
+import { CHECK_SCOPE, testSandboxName } from "./names.ts";
 import type { At, Sandboxes, SandboxSpec } from "./sandboxes.ts";
 import { vercelSandboxes } from "./vercel.ts";
 
@@ -189,6 +189,7 @@ test.skipIf(!live)(
     const credentials = { token: token!, teamId: teamId!, projectId: projectId! };
     const sandboxes: Sandboxes = vercelSandboxes({
       clock: systemClock,
+      scope: CHECK_SCOPE,
       credentials,
       fetch: rec.fetch,
     });
@@ -379,7 +380,12 @@ test.skipIf(!live)(
         sandboxes.exec(at, { cmd: "true", timeoutMs: 10_000 }),
       );
       rec.step("pinned_after_stop_uncached");
-      const cold = vercelSandboxes({ clock: systemClock, credentials, fetch: rec.fetch });
+      const cold = vercelSandboxes({
+        clock: systemClock,
+        scope: CHECK_SCOPE,
+        credentials,
+        fetch: rec.fetch,
+      });
       found.execAfterStopUncached = await outcome(() =>
         cold.exec(at, { cmd: "true", timeoutMs: 10_000 }),
       );

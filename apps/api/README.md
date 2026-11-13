@@ -1,7 +1,8 @@
 # @ponzu/api
 
 The HTTP API of Ponzu Cloud: one Hono app, served as one Vercel function on the Node runtime
-in `iad1`, at `api.ponzu.design`. The architecture it implements is
+in `iad1`, at `api-dev.ponzu.design` for dev and `api.ponzu.design` for production. The
+architecture it implements is
 [docs/cloud.md](../../docs/cloud.md).
 
 ```sh
@@ -198,7 +199,7 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
    floating promise where it can tell there is one. Work that must happen even if the
    instance dies or the work fails is a job: record it in `jobs` held by the request, run it
    with `runJob` in the background, and add its kind to `HANDLERS` in `jobs/run.ts`; the
-   cron (`GET /v1/cron/minute`, every minute on production) runs it again after a failure,
+   cron (`GET /v1/cron/minute`, every minute on dev and production) runs it again after a failure,
    or once the request's lock runs out. The GitHub webhook is the model.
 
 5. **Errors.** Throw `new ApiError(status, code, message, { details?, cause? })`. Every error
@@ -341,51 +342,102 @@ saves the session to `PONZU_SESSION_FILE` (see the top of `scripts/dev-signin.ts
 
 ## Deploying
 
-**`api.ponzu.design` is the head of `cloud`, and merging is how it gets there.** On every
-push to `cloud`, [deploy-api.yml](../../.github/workflows/deploy-api.yml)'s `dev` job applies
-the pending migrations to the Neon `dev` branch, deploys to the ponzu-api project's Production
-target, and checks that `/v1/health` answers `dev` with the commit, its image and every
-migration applied. Its `production` job does the same for ponzu-api-prod and the Neon default
-branch, only on a push to `main`, with the founder's approval (docs/production.md). Nobody
-runs `vercel deploy --prod` from a checkout: the API the apps are built against would become
-whichever branch deployed last. And nobody applies a migration
-by hand: it reaches the shared database when it merges, so write it to work with the code
-that is already deployed.
+The API is one Vercel project, `ponzu-api`, with two environments
+([docs/production.md](../../docs/production.md)):
 
-The workflow runs once the repository variable `API_DEPLOY` is `true`. It reads the variables
-`VERCEL_TEAM_ID`, `VERCEL_API_PROJECT_ID` and `NEON_PROJECT_ID`, and the secrets `VERCEL_TOKEN`
-(one that can deploy to the `ponzu-api` project) and `NEON_API_KEY`. Until then, whoever
-merges into `cloud` runs the workflow's two commands by hand, from the merged head.
+- **Dev** is the project's custom environment `dev`, at `https://api-dev.ponzu.design`. It is
+  the head of `main`, and merging is how it gets there.
+- **Production** is the project's Production target, at `https://api.ponzu.design`. It serves
+  the released apps (Mac 2.0.0, iPhone 1.0.0) and is deployed only from `main`.
+- **Preview** is for throwaway builds of a branch.
 
-To see a branch built and running on Vercel, deploy a preview, at the repository root
-(`VERCEL_ORG_ID` is the team id, `VERCEL_PROJECT_ID` the `ponzu-api` project's):
+On a push to `main`, [deploy-api.yml](../../.github/workflows/deploy-api.yml)'s `dev` job
+applies the pending migrations to the Neon `dev` branch, deploys with
+`vercel deploy --environment dev`, and checks that `https://api-dev.ponzu.design/v1/health`
+answers `dev` with the commit, its image and every migration applied. Its `production` job,
+on the same push, under its own variable and the founder's approval, snapshots and migrates the Neon default branch, deploys with
+`--prod --skip-domain`, checks the new deployment, promotes it to `api.ponzu.design`, and checks
+that the minute's schedule is active (docs/production.md, "The production deploy, staged").
+Nobody deploys a branch or a checkout with `--prod`: the API the apps are built against would
+become whichever branch deployed last. And nobody applies a migration by hand: it reaches the
+shared database when it merges, so write it to work with the code that is already deployed.
+
+Each job is off until its own repository variable is `true`: `API_DEPLOY` for dev and
+`API_DEPLOY_PRODUCTION` for production. Neither is set today, so a push deploys nothing, and the
+orchestrator runs the steps by hand from `main`'s merged head. For dev: the migration
+(`bun apps/api/scripts/neon.ts dev --direct` into `db:migrate`, as the job does), then, at the
+repository root (`VERCEL_ORG_ID` is the team id, `VERCEL_PROJECT_ID` the `ponzu-api`
+project's):
 
 ```sh
-bunx vercel@latest deploy --yes --env VERCEL_GIT_COMMIT_SHA="$(git rev-parse HEAD)" \
-  --env PONZU_ENVIRONMENT=preview --env PONZU_API_URL=https://api.ponzu.design
+bunx vercel@65.14.0 deploy --environment dev --yes --env VERCEL_GIT_COMMIT_SHA="$(git rev-parse HEAD)"
+bun scripts/ci/health.ts --env dev --commit "$(git rev-parse HEAD)"
+```
+
+A dev deploy is never `--prod` and never `--environment production`. Production by hand is the
+orchestrator's alone, from `main`, after dev has taken the same commit: the production job's
+snapshot and migration of the default branch, then `deploy --prod`, then
+`bun scripts/ci/health.ts --env production --commit <sha>`.
+
+**`vercel promote`, `vercel rollback` and `vercel alias set` belong to the production runbook
+alone.** Promoting a deployment that is not a production build makes a new production
+deployment from it, with production's variables, and gives it `api.ponzu.design`
+([vercel promote](https://vercel.com/docs/cli/promote)), so promoting a dev deployment would put
+dev's build on production. Dev is taken back by deploying the older commit again with
+`--environment dev`: check it out, and run the commands above.
+
+To see a branch built and running on Vercel, deploy a preview, at the repository root:
+
+```sh
+bunx vercel@65.14.0 deploy --yes --env VERCEL_GIT_COMMIT_SHA="$(git rev-parse HEAD)" \
+  --env PONZU_ENVIRONMENT=preview --env PONZU_API_URL=https://api-dev.ponzu.design
 ```
 
 On Vercel, `PONZU_ENVIRONMENT` and `PONZU_API_URL` are required: a deployment without either
 stops at boot naming it (`EnvError`), rather than letting its runners call production's
-address. The project's Production target sets them (`dev` and its own address); a preview
-takes them from the Preview target, or from the command above. A preview shares dev's database,
-so its runners call dev's address: `https://api.ponzu.design` today, and
-`https://api-dev.ponzu.design` once production takes that domain, when the command above
-changes with it. `/v1/health` answers which
-environment a deployment is, its commit, the runner image and bundle it ships, and whether the
-database's applied migrations equal the journal it was built with (`degraded` at 200 when they
-do not).
+address. It also stops when `PONZU_ENVIRONMENT` disagrees with the Vercel environment it runs in,
+which Vercel sets as `VERCEL_TARGET_ENV`: `production` belongs on the Production target only,
+`preview` on Preview, and `dev` on the `dev` environment, so dev's values deployed with `--prod`
+or production's on dev never start. An unset `VERCEL_TARGET_ENV` is logged and allowed, in
+every environment, until a deployment's log has shown that Vercel sets it (production serves
+people, so the guard does not bet its uptime on the docs). Every boot logs one
+`environment_pair` line with both names and whether they agree. The `dev` environment sets the two variables (`dev` and
+`https://api-dev.ponzu.design`); a preview takes them from the Preview target, or from the
+command above. A preview whose `PONZU_ENVIRONMENT` says `dev` (or anything but `preview`)
+never starts, so pass `--env PONZU_ENVIRONMENT=preview` as above. A preview shares dev's
+database, so its runners call dev's address. `/v1/health` answers which environment a
+deployment is, its commit, the runner image and bundle it ships, and whether the database's
+applied migrations equal the journal it was built with (`degraded` at 200 when they do not).
 
 A preview runs against the same `dev` database with the same secrets, so it does not get a
 migration its branch adds; for that, `bun test` and CI's Postgres job are the check.
 
-**Every deployment holds the live secrets**, so only production's own domains are public. The
-project has Vercel Authentication on (Standard Protection): a preview, and the unique URL of
-every production deployment, old ones included, opens only for someone signed in to the team.
-Keep it on. Vercel deletes a superseded deployment after 30 days (the project's retention
-policy); after a fix for something exploitable, delete the deployments that came before it
-at once (`bunx vercel@latest remove <deployment url>`). Before cutover, Preview gets its own
-database, secrets and vault key.
+**Which secrets each environment holds.** The project's variables are set per environment, as
+sensitive values:
+
+- The `dev` environment holds dev's: the Neon `dev` branch, WorkOS staging, the `ponzu-dev`
+  App, dev's vault key and cron secret, and the rest of dev's list, plus its own
+  `PONZU_ENVIRONMENT=dev` and `PONZU_API_URL=https://api-dev.ponzu.design`.
+- The Preview target holds dev's values too, since a preview is dev's database and secrets.
+- The Production target holds production's own values and nobody else's (docs/production.md,
+  "Env and secrets").
+
+On GitHub, the environment `dev` (only `main` may use it) is to hold dev's `VERCEL_TOKEN`, and
+the environment `production` (only `main`, with the founder's approval) holds
+`VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET` and `NEON_API_KEY`. Both jobs
+read the variables `VERCEL_TEAM_ID`, `VERCEL_API_PROJECT_ID` and `NEON_PROJECT_ID`; dev's
+migration reads the repository's `NEON_API_KEY`. Neither GitHub environment exists yet
+(docs/production.md, "Turning on the deploy workflow").
+
+**Every deployment holds live secrets**, so only the two API domains are public. The project
+keeps Vercel Authentication on its deployments (the legacy Standard Protection,
+`prod_deployment_urls_and_all_previews`): a preview, a dev deployment's own URL, and the unique
+URL of every production deployment, old ones included, open only for someone signed in to the
+team. That setting protects a custom environment's domain too, so `api-dev.ponzu.design` is
+public through a Deployment Protection Exception for that one domain, and the project's setting
+is unchanged. Keep both. Vercel deletes a superseded deployment after 30 days (the project's
+retention policy); after a fix for something exploitable, delete the deployments that came
+before it at once (`bunx vercel@65.14.0 remove <deployment url>`).
 
 The project's Root Directory is `apps/api`; [vercel.json](vercel.json) does the rest, and
 `engines.node` in `package.json` is the Node version Vercel serves on and CI loads the bundle
@@ -408,22 +460,56 @@ the start); a wake that has to wait longer leaves the rest to the job's next att
 longer than the default, switch to
 `VERCEL_EXPERIMENTAL_BACKENDS=1`, which honours `maxDuration`.
 
-The environment variables live on the Vercel project, for Production and Preview, as
-sensitive values. `GITHUB_APP_PRIVATE_KEY` is the PEM as it is, many lines. Until cutover
-`DATABASE_URL` is the pooled URL of the Neon `dev` branch in both. At cutover, turn off
-scale-to-zero on the production database's endpoint: a waking database eats into those ten
-seconds.
+The environment variables live on the Vercel project, per environment, as sensitive values.
+`GITHUB_APP_PRIVATE_KEY` is the PEM as it is, many lines. `DATABASE_URL` is the pooled URL of
+the Neon `dev` branch in `dev` and Preview, and the default branch's on the Production target. No
+entry may cover the Production target and another environment (docs/production.md, "Env and
+secrets"). Scale-to-zero is to be off on the production database's endpoint (`infra/neon.json`;
+`scripts/prod/check.ts` reads it): a waking database eats into those ten seconds.
 
 `GITHUB_WEBHOOK_SECRET` is the secret the App's webhook is signed with, so it changes in two
-places at once: set the new value on the project, then point the App at it with
-`bun scripts/github-webhook.ts configure` (which also sets the URL). Deliveries in between fail
+places at once: set the new value in that environment, then point the App at it with
+`bun scripts/github-webhook.ts configure --env dev` (or `--env production`; it also sets the
+URL, from that environment's `apiUrl` in `infra/environments.json`). Deliveries in between fail
 their signature check; once the deploy is live, `bun scripts/github-webhook.ts redeliver` sends
 them again. GitHub never retries a failed delivery by itself. One the API answered 202 is a job
 by then, and the cron retries its work.
 
-`CRON_SECRET` is what Vercel sends as the bearer of each cron request (`crons` in
-[vercel.json](vercel.json)); Vercel reads that exact name from the project. Crons run on
-production only, so a preview never runs its jobs again by itself.
+`CRON_SECRET` is what Vercel sends as the bearer of each run of the minute's schedule; Vercel
+reads that exact name from the deployment that is current in the environment, so dev's schedule
+sends dev's value and production's sends production's, and a new value is sent only once a
+deploy makes it current ([Handling scheduled runs](https://vercel.com/docs/schedules/handle-runs)).
+
+**Schedules.** The minute is a Vercel Schedule, `minute` in [vercel.json](vercel.json): a GET
+on `/v1/cron/minute` every minute, with Vercel's one-minute jitter. `vercel.json` also still
+carries the legacy `crons` entry, which Vercel runs only on the Production target: it is how
+production's minute ran before the schedule, and it stays until the schedule has been seen
+firing in production, so production never goes a minute without a run. While both are on,
+production runs the route twice a minute, which the steps allow; the project's **Disable Cron
+Jobs** switch then turns the cron off without a deploy, and turning it back on is the way back
+(docs/production.md, "The minute"). Dev never ran the legacy cron. Vercel keeps a separate copy
+of a static schedule for production and for each custom environment. Production's starts
+active on its first deploy. In the `dev` environment a new schedule starts inactive, and once enabled it stays
+as it was set across later deploys ([Managing Schedules](https://vercel.com/docs/schedules/manage)),
+so it is enabled once, by hand. Every `vercel schedules` command reads production unless told
+otherwise, so always spell out `--environment dev`:
+
+```sh
+bunx vercel@65.14.0 schedules list --environment dev                     # minute: active or inactive
+bunx vercel@65.14.0 schedules enable minute --environment dev            # once, after dev's first deploy
+bunx vercel@65.14.0 schedules invoke minute --environment dev            # one run now, whatever its state
+bunx vercel@65.14.0 schedules executions list minute --environment dev   # what each run answered
+```
+
+A preview never runs the minute. A Preview branch's schedule copy starts inactive (Vercel does
+not document the starting state of the copy kept for a person's own CLI deployments, so do not
+count on it), and the route itself answers
+`{ steps: {} }` and logs `cron_skipped` on `PONZU_ENVIRONMENT=preview`, since a preview shares
+dev's database and dev's minute already does that work. Each run records when it ran (one row
+in `jobs`, `cron/heartbeat.ts`); `/v1/health` reports it as `cron.lastRanAt`, and the
+selfcheck's `cron_fresh` fails when it is five minutes old (`stale`) or missing (`never_ran`).
+The run's time is the scheduler's `ce-vssscheduledat` when that is within two minutes of the
+clock, so a run that starts late in its minute still does that minute's steps.
 
 **After a deploy, ask the selfcheck.** `GET /v1/cron/selfcheck` takes the same bearer and
 answers every check of the deployment's dependencies and settings, each `ok` or not with a
@@ -431,7 +517,7 @@ fixed word saying why ([src/ops/selfcheck.ts](src/ops/selfcheck.ts)). Read the s
 the shell without printing it, then:
 
 ```sh
-curl -s -H "authorization: Bearer $CRON_SECRET" https://api.ponzu.design/v1/cron/selfcheck
+curl -s -H "authorization: Bearer $CRON_SECRET" https://api-dev.ponzu.design/v1/cron/selfcheck
 ```
 
 The minute's cron runs the same checks at minute 7 of every hour and raises each failure to

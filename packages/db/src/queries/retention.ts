@@ -1,5 +1,6 @@
 import { type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
+import { HEARTBEAT_KIND } from "./jobs.ts";
 import { queryJson, timeParam } from "./json.ts";
 
 /*
@@ -12,7 +13,8 @@ import { queryJson, timeParam } from "./json.ts";
  *   outcome within minutes;
  * - a finished `jobs` row (completed, or failed for good) is never claimed again, and its key no
  *   longer stands in the way of a new job. `recordOnce`'s marks are finished jobs too; every one
- *   names a window of an hour or less, so a month-old mark guards nothing;
+ *   names a window of an hour or less, so a month-old mark guards nothing. A heartbeat
+ *   (`recordHeartbeat`) is the one finished job kept: one row per name, holding only a time;
  * - a `webhook_deliveries` row lets a redelivery be recognised. GitHub offers a delivery for
  *   redelivery for three days and Stripe retries one for up to three, so a month is well past
  *   the last copy that could arrive.
@@ -53,7 +55,7 @@ export interface SweptRows {
  * at exactly its boundary and deleted after it.
  *
  * Runs may overlap: two deletes that pick the same rows each delete what the other has not.
- * Waiting and running jobs are never touched, whatever their age.
+ * Waiting and running jobs are never touched, whatever their age, and nor are heartbeats.
  */
 export async function sweepOldRows(
   db: Db,
@@ -84,8 +86,9 @@ export async function sweepOldRows(
       delete from jobs
        where id in (
          select id from jobs
-          where completed_at < ${jobCutoff}::timestamptz
-             or failed_at < ${jobCutoff}::timestamptz
+          where (completed_at < ${jobCutoff}::timestamptz
+                 or failed_at < ${jobCutoff}::timestamptz)
+            and kind <> ${HEARTBEAT_KIND}
           limit ${limit}
        )
       returning 1`,

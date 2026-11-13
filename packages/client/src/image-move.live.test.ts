@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createApi } from "./api.ts";
 import { createLive } from "./live/live.ts";
 import { createSession } from "./session.ts";
-import { sessionFile } from "./testing/session-file.ts";
+import { liveApiUrl, sessionFile } from "./testing/session-file.ts";
 
 /*
  * A canvas recreated on a new sandbox image, for real, opt in, in two runs with a deploy between
@@ -67,7 +67,8 @@ describe.skipIf(!ready)("a canvas recreated on a new image, for real", () => {
   test(
     `${phase}: the conversation and the work in progress come over to the new sandbox`,
     async () => {
-      const apiUrl = env.PONZU_API_URL ?? "https://api.ponzu.design";
+      // Dev's unless PONZU_API_URL names another: never production's by default.
+      const apiUrl = liveApiUrl(env);
       const session = createSession({
         apiUrl,
         workosClientId: env.WORKOS_CLIENT_ID!,

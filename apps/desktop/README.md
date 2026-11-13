@@ -40,8 +40,9 @@ PONZU_SMOKE=1 "out/dev/mac-arm64/Ponzu Dev.app/Contents/MacOS/Ponzu Dev"
 ```
 
 The cloud app for a Mac that still uses Ponzu 1.x, until the cloud release replaces it: the
-release in everything (fuses, no debugging port, no session file, the CSP, sign-in,
-`api.ponzu.design`) but who it is (`src/packaging.ts`, `src/config.ts`). It is "Ponzu Dev",
+release in everything (fuses, no debugging port, no session file, the CSP, sign-in) but who
+it is (`src/packaging.ts`, `src/config.ts`) and where it talks: always dev, at
+`api-dev.ponzu.design`, from infra/environments.json. It is "Ponzu Dev",
 bundle id `design.ponzu.app.dev`, with its own icon (the release's on a grey tile, `bun run
 icons:dev`), data folder (`~/Library/Application Support/Ponzu Dev`), keychain item ("Ponzu Dev
 Safe Storage") and single-instance lock, and it takes `ponzu-dev://` links, declared in its

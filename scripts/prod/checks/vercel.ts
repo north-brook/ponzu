@@ -1,7 +1,8 @@
 /**
  * The Vercel project an environment's API runs in: its settings, the names (never the values) of
  * its environment variables on each target, its domains, the firewall that is live on it, and
- * the cron of its latest production deployment. Read through `@vercel/sdk` with a read-only
+ * whether its latest production deployment still carries a legacy cron (the minute is a Vercel
+ * Schedule now, declared in apps/api/vercel.json). Read through `@vercel/sdk` with a read-only
  * token; nothing is decrypted (`getProject` answers sensitive values empty, and every value is
  * dropped as soon as it is read).
  *
@@ -20,6 +21,7 @@ import { ResponseValidationError } from "@vercel/sdk/models/responsevalidationer
 import { VercelError } from "@vercel/sdk/models/vercelerror.js";
 import { z } from "zod";
 import { FORBIDDEN_ENV, OPTIONAL_ENV, REQUIRED_ENV } from "../../../apps/api/src/env.ts";
+import { VERCEL_CLI } from "../../ci/schedules.ts";
 import type { EnvironmentName, Firewall } from "../desired.ts";
 import { type CheckContext, type Finding, findings, list, type Section } from "./finding.ts";
 
@@ -69,12 +71,13 @@ export interface VercelDesired {
   framework: string;
   domains: string[];
   /**
-   * Production's domains that dev's apiDomains still list: they stay on dev's project until
-   * founder step D11 moves them, so on production their absence is pending, not a failure.
+   * Production's domains that dev's apiDomains still list. In one project (docs/production.md ›
+   * One project, two environments) none should be, so this is empty unless infra is mid-change.
    */
   notYetMoved: string[];
   firewall: Firewall;
-  crons: { path: string; schedule: string }[];
+  /** apps/api/vercel.json's `schedules`, by name. */
+  schedules: { name: string; path: string; schedule: string }[];
   required: readonly string[];
   optional: readonly string[];
   forbidden: readonly string[];
@@ -84,7 +87,7 @@ export interface VercelDesired {
 const VercelJson = z.object({
   framework: z.string(),
   regions: z.array(z.string()).min(1),
-  crons: z.array(z.object({ path: z.string(), schedule: z.string() })),
+  schedules: z.record(z.string(), z.object({ path: z.string(), schedule: z.string() })),
 });
 
 /** apps/api/vercel.json: what every deployment of the API is built with. */
@@ -118,7 +121,11 @@ export function vercelDesired(ctx: Pick<CheckContext, "env" | "infra">): VercelD
         ? environment.apiDomains.filter((d) => environments.dev.apiDomains.includes(d))
         : [],
     firewall: ctx.infra["vercel-firewall.json"],
-    crons: vercelJson.crons,
+    schedules: Object.entries(vercelJson.schedules).map(([name, { path, schedule }]) => ({
+      name,
+      path,
+      schedule,
+    })),
     required: REQUIRED_ENV,
     optional: OPTIONAL_ENV,
     forbidden: FORBIDDEN_ENV,
@@ -508,18 +515,18 @@ export function evaluateVercel(desired: VercelDesired, observed: VercelObserved)
     (domain) => !observed.domains.some((d) => d.name === domain && d.verified && !d.redirect),
   );
   const domainsSay = `${list(missing)} ${missing.length === 1 ? "is" : "are"} not a verified domain of ${name}`;
-  const domainsFix = "docs/production.md › The founder's steps (D11 moves the domains)";
+  const domainsFix = `Vercel › ${name} › Settings › Domains (docs/production.md › Vercel \`ponzu-api\`)`;
   out.push(
     !missing.length
       ? f.ok("domains", `${list(desired.domains)} on ${name}, verified`)
       : missing.every((domain) => desired.notYetMoved.includes(domain))
-        ? f.pending("domains", `${domainsSay}: dev still serves it until D11`, domainsFix)
+        ? f.pending("domains", `${domainsSay}: infra still lists it as dev's too`, domainsFix)
         : f.fail("domains", domainsSay, domainsFix),
   );
 
   out.push(...evaluateFirewall(desired, observed.firewall));
 
-  // The latest production deployment, and the cron it carries.
+  // The latest production deployment, and whether a legacy cron is still on.
   const production = project.production;
   out.push(
     production?.readyState === "READY"
@@ -535,27 +542,34 @@ export function evaluateVercel(desired: VercelDesired, observed: VercelObserved)
           "the deploy-api workflow, or docs/production.md › The founder's steps (D15)",
         ),
   );
+  // The minute is a Schedule (apps/api/vercel.json's `schedules`). vercel.json still carries the
+  // legacy cron so production never went a minute without a run while it moved; once the schedule
+  // has fired in production the project's Disable Cron Jobs switch turns the cron off, and until
+  // then this line fails, because both run the minute.
   const crons = project.crons;
-  const want = desired.crons.map(cronLine).sort();
-  const have = (crons?.definitions ?? []).map(cronLine).sort();
+  const legacy = crons && !crons.disabled ? crons.definitions.map(cronLine).sort() : [];
   out.push(
-    crons && !crons.disabled && same(want, have)
-      ? f.ok("crons", `the production deployment runs ${list(want)}`)
-      : f.fail(
+    legacy.length
+      ? f.fail(
           "crons",
-          !crons || !have.length
-            ? "the production deployment has no cron, so sandboxes never sleep and jobs never retry"
-            : crons.disabled
-              ? "crons are disabled on the project"
-              : `the production deployment runs ${list(have)}, not ${list(want)}`,
-          "deploy apps/api again: its vercel.json carries the cron",
-        ),
+          `a legacy cron is still on (${list(legacy)}), beside the minute schedule`,
+          `Vercel › ${name} › Settings › Cron Jobs: Disable Cron Jobs, once the minute schedule has fired in production (docs/production.md › The minute)`,
+        )
+      : f.ok("crons", "no legacy cron is on"),
+  );
+  // Whether a schedule is active is per environment and is read through Vercel's Schedules API,
+  // which this check does not call yet: the deploy job's scripts/ci/schedules.ts checks it.
+  out.push(
+    f.manual(
+      "schedules",
+      `vercel.json declares ${list(desired.schedules.map((s) => `${s.name}: ${s.path} (${s.schedule})`))}; that it is active in ${env} is not read here`,
+      `bunx ${VERCEL_CLI} schedules list${env === "production" ? "" : ` --environment ${env}`} (docs/production.md › The minute)`,
+    ),
   );
   return out;
 }
 
 const cronLine = (cron: { path: string; schedule: string }) => `${cron.path} (${cron.schedule})`;
-const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 function evaluateEnv(desired: VercelDesired, name: string, env: ObservedEnv[]): Finding[] {
   const out: Finding[] = [];
@@ -607,18 +621,22 @@ function evaluateEnv(desired: VercelDesired, name: string, env: ObservedEnv[]): 
   );
 
   if (desired.env === "production") {
-    // A preview of the production project must fail at boot rather than run with its secrets.
-    const elsewhere = ["preview", "development"]
-      .map((target) => ({ target, keys: [...on(target)].sort() }))
-      .filter((entry) => entry.keys.length);
+    // One project holds both environments, so Preview may hold dev's values in its own entries.
+    // What must never happen is one entry covering Production and another target: one entry is
+    // one value, so that would be a production secret on a preview. (Entries scoped to the `dev`
+    // custom environment are not read here yet: docs/production.md › Checking production.)
+    const shared = env
+      .filter((e) => e.targets.includes("production") && e.targets.some((t) => t !== "production"))
+      .map((e) => `${e.key} (${list(e.targets.filter((t) => t !== "production").sort())})`)
+      .sort();
     out.push(
-      elsewhere.length
+      shared.length
         ? f.fail(
             "env.preview",
-            elsewhere.map((e) => `the ${e.target} target holds ${list(e.keys)}`).join("; "),
-            `remove them: ${varsFix}`,
+            `${list(shared)} ${shared.length === 1 ? "is one entry" : "are entries"} shared by the Production target and another`,
+            `give Production its own entry: ${varsFix}`,
           )
-        : f.ok("env.preview", "the Preview and Development targets are empty"),
+        : f.ok("env.preview", "no entry on the Production target covers another target"),
     );
     const readable = env
       .filter((e) => e.targets.includes("production") && desired.secrets.includes(e.key))

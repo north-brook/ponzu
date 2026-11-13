@@ -5,5 +5,13 @@
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
   "regions": ["iad1"],
-  "crons": [{ "path": "/v1/cron/minute", "schedule": "* * * * *" }]
+  "crons": [{ "path": "/v1/cron/minute", "schedule": "* * * * *" }],
+  "schedules": {
+    "minute": {
+      "schedule": "* * * * *",
+      "path": "/v1/cron/minute",
+      "requestMethod": "GET",
+      "jitter": 1
+    }
+  }
 }

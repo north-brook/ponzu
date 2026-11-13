@@ -8,7 +8,10 @@ import {
   enqueueJob,
   failAbandonedJobs,
   failJob,
+  HEARTBEAT_KIND,
   hasWaitingJob,
+  readHeartbeat,
+  recordHeartbeat,
   recordOnce,
 } from "./jobs.ts";
 
@@ -204,6 +207,31 @@ test("something recorded once is refused after, at once or later, and is never c
   expect(await claimJobs(db, { worker: "cron" })).toEqual([]);
   expect(await failAbandonedJobs(db)).toEqual([]);
   expect(await enqueueJob(db, slot)).not.toBeNull();
+});
+
+test("a heartbeat is one row, moved forward and never back, and is never claimed", async () => {
+  expect(await readHeartbeat(db, "cron.minute")).toBeNull();
+  const at = new Date("2026-11-12T10:00:00.000Z");
+  await recordHeartbeat(db, "cron.minute", at);
+  expect(await readHeartbeat(db, "cron.minute")).toEqual(at);
+
+  const later = new Date(at.getTime() + 60_000);
+  // A late or overlapping caller with an older time, at the same moment as a newer one.
+  await Promise.all([
+    recordHeartbeat(db, "cron.minute", later),
+    recordHeartbeat(db, "cron.minute", new Date(at.getTime() - 60_000)),
+  ]);
+  expect(await readHeartbeat(db, "cron.minute")).toEqual(later);
+  await recordHeartbeat(db, "cron.minute", at);
+  expect(await readHeartbeat(db, "cron.minute")).toEqual(later);
+
+  // Another name is its own; the rows are finished jobs nobody runs.
+  expect(await readHeartbeat(db, "other")).toBeNull();
+  const rows = await db.select().from(jobs);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ kind: HEARTBEAT_KIND, key: "cron.minute", completedAt: later });
+  expect(await claimJobs(db, { worker: "cron" })).toEqual([]);
+  expect(await failAbandonedJobs(db)).toEqual([]);
 });
 
 test("a job waits, by its payload, until it is finished", async () => {

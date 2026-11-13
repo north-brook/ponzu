@@ -10,7 +10,7 @@ One PostHog project per environment.
 
 | Environment | Reports to |
 |---|---|
-| dev (`api.ponzu.design` today, the Ponzu Dev app) | **Ponzu Dev** |
+| dev (`api-dev.ponzu.design`, the Ponzu Dev app) | **Ponzu Dev** |
 | production, after cutover | **Ponzu** |
 
 The pre-cloud product's project, and the telemetry in `apps/mobile` and `apps/web` that reports

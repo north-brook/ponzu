@@ -1,7 +1,9 @@
 /**
  * The shape of the workflows that deploy, read from the YAML itself: which event runs which
- * job of deploy-api.yml, that production can never run from `cloud`, a dispatch or a pull
- * request, and that only the production job may reach the Neon default branch; that uptime.yml
+ * job of deploy-api.yml, that neither job runs from any branch but `main` or for a pull request,
+ * that production never runs from a dispatch, that dev deploys to its custom environment and only the production job uses `--prod`,
+ * `promote` and production's own token, that both name the one Vercel project, and that only the
+ * production job may reach the Neon default branch; that uptime.yml
  * checks only from main; and that release.yml's auto-merge step, run as it is written against a
  * fake gh, never auto-merges a release PR that scripts/release-hold.ts holds. actionlint (the
  * Workflows job in ci.yml) checks the rest of every file.
@@ -18,6 +20,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { loadInfraFile } from "../prod/desired.ts";
+import { apiUrlOf } from "./health.ts";
+import { VERCEL_CLI } from "./schedules.ts";
 
 const DIR = join(import.meta.dir, "../../.github/workflows");
 
@@ -159,9 +164,10 @@ describe("the expression reader", () => {
 });
 
 describe("deploy-api.yml", () => {
-  test("is started by a push to cloud or main, or a dispatch; never a pull request", () => {
+  test("is started by a push to main, or a dispatch; never a pull request or another branch", () => {
     expect(Object.keys(deploy.on).sort()).toEqual(["push", "workflow_dispatch"]);
-    expect(deploy.on.push).toEqual({ branches: ["cloud", "main"] });
+    // `cloud` is retired: main is the branch everything merges into.
+    expect(deploy.on.push).toEqual({ branches: ["main"] });
     // A dispatch takes no inputs, so it cannot ask for a target.
     expect(deploy.on.workflow_dispatch).toBeNull();
     expect(Object.keys(deploy.jobs).sort()).toEqual(["dev", "production"]);
@@ -174,13 +180,30 @@ describe("deploy-api.yml", () => {
     ]);
   });
 
-  test("dev runs only on cloud, by a push or a dispatch, with API_DEPLOY on", () => {
+  test("dev runs only on main, by a push or a dispatch, with API_DEPLOY on", () => {
     expect(runsIn(deploy.jobs.dev as Job)).toEqual([
-      'push refs/heads/cloud {"API_DEPLOY":"true"}',
-      'push refs/heads/cloud {"API_DEPLOY":"true","API_DEPLOY_PRODUCTION":"true"}',
-      'workflow_dispatch refs/heads/cloud {"API_DEPLOY":"true"}',
-      'workflow_dispatch refs/heads/cloud {"API_DEPLOY":"true","API_DEPLOY_PRODUCTION":"true"}',
+      'push refs/heads/main {"API_DEPLOY":"true"}',
+      'push refs/heads/main {"API_DEPLOY":"true","API_DEPLOY_PRODUCTION":"true"}',
+      'workflow_dispatch refs/heads/main {"API_DEPLOY":"true"}',
+      'workflow_dispatch refs/heads/main {"API_DEPLOY":"true","API_DEPLOY_PRODUCTION":"true"}',
     ]);
+  });
+
+  test("each job is switched on by its own variable alone", () => {
+    // API_DEPLOY never deploys production, and API_DEPLOY_PRODUCTION never deploys dev.
+    const push = { event_name: "push", ref: "refs/heads/main" };
+    const dev = deploy.jobs.dev as Job;
+    const production = deploy.jobs.production as Job;
+    expect(evaluate(dev.if ?? "true", { github: push, vars: { API_DEPLOY: "true" } })).toBe(true);
+    expect(evaluate(production.if ?? "true", { github: push, vars: { API_DEPLOY: "true" } })).toBe(
+      false,
+    );
+    expect(
+      evaluate(dev.if ?? "true", { github: push, vars: { API_DEPLOY_PRODUCTION: "true" } }),
+    ).toBe(false);
+    expect(
+      evaluate(production.if ?? "true", { github: push, vars: { API_DEPLOY_PRODUCTION: "true" } }),
+    ).toBe(true);
   });
 
   test("with today's variables (neither set) nothing deploys", () => {
@@ -190,48 +213,181 @@ describe("deploy-api.yml", () => {
           expect(evaluate(job.if ?? "true", { github: { event_name, ref }, vars: {} })).toBe(false);
   });
 
-  test("production waits for the founder in the production environment, one run at a time", () => {
+  test("each job runs in its own GitHub environment, one run at a time, on the one project", () => {
     const production = deploy.jobs.production as Job;
     expect(production.environment).toBe("production");
     expect(production.concurrency).toEqual({
       group: "deploy-api-production",
       "cancel-in-progress": false,
     });
-    expect(production.env?.VERCEL_PROJECT_ID).toBe(expr("vars.VERCEL_API_PROD_PROJECT_ID"));
     const dev = deploy.jobs.dev as Job;
-    expect(dev.environment).toBeUndefined();
+    expect(dev.environment).toBe("dev");
     expect(dev.concurrency).toEqual({ group: "deploy-api-dev", "cancel-in-progress": false });
-    expect(dev.env?.VERCEL_PROJECT_ID).toBe(expr("vars.VERCEL_API_PROJECT_ID"));
+    // One Vercel project: both jobs name the same one, and the team.
+    for (const job of [dev, production])
+      expect(job.env).toEqual({
+        VERCEL_ORG_ID: expr("vars.VERCEL_TEAM_ID"),
+        VERCEL_PROJECT_ID: expr("vars.VERCEL_API_PROJECT_ID"),
+      });
     expect(deploy.concurrency).toBeUndefined();
   });
 
-  test("production copies the image, snapshots, migrates, deploys and checks, in that order", () => {
+  test("repo.json's environments are limited to their branch, and hold each job's secrets", () => {
+    const repo = loadInfraFile("github/repo.json");
+    expect(repo.environments.dev).toEqual({
+      branches: ["main"],
+      requiredReviewers: false,
+      secrets: ["VERCEL_TOKEN"],
+    });
+    expect(repo.environments.production).toEqual({
+      branches: ["main"],
+      requiredReviewers: true,
+      secrets: ["NEON_API_KEY", "VERCEL_AUTOMATION_BYPASS_SECRET", "VERCEL_TOKEN_PRODUCTION"],
+    });
+    // Only the production environment holds production's token and the bypass, never the
+    // repository, so no other workflow or job can read them.
+    for (const name of ["VERCEL_TOKEN_PRODUCTION", "VERCEL_AUTOMATION_BYPASS_SECRET"]) {
+      expect(repo.secrets).not.toContain(name);
+      expect(repo.environments.dev?.secrets).not.toContain(name);
+    }
+  });
+
+  /** Every `run:` of a job, and every expression its steps' env reads, as text. */
+  const text = (job: string) =>
+    (deploy.jobs[job] as Job).steps
+      .flatMap((s) => [s.run ?? "", ...Object.values(s.env ?? {})])
+      .join("\n");
+
+  test("dev deploys to its custom environment and never with --prod or a production tool", () => {
+    const dev = text("dev");
+    expect(dev).toContain(
+      'bunx vercel@65.14.0 deploy --environment dev --yes --env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA"',
+    );
+    expect(dev).not.toContain("--prod");
+    expect(dev).not.toMatch(/(--environment|--target|-e)[ =]production/);
+    for (const tool of ["promote", "rollback", "alias", "redeploy", "--skip-domain"])
+      expect(dev).not.toContain(tool);
+    expect(dev).toContain(expr("secrets.VERCEL_TOKEN"));
+    expect(dev).not.toContain("VERCEL_TOKEN_PRODUCTION");
+    expect(dev).not.toContain("VERCEL_AUTOMATION_BYPASS_SECRET");
+  });
+
+  test("only the production job uses --prod and promote, with production's own token", () => {
+    const uses: string[] = [];
+    for (const file of readdirSync(DIR).filter((f) => f.endsWith(".yml"))) {
+      for (const [id, job] of Object.entries(load(file).jobs ?? {}))
+        for (const step of job.steps ?? []) {
+          const run = step.run ?? "";
+          // `--target` is the CLI's deprecated spelling of `--environment`, and `-e` its
+          // shorthand on redeploy.
+          if (/\bvercel\b[^\n]*(--prod\b|(--environment|--target|-e)[ =]production\b)/.test(run))
+            uses.push(`${file} ${id} prod`);
+          if (/\bvercel\b[^\n]* (promote|rollback|alias|redeploy)\b/.test(run))
+            uses.push(`${file} ${id} ${/ (promote|rollback|alias|redeploy)\b/.exec(run)?.[1]}`);
+          // `vercel curl`, `vercel httpstat` and `deploy --verify` make a project-wide
+          // Protection Bypass for Automation secret when the project has none (read from the
+          // CLI 65.14.0's code; docs/production.md, "The production deploy, staged").
+          expect(run).not.toMatch(/\bvercel\b[^\n]*( curl\b| httpstat\b|--verify\b)/);
+        }
+    }
+    expect(uses).toEqual(["deploy-api.yml production prod", "deploy-api.yml production promote"]);
+    // Every step of production that runs the CLI holds VERCEL_TOKEN_PRODUCTION, never the
+    // repository-wide VERCEL_TOKEN (an environment secret only overrides one of the same name).
+    for (const step of (deploy.jobs.production as Job).steps) {
+      if (step.env?.VERCEL_TOKEN !== undefined)
+        expect(step.env.VERCEL_TOKEN).toBe(expr("secrets.VERCEL_TOKEN_PRODUCTION"));
+      if (/\bvercel@|schedules\.ts/.test(step.run ?? ""))
+        expect(step.env?.VERCEL_TOKEN).toBe(expr("secrets.VERCEL_TOKEN_PRODUCTION"));
+    }
+    expect(text("production")).not.toContain(expr("secrets.VERCEL_TOKEN"));
+    // No other workflow reads production's token or the bypass.
+    for (const file of readdirSync(DIR).filter((f) => f.endsWith(".yml"))) {
+      const yml = readFileSync(join(DIR, file), "utf8");
+      const mentions =
+        yml.split("secrets.VERCEL_TOKEN_PRODUCTION").length -
+        1 +
+        yml.split("secrets.VERCEL_AUTOMATION_BYPASS_SECRET").length -
+        1;
+      if (file !== "deploy-api.yml") expect(mentions).toBe(0);
+    }
+  });
+
+  test("production checks its token first, then snapshots, migrates, stages, checks, promotes", () => {
     const steps = (deploy.jobs.production as Job).steps;
     const index = (match: (s: Step) => boolean, what: string) => {
       const i = steps.findIndex(match);
       if (i < 0) throw new Error(`No step: ${what}`);
       return i;
     };
-    const copy = index((s) => !!s.run?.includes("docker buildx imagetools create"), "copy");
-    const ready = index(
-      (s) => !!s.uses?.startsWith("vercel/vcr-action/wait-for-optimized-image@"),
-      "ready",
-    );
+    const token = index((s) => !!s.run?.includes('[ -n "$VERCEL_TOKEN" ]'), "token");
     const snapshot = index((s) => !!s.run?.includes("neon.ts --default --snapshot"), "snapshot");
     const migrate = index((s) => !!s.run?.includes("bun run db:migrate"), "migrate");
-    const vercel = index((s) => !!s.run?.includes("vercel@65.14.0 deploy --prod"), "deploy");
+    const stage = index(
+      (s) => !!s.run?.includes("bunx vercel@65.14.0 deploy --prod --skip-domain --yes"),
+      "stage",
+    );
+    const staged = index((s) => !!s.run?.includes('--url "$URL" --bypass'), "staged health");
+    const promote = index(
+      (s) => s.run === 'bunx vercel@65.14.0 promote "$URL" --json --timeout 5m',
+      "promote",
+    );
     const health = index(
-      (s) => !!s.run?.includes("scripts/ci/health.ts --env production"),
+      (s) => s.run === 'bun scripts/ci/health.ts --env production --commit "$GITHUB_SHA"',
       "health",
     );
-    expect([copy, ready, snapshot, migrate, vercel, health]).toEqual(
-      [copy, ready, snapshot, migrate, vercel, health].toSorted((a, b) => a - b),
+    const minute = index(
+      (s) =>
+        s.run ===
+        "bun scripts/ci/schedules.ts --environment production --name minute --path /v1/cron/minute",
+      "minute",
     );
+    const order = [token, snapshot, migrate, stage, staged, promote, health, minute];
+    expect(order).toEqual(order.toSorted((a, b) => a - b));
     expect(steps[migrate]?.run).toContain("neon.ts --default --direct");
-    // The copy is by digest, from current.json, never a rebuild.
-    expect(steps.some((s) => /docker (buildx )?build\b(?! imagetools)/.test(s.run ?? ""))).toBe(
-      false,
+    // The deploy never takes the domain itself: every --prod is staged.
+    const prod = steps.filter((s) => /--prod\b/.test(s.run ?? ""));
+    expect(prod.length).toBe(1);
+    expect(prod[0]?.run).toContain("--skip-domain");
+    // Promote never confirms itself: with no --yes, it refuses a deployment that is not a
+    // production build instead of rebuilding it with production's variables.
+    expect(steps[promote]?.run).not.toContain("--yes");
+    // The staged check and the promotion read the deployment the staged deploy printed.
+    expect(steps[staged]?.env).toEqual({
+      URL: expr("steps.deploy.outputs.url"),
+      VERCEL_AUTOMATION_BYPASS_SECRET: expr("secrets.VERCEL_AUTOMATION_BYPASS_SECRET"),
+    });
+    expect(steps[promote]?.env?.URL).toBe(expr("steps.deploy.outputs.url"));
+    expect((steps[stage] as Step & { id?: string }).id).toBe("deploy");
+  });
+
+  test("one project, one registry: no image copy, no registry login, no OIDC token", () => {
+    for (const job of Object.values(deploy.jobs)) {
+      expect(job.permissions?.["id-token"]).toBeUndefined();
+      for (const step of job.steps) {
+        expect(step.uses ?? "").not.toContain("vcr-action");
+        expect(step.uses ?? "").not.toContain("setup-buildx");
+        expect(step.run ?? "").not.toContain("imagetools");
+      }
+    }
+    expect(JSON.stringify(deploy)).not.toContain("id-token");
+  });
+
+  test("VERCEL_API_PROD_PROJECT_ID appears nowhere", () => {
+    const hits = Bun.spawnSync(
+      [
+        "git",
+        "grep",
+        "-l",
+        "VERCEL_API_PROD_PROJECT_ID",
+        "--",
+        ".",
+        ":!scripts/ci/workflows.test.ts",
+      ],
+      { cwd: join(import.meta.dir, "../..") },
     );
+    // git grep exits 1 when nothing matches.
+    expect(hits.stdout.toString()).toBe("");
+    expect(hits.exitCode).toBe(1);
   });
 
   test("only the production job's Neon steps set the default branch's guard", () => {
@@ -259,12 +415,25 @@ describe("deploy-api.yml", () => {
     expect(devMigrate?.run).not.toContain("--default");
   });
 
-  test("the health checks assert their own environment", () => {
+  test("the health checks assert their own environment, dev's at api-dev.ponzu.design", () => {
     const run = (job: string) => (deploy.jobs[job] as Job).steps.map((s) => s.run ?? "").join("\n");
+    // Dev's address comes from infra/environments.json, which names api-dev; the frozen
+    // deployment at api.ponzu.design would otherwise answer an older commit.
     expect(run("dev")).toContain('bun scripts/ci/health.ts --env dev --commit "$GITHUB_SHA"');
+    expect(run("dev")).not.toContain("--url");
+    expect(apiUrlOf("dev")).toBe("https://api-dev.ponzu.design");
     expect(run("production")).toContain(
       'bun scripts/ci/health.ts --env production --commit "$GITHUB_SHA"',
     );
+  });
+
+  test("every deploy step pins the CLI that schedules.ts runs", () => {
+    const versions = new Set<string>();
+    for (const job of Object.values(deploy.jobs))
+      for (const step of job.steps)
+        for (const m of (step.run ?? "").matchAll(/\bvercel@([\d.]+)/g))
+          versions.add(m[1] as string);
+    expect([...versions]).toEqual([VERCEL_CLI.split("@")[1] as string]);
   });
 });
 

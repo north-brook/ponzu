@@ -13,6 +13,10 @@
  * - it counts the sessions started (resumes).
  *
  * Time is a FakeClock: the options say how long creates, resumes and stops take.
+ *
+ * It models the whole project, as Vercel is: it holds every scope's names and refuses none.
+ * Where it stands in for a deployment's module, wrap it in `scopedSandboxes(fake, scope)`, as
+ * `vercelSandboxes` wraps itself (the API's test app does), so tests run through the guard.
  */
 
 import type { FakeClock } from "./clock.ts";

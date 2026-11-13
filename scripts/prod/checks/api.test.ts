@@ -25,11 +25,19 @@ const statuses = (findings: Finding[]) => findings.map((f) => `${f.status} ${f.i
 const byId = (findings: Finding[]) => Object.fromEntries(findings.map((f) => [f.id, f]));
 const MAIN = "a".repeat(40);
 
-/** infra as it will be once founder step D11 has moved dev to api-dev. */
+/** infra after launch: dev on api-dev, and the release build pointed at production. */
 function movedInfra() {
   const copy = structuredClone(infra);
+  copy["environments.json"].release = "production";
   copy["environments.json"].environments.dev.apiUrl = "https://api-dev.ponzu.design";
   copy["environments.json"].environments.dev.apiDomains = ["api-dev.ponzu.design"];
+  return copy;
+}
+
+/** After launch's infra change, but while api.ponzu.design still serves dev's frozen deployment. */
+function movedNotCutOver() {
+  const copy = movedInfra();
+  copy["environments.json"].release = "dev";
   return copy;
 }
 
@@ -63,7 +71,40 @@ describe("evaluate on dev's recorded answers", () => {
       // Dev still holds two values sealed under its old vault key.
       ["fail", "api.selfcheck.vault_old_keys", "old_keys (2)"],
       ["ok", "api.selfcheck.posthog", "configured"],
+      // Recorded before the selfcheck had cron_fresh: an API that does not answer it fails.
+      [
+        "fail",
+        "api.selfcheck.cron_fresh",
+        "the selfcheck did not answer it; is the deployment older than this check?",
+      ],
     ]);
+  });
+
+  test("cron_fresh never_ran is pending on production before its first run, and fails on dev", () => {
+    const answer = selfcheck();
+    answer.checks.push({ id: "cron_fresh", ok: false, detail: "never_ran" });
+    const prodHealth = { ...health(), environment: "production", commit: MAIN };
+    const prod = evaluateApi(apiDesired({ env: "production", infra: movedInfra() }), {
+      health: read(prodHealth),
+      selfcheck: read(answer),
+      main: { sha: MAIN },
+    });
+    expect(byId(prod)["api.selfcheck.cron_fresh"]?.status).toBe("pending");
+    const dev = evaluateApi(apiDesired({ env: "dev", infra }), {
+      health: read(health()),
+      selfcheck: read(answer),
+      main: null,
+    });
+    expect(byId(dev)["api.selfcheck.cron_fresh"]?.status).toBe("fail");
+    const stale = structuredClone(answer);
+    const fresh = stale.checks.find((c) => c.id === "cron_fresh");
+    if (fresh) fresh.detail = "stale";
+    const prodStale = evaluateApi(apiDesired({ env: "production", infra: movedInfra() }), {
+      health: read(prodHealth),
+      selfcheck: read(stale),
+      main: { sha: MAIN },
+    });
+    expect(byId(prodStale)["api.selfcheck.cron_fresh"]?.status).toBe("fail");
   });
 
   test("the ids it expects are the API's own", () => {
@@ -84,9 +125,30 @@ describe("production before and after its domain is its own", () => {
         area: "api",
         status: "pending",
         says: "https://api.ponzu.design answers as dev, not production: the address still belongs to dev",
-        fix: "docs/production.md › The founder's steps (D11 moves the domain, D15 deploys)",
+        fix: "docs/production.md › The founder's steps (D15 deploys production)",
       },
     ]);
+  });
+
+  test("in one project, answering as dev is pending until the cutover, then fails", () => {
+    const observed: ApiObserved = {
+      health: read(health()),
+      selfcheck: { withheld: "health did not say production" },
+      main: { sha: MAIN },
+    };
+    const before = evaluateApi(
+      apiDesired({ env: "production", infra: movedNotCutOver() }),
+      observed,
+    );
+    expect(statuses(before)).toEqual(["pending api.health"]);
+    // After the cutover it fails, even if infra still lists the address for dev too.
+    const sharedAfter = structuredClone(infra);
+    sharedAfter["environments.json"].release = "production";
+    expect(sharedAfter["environments.json"].environments.dev.apiDomains).toContain(
+      "api.ponzu.design",
+    );
+    const after = evaluateApi(apiDesired({ env: "production", infra: sharedAfter }), observed);
+    expect(statuses(after)).toEqual(["fail api.health"]);
   });
 
   test("once the domain is production's alone, answering as dev fails", () => {

@@ -6,9 +6,12 @@
  *
  * It asks production's `/v1/health` up to three times, 15 seconds apart. Production is up when
  * one answer is a 200 with `status` ok, `database` true and `environment` production (so a
- * domain pointing at the wrong project is down). It does not compare the commit, the image or
- * the migration count with this checkout, because a merged commit waits for the founder's
- * approval before it deploys; the deploy's own health check (scripts/ci/health.ts) does that.
+ * domain pointing at the wrong deployment is down), and its `cron.lastRanAt` is under five
+ * minutes old (`cronProblemOf`): a minute that stopped, or never started, leaves sandboxes
+ * awake and failed jobs unretried, which is an outage though every request still answers. It
+ * does not compare the commit, the image or the migration count with this checkout, because a
+ * merged commit waits for the founder's approval before it deploys; the deploy's own health
+ * check (scripts/ci/health.ts) does that.
  *
  * Production is down after two failing runs in a row, and then one open issue labelled
  * `production-down` says so:
@@ -40,10 +43,47 @@ export interface Probe {
   attempts?: number;
   intervalMs?: number;
   timeoutMs?: number;
+  /** The clock a `cron.lastRanAt` is judged against. */
+  now?: () => number;
+}
+
+/**
+ * How old production's last minute may be and production still be up: the API's own
+ * `CRON_FRESH_MS` (apps/api/src/cron/heartbeat.ts; uptime.test.ts holds the two equal). This
+ * file installs nothing, so it cannot import it.
+ */
+export const CRON_STALE_MS = 5 * 60_000;
+
+/**
+ * What is wrong with the minute, from health's `cron.lastRanAt`, or null when nothing is.
+ *
+ * - A time five or more minutes before `now` is down: the scheduler stopped, or the schedule
+ *   was turned off, and nothing puts sandboxes to sleep or retries a failed job.
+ * - null is down too. It means the minute has never run on production's database (or health
+ *   could not read when it did). Right after the very first production deploy that is expected
+ *   for a minute or two, and the grace for it is the rule that one failing run opens no issue
+ *   (`check`): the next run, five minutes later, finds the first run recorded. Counting null as
+ *   up would instead pass, forever, a production whose minute never starts: a schedule that is
+ *   active but whose runs are all refused (a `CRON_SECRET` that does not match, a route that
+ *   protection hides) records nothing, so nothing else would notice; the selfcheck that would
+ *   say `never_ran` runs hourly inside that same minute.
+ * - An answer without `cron`, or with something else in it, is down: production always has it.
+ */
+export function cronProblemOf(health: Record<string, unknown>, now: number): string | null {
+  const cron = health.cron as { lastRanAt?: unknown } | undefined;
+  if (!cron || typeof cron !== "object" || !("lastRanAt" in cron))
+    return "the answer has no cron.lastRanAt";
+  if (cron.lastRanAt === null)
+    return "cron.lastRanAt is null: the minute has never run on production's database";
+  const at = typeof cron.lastRanAt === "string" ? Date.parse(cron.lastRanAt) : Number.NaN;
+  if (!Number.isFinite(at)) return `cron.lastRanAt is ${JSON.stringify(cron.lastRanAt)}`;
+  const age = now - at;
+  if (age < CRON_STALE_MS) return null;
+  return `the minute last ran ${Math.floor(age / 60_000)} minutes ago (${cron.lastRanAt})`;
 }
 
 /** Why one health answer is not production being up, or null when it is. */
-export function problemOf(status: number, body: unknown): string | null {
+export function problemOf(status: number, body: unknown, now: number = Date.now()): string | null {
   const health = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const problems: string[] = [];
   if (status !== 200) problems.push(`HTTP ${status}`);
@@ -51,6 +91,12 @@ export function problemOf(status: number, body: unknown): string | null {
   if (health.database !== true) problems.push("the database cannot be reached");
   if (health.environment !== "production")
     problems.push(`environment is ${JSON.stringify(health.environment ?? null)}, not production`);
+  // Only judged on an answer that is otherwise production's: a page that is not health at all
+  // already says why.
+  if (problems.length === 0) {
+    const cron = cronProblemOf(health, now);
+    if (cron) problems.push(cron);
+  }
   return problems.length ? problems.join("; ") : null;
 }
 
@@ -63,6 +109,7 @@ export async function probe(
     attempts = 3,
     intervalMs = 15_000,
     timeoutMs = 10_000,
+    now = Date.now,
   }: Probe = {},
 ): Promise<{ up: boolean; problem: string | null }> {
   let problem: string | null = null;
@@ -72,7 +119,7 @@ export async function probe(
         signal: AbortSignal.timeout(timeoutMs),
       });
       const body = await response.json().catch(() => null);
-      problem = problemOf(response.status, body);
+      problem = problemOf(response.status, body, now());
     } catch (error) {
       problem = `no answer: ${error instanceof Error ? error.message : String(error)}`;
     }

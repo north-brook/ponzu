@@ -1,5 +1,6 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { createDb, EXPECTED_MIGRATIONS, SEALED_COLUMNS } from "@ponzu/db";
+import { CRON_FRESH_MS, recordCronRun } from "../cron/heartbeat.ts";
 import { selfcheckStep } from "../cron/steps/selfcheck.ts";
 import type { Deps } from "../deps/index.ts";
 import {
@@ -34,6 +35,10 @@ beforeAll(async () => {
   t = await createTestApp();
 });
 afterAll(() => t.close());
+
+// The minute ran just now, as it has on any deployment whose scheduler works; the tests of
+// `cron_fresh` below say otherwise where they need to.
+beforeEach(() => recordCronRun(t.db, new Date(t.clock.now())));
 
 /** Every answer and log line a test made, to search for secrets at the end. */
 const said: string[] = [];
@@ -253,12 +258,50 @@ test("a database that cannot be reached fails every check that reads it", async 
     database: { ok: false, detail: "unreachable" },
     migrations: { ok: false, detail: "unreachable" },
     vault_old_keys: { ok: false, detail: "unreachable" },
+    cron_fresh: { ok: false, detail: "unreachable" },
   });
+});
+
+test("cron_fresh: a database the minute never reached has never_ran, and fails", async () => {
+  // Production between its first deploy and its first run, a local database, or a preview's
+  // database if dev's minute had never run: nothing is sweeping it.
+  const fresh = await createTestApp();
+  try {
+    expect(await runSelfcheck(fresh.deps, ["cron_fresh"])).toEqual([
+      { id: "cron_fresh", ok: false, detail: "never_ran" },
+    ]);
+    // Its first run, through the route, makes it ok.
+    const response = await fresh.app.request("/v1/cron/minute", {
+      headers: { authorization: `Bearer ${TEST_CRON_SECRET}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await runSelfcheck(fresh.deps, ["cron_fresh"])).toEqual([
+      { id: "cron_fresh", ok: true, detail: "ok" },
+    ]);
+  } finally {
+    await fresh.close();
+  }
+});
+
+test("cron_fresh: ok until the last run is five minutes old, then stale, which is what a schedule turned off reads", async () => {
+  expect(CRON_FRESH_MS).toBe(5 * 60_000);
+  const fresh = async () => (await runSelfcheck(t.deps, ["cron_fresh"]))[0];
+  expect(await fresh()).toEqual({ id: "cron_fresh", ok: true, detail: "ok" });
+  t.clock.advance(CRON_FRESH_MS - 1);
+  expect(await fresh()).toEqual({ id: "cron_fresh", ok: true, detail: "ok" });
+  // Nothing ran: the scheduler stopped, or someone disabled the schedule on purpose. Either way
+  // nothing sleeps sandboxes or retries jobs on this database, so it fails.
+  t.clock.advance(1);
+  expect(await fresh()).toEqual({ id: "cron_fresh", ok: false, detail: "stale" });
+  // The next run makes it ok again.
+  await recordCronRun(t.db, new Date(t.clock.now()));
+  expect(await fresh()).toEqual({ id: "cron_fresh", ok: true, detail: "ok" });
 });
 
 test("migrations are behind when the database lacks one, and ahead when it has an extra", async () => {
   const own = await createTestApp();
   try {
+    await recordCronRun(own.db, new Date(own.clock.now()));
     const [applied] = await query<{ n: number }>(
       own,
       "select count(*)::int as n from drizzle.__drizzle_migrations",

@@ -8,7 +8,7 @@
 //   WORKOS_CLIENT_ID     the WorkOS environment's client id (public; the app ships it)
 //   PONZU_SESSION_FILE   where to save { api, user, access_token, refresh_token, saved_at };
 //                        written readable by its owner only
-//   PONZU_API_URL        the API to exchange with (default https://api.ponzu.design)
+//   PONZU_API_URL        the API to exchange with (default dev's, https://api-dev.ponzu.design)
 //
 // It prints the URL to open and one line when it is done. Tokens and the code are never
 // printed. The access token lasts five minutes; whoever uses the file refreshes with WorkOS
@@ -20,7 +20,7 @@ const WAIT_MS = 10 * 60_000;
 
 const clientId = process.env.WORKOS_CLIENT_ID;
 const sessionFile = process.env.PONZU_SESSION_FILE;
-const api = (process.env.PONZU_API_URL ?? "https://api.ponzu.design").replace(/\/+$/, "");
+const api = (process.env.PONZU_API_URL ?? "https://api-dev.ponzu.design").replace(/\/+$/, "");
 if (!clientId || !sessionFile) {
   console.error("Set WORKOS_CLIENT_ID and PONZU_SESSION_FILE. See the top of this file.");
   process.exit(2);

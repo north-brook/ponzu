@@ -114,6 +114,36 @@ describe("assert-release", () => {
     }
   });
 
+  test("both environments share the one Vercel project, and that alone is no problem", () => {
+    const file = loadEnvironments();
+    expect(file.environments.dev.vercelProject).toBe("ponzu-api");
+    expect(file.environments.production.vercelProject).toBe("ponzu-api");
+    expect(file.environments.dev.vercelEnvironment).toBe("dev");
+    expect(file.environments.production.vercelEnvironment).toBe("production");
+    const filled = loadEnvironments(FILLED);
+    expect(filled.environments.dev.vercelProject).toBe(
+      filled.environments.production.vercelProject,
+    );
+    expect(releaseProblems(filled, "production")).toEqual([]);
+  });
+
+  test("the same project and the same Vercel environment in both fails, either way round", () => {
+    // The schema already keeps dev off `production`; this is the rule underneath it, for any
+    // pair: one project and one environment would be one deployment target for both.
+    const file = loadEnvironments(FILLED);
+    file.environments.production.vercelEnvironment = "dev";
+    expect(releaseProblems(file, "production")).toEqual([
+      "production deploys to ponzu-api's dev environment, as dev does, so a release would reach dev",
+    ]);
+    const devSide: Environments = { ...file, release: "dev" };
+    expect(releaseProblems(devSide, "dev")).toContain(
+      "dev deploys to ponzu-api's dev environment, as production does, so a release would reach production",
+    );
+    // Another project with the same environment name is a different target.
+    file.environments.production.vercelProject = "ponzu-api-other";
+    expect(releaseProblems(file, "production")).toEqual([]);
+  });
+
   test("production may not go without a private bucket", () => {
     const file = read(FILLED);
     file.environments.production.r2.private = false;
@@ -255,6 +285,23 @@ describe("environments.json's schema", () => {
       },
       (f) => {
         f.environments.production.workosClientId = "";
+      },
+      // Production deploys only to the Production target, and dev never does.
+      (f) => {
+        f.environments.production.vercelEnvironment = "dev";
+      },
+      (f) => {
+        f.environments.dev.vercelEnvironment = "production";
+      },
+      // Preview is throwaway builds, never an environment's home.
+      (f) => {
+        f.environments.dev.vercelEnvironment = "preview";
+      },
+      (f) => {
+        f.environments.dev.vercelEnvironment = "Dev";
+      },
+      (f) => {
+        delete f.environments.dev.vercelEnvironment;
       },
     ];
     for (const mutate of cases) {

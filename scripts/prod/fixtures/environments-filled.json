@@ -8,6 +8,7 @@
       "assetsUrl": "https://assets-dev.ponzu.cloud",
       "githubAppSlug": "ponzu-dev",
       "vercelProject": "ponzu-api",
+      "vercelEnvironment": "dev",
       "neonBranch": "dev",
       "r2": {
         "assets": "example-dev-assets",
@@ -28,7 +29,8 @@
       "realtimeUrl": "https://ep-example-000000.rt.c-16.us-east-1.aws.neon.tech",
       "assetsUrl": "https://assets.ponzu.cloud",
       "githubAppSlug": "ponzu",
-      "vercelProject": "ponzu-api-prod",
+      "vercelProject": "ponzu-api",
+      "vercelEnvironment": "production",
       "neonBranch": "@default",
       "r2": {
         "assets": "ponzu-assets",

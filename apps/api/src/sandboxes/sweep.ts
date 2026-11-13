@@ -457,8 +457,12 @@ export async function reconcile(deps: JobDeps): Promise<number> {
   const listed = await deps.sandboxes.list(scopePrefix(scope));
   const named = listed.flatMap((info) => {
     const parsed = parseSandboxName(info.name);
-    // Checked again here: another deployment's sandbox is never this one's to touch.
-    return parsed && parsed.scope === scope ? [{ info, parsed }] : [];
+    if (parsed && parsed.scope === scope) return [{ info, parsed }];
+    // Checked again here, behind the sandbox module's own guard, so that a listing someone
+    // widens later still never stops or removes another deployment's sandbox. Said, not
+    // skipped quietly: it means the listing is wrong.
+    deps.log.error("sandbox_out_of_scope", { name: info.name, scope });
+    return [];
   });
   const owners = await getSandboxOwners(deps.db, {
     canvasIds: named.filter((n) => n.parsed.kind === "canvas").map((n) => n.parsed.id),

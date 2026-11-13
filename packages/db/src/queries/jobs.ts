@@ -106,6 +106,48 @@ export async function recordOnce(db: Db, { kind, key }: { kind: string; key: str
   return row !== undefined;
 }
 
+/** The kind of `recordHeartbeat`'s rows, which the retention sweep leaves alone. */
+export const HEARTBEAT_KIND = "heartbeat";
+
+/** The id of `recordHeartbeat`'s row for `name`. */
+export function heartbeatId(name: string): string {
+  return `beat:${name}`;
+}
+
+/**
+ * Record that `name` happened at `at`: one row per name, moved forward and never back, so a
+ * late or overlapping caller with an older time leaves a newer one in place. For "when did the
+ * minute's cron last run" (`apps/api/src/cron/heartbeat.ts`), read back with `readHeartbeat`.
+ *
+ * The row is a job recorded already completed, like `recordOnce`'s, so nothing claims or runs
+ * it, and it needs no table of its own. Unlike those marks it is kept however old it is
+ * (`retention.ts` skips its kind): one row per name, holding a time and nothing personal, and a
+ * heartbeat that went quiet a month ago must still read as quiet, not as never.
+ */
+export async function recordHeartbeat(db: Db, name: string, at: Date): Promise<void> {
+  await run(
+    db
+      .insert(jobs)
+      .values({ id: heartbeatId(name), kind: HEARTBEAT_KIND, key: name, completedAt: at })
+      .onConflictDoUpdate({
+        target: jobs.id,
+        set: { completedAt: sql`greatest(${jobs.completedAt}, excluded.completed_at)` },
+      }),
+  );
+}
+
+/** When `name` last happened (`recordHeartbeat`), or null when it never has. */
+export async function readHeartbeat(db: Db, name: string): Promise<Date | null> {
+  const [row] = await run(
+    db
+      .select({ at: jobs.completedAt })
+      .from(jobs)
+      .where(eq(jobs.id, heartbeatId(name)))
+      .limit(1),
+  );
+  return row?.at ?? null;
+}
+
 /**
  * Take up to `limit` jobs that are due and that nobody holds, or whose holder's lock has run
  * out, and count an attempt on each, oldest first. A job out of attempts is not taken;

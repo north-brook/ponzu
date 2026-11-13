@@ -81,7 +81,7 @@ describe("--deep", () => {
         id: "deep.sandbox",
         area: "deep",
         status: "pending",
-        says: "ponzu-api-prod does not exist, so no sandbox can be made in it",
+        says: "ponzu-api does not exist, so no sandbox can be made in it",
         fix: "founder step D2",
       },
     ]);

@@ -27,6 +27,7 @@ import {
   type Up,
   type VercelCredentials,
 } from "./sandboxes.ts";
+import { scopedSandboxes } from "./scope.ts";
 
 /** Every canvas and check runs in Washington, next to the API's functions. */
 const REGION = "iad1";
@@ -49,14 +50,21 @@ type Op = "up" | "status" | "list" | "remove" | Pinned;
 export interface VercelSandboxesOptions {
   /** Kept in the contract for callers; the SDK keeps its own time for retries. */
   clock: Clock;
+  /**
+   * Whose names this module may touch: a database's 12-hex scope (`pz-<scope>-`), or
+   * CHECK_SCOPE for the live suites' and image checks' `pz-test-` names. Required: there is no
+   * module that reaches every sandbox in the project (scope.ts says why).
+   */
+  scope: string;
   /** All three or none. None: OIDC (inside a request, or work kept by one). */
   credentials?: VercelCredentials;
   /** Tests and the live suite's recorder. The SDK wraps it in its own retries. */
   fetch?: typeof globalThis.fetch;
 }
 
+/** Vercel's sandboxes, only those under `options.scope`: every other name is `out_of_scope`. */
 export function vercelSandboxes(options: VercelSandboxesOptions): Sandboxes {
-  return new VercelSandboxes(options);
+  return scopedSandboxes(new VercelSandboxes(options), options.scope);
 }
 
 class VercelSandboxes implements Sandboxes {

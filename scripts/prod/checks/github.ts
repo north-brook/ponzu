@@ -45,7 +45,12 @@ const RULESET_FILES = [
 ] as const;
 
 /** Environments that do not exist until a founder step makes them. */
-const ENVIRONMENT_PENDING: Record<string, string> = { production: "founder step D12" };
+const ENVIRONMENT_PENDING: Record<string, string> = {
+  // Made by hand, limited to `cloud`, before API_DEPLOY is set to true; otherwise the first dev
+  // deploy makes it with no branch limit (docs/production.md › The GitHub repository).
+  dev: "make it, limited to cloud, before setting API_DEPLOY=true",
+  production: "founder step D12",
+};
 
 // --- desired ------------------------------------------------------------------------------------
 
@@ -738,7 +743,7 @@ function evaluateEnvironment(
     ? f.fail(id, `the environment "${name}": ${list(wrong)}`, where)
     : f.ok(
         id,
-        `the environment "${name}" deploys only from ${list(want.branches)}${want.requiredReviewers ? ", with a required reviewer," : ""} and holds its ${want.secrets.length} secrets`,
+        `the environment "${name}" deploys only from ${list(want.branches)}${want.requiredReviewers ? ", with a required reviewer," : ""} and holds its ${want.secrets.length} secret${want.secrets.length === 1 ? "" : "s"}`,
       );
 }
 

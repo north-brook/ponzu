@@ -7,5 +7,7 @@
 import { createApp } from "./create-app.ts";
 import { createDeps } from "./deps/index.ts";
 import { readEnv } from "./env.ts";
+import { consoleSink, createLogger } from "./http/log.ts";
 
-export default createApp(createDeps(readEnv(process.env)));
+// The boot logs one `environment_pair` line: what PONZU_ENVIRONMENT says and what Vercel says.
+export default createApp(createDeps(readEnv(process.env, { log: createLogger(consoleSink) })));

@@ -262,6 +262,20 @@ export function publicEnv(
 export const PUBLIC_ELSEWHERE =
   "R2_ACCOUNT_ID and PONZU_POSTHOG_KEY are set by hand (founder steps D4 and D8); GITHUB_APP_CLIENT_ID and GITHUB_APP_BOT_USER_ID by github-app.ts (D6)";
 
+/**
+ * Why `vercel-env` and `secrets generate` refuse this environment, or `null` when they may run.
+ * They write the Production target only. In one project (docs/production.md › One project, two
+ * environments) dev's entries belong to its custom environment `dev`, which they do not write yet,
+ * so for dev they would put dev's values on production. They refuse rather than do that.
+ */
+export function productionTargetOnly(ctx: Pick<ApplyContext, "env" | "infra">): string | null {
+  if (ctx.env === "production") return null;
+  const environments = ctx.infra["environments.json"].environments;
+  const mine = environments[ctx.env];
+  if (mine.vercelProject !== environments.production.vercelProject) return null;
+  return `${ctx.env} shares ${mine.vercelProject} with production, and this area writes only the Production target; dev's variables live on its custom environment, which apply does not write yet (docs/production.md › Checking production)`;
+}
+
 export async function planEnv(ctx: ApplyContext): Promise<Plan> {
   return (await planEnvDetailed(ctx)).plan;
 }
@@ -270,6 +284,8 @@ export async function planEnv(ctx: ApplyContext): Promise<Plan> {
 async function planEnvDetailed(
   ctx: ApplyContext,
 ): Promise<{ plan: Plan; unproven: string[]; missing?: string }> {
+  const refused = productionTargetOnly(ctx);
+  if (refused) return { plan: { notes: [refused], changes: [] }, unproven: [], missing: refused };
   const desired = vercelDesired(ctx);
   if (!desired.project) {
     const missing = `infra names no Vercel project for ${ctx.env} yet`;
@@ -417,6 +433,8 @@ export function secretNames(args: readonly string[]): string[] {
 
 export async function planSecrets(ctx: ApplyContext): Promise<Plan> {
   const names = secretNames(ctx.args);
+  const refused = productionTargetOnly(ctx);
+  if (refused) return { notes: [refused], changes: [] };
   const desired = vercelDesired(ctx);
   if (!desired.project) {
     return { notes: [`infra names no Vercel project for ${ctx.env} yet`], changes: [] };

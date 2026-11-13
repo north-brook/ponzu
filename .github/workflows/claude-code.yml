@@ -12,10 +12,11 @@
 #      failed and the release notes, as a draft when anything did not pass, and dispatches CI on
 #      it. Nothing merges it but a person.
 #
-# GitHub runs a schedule only from the default branch, so until cutover makes `cloud` that branch
-# this also runs on every push to `cloud`: a push with nothing new costs one short job. A dispatch
-# can force a rerun (after the setup is added) or pretend an older SDK is pinned, which runs every
-# step and writes the body to the run's summary without opening a pull request.
+# It runs on the daily schedule, which GitHub runs from the default branch, `main`, where every
+# change now merges (it once also ran on each push to the retired `cloud` branch, because a
+# schedule never ran from there). A dispatch can force a rerun (after the setup is added) or
+# pretend an older SDK is pinned, which runs every step and writes the body to the run's summary
+# without opening a pull request.
 #
 # What it needs from a person is in docs/cloud.md, "Setting up the image workflows". Without it
 # the pull request still opens, as a draft, saying which steps could not run and why.
@@ -24,8 +25,6 @@ name: Claude Code
 on:
   schedule:
     - cron: "17 14 * * *"
-  push:
-    branches: [cloud]
   workflow_dispatch:
     inputs:
       force:
@@ -67,7 +66,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      # What CI's pushes save; this job runs on every push to cloud, so it only reads it.
+      # What CI's pushes to main save; this job only reads it.
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.bun/install/cache
