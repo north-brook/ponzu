@@ -343,8 +343,7 @@ something to draw.
 
 A row opens `app/canvas/[id].tsx` (`lib/canvas/open.ts`), and so do links
 and, later, pushes, with `page`, `artboard`, `sheet`, `question`, `thread` and
-`message`. Comments and the chat work (below); the pull request sheet comes
-with its own slice.
+`message`. Comments, the chat and the pull request sheet work (below).
 
 - **The replica is on the React Native side.** `lib/canvas/use-canvas.ts`
   opens a `CloudSource` (`@ponzu/client/canvas`) for the signed-in person,
@@ -374,8 +373,8 @@ with its own slice.
   the pages' native menu, and the floating stack bottom right: the pull
   request (once there is one), Comment, and Chat (the shared `railSignal`: the
   needs-you count, else the turning slice while the agent wakes or works).
-  Chat opens the chat sheet. The pull request sheet isn't built yet, so its
-  button says so when pressed. The needs-you count sits in a yuzu pill on
+  Chat opens the chat sheet, and the pull request its own sheet. The
+  needs-you count sits in a yuzu pill on
   Chat's top-right edge, and Chat's VoiceOver label says it ("Chat, Ponzu has
   2 questions"). A double-tapped board has the
   screen and the chrome steps aside.
@@ -547,6 +546,55 @@ is answerable and what each answer says are the Mac's, from
   own route, and read-only. `rntests/canvas-stack.rntest.tsx` covers the
   count on Chat. `maestro/needs-you.yaml` (seed `needs-you`) runs it on a
   simulator, on spare only.
+
+### The pull request
+
+Once the canvas has a pull request, the top of the floating stack opens its
+sheet (`components/pr-sheet.tsx`, iPhone design §11, board 3.10). So does a
+pull request's line in the chat (which marks the thread read as a swipe
+does), and a link or push with `sheet=pull-request`. It reads
+`GET /v1/canvases/:id/pull-request` through the client's `pullRequest` query,
+which is kept on disk, so a canvas opened again shows its last answer at once.
+It reads again whenever the canvas's head says the pull request moved or the
+agent's turn changed.
+
+- **What it shows.** The state's mark (purple once merged) and the number,
+  Open on GitHub and Close; the title, `branch → base` and what became of it;
+  the description, GitHub's Markdown drawn as the chat draws Ponzu's (links
+  leave only for the web, with Ponzu's own markers taken out as on the Mac,
+  `bodyForTab`); Status, a card of the checks, the reviews and the comments;
+  and the files with their counts. Each row opens a drill-in inside the sheet
+  with a glass Back: every check (failed first, never folded), the reviews,
+  the conversation (read-only: there is no reply field), or a file's unified
+  diff (`components/diff.tsx`), read by the Mac's rules from
+  `@ponzu/client/model` (`diff.ts`, moved there from the studio so both apps
+  read a diff the same way), in mono, scrolling sideways.
+- **The one action.** The foot is what the API's `nextAction` says, read as
+  the Mac's chrome reads it (`lib/pull-request.ts`), in the Mac's words:
+  Ready, Auto-merge, Update branch and Merge go to GitHub as the person;
+  Fix checks and Resolve ask Claude in the chat, in the Mac's words
+  (`agentAsk`), once for a commit ("Asked Claude in the chat."). Auto-merge
+  once on waits on GitHub and says "Merges once the checks pass". Merged,
+  closed or none: no button. Create PR is the Mac's. Held back by the repo's
+  rules with no auto-merge, there is nothing to press and one line: "This
+  needs the Mac to merge past …". On a canvas the person can only look at, or
+  offline, that line is in the button's place.
+- **Merging.** Merge asks first in the system's action sheet, "Merge #412
+  into main?" with Merge and Cancel, and never offers a bypass. It goes out
+  with the commit the sheet showed, so a push while the question is up is
+  refused by the API, not merged. One press at a time: a double tap asks
+  once and merges once. While it is on its way the label stays, the button
+  dims and a spinner takes its icon's place; one that didn't happen says
+  GitHub's reason in one line above it (`prActionError`, or a billing
+  refusal's first sentence and "This canvas waits.").
+- **Proofs.** `bun test apps/mobile/lib/pull-request.test.ts` runs every state
+  over the client's fake GitHub (draft, running, failed, conflicted, behind,
+  held by the rules, merged, read-only), the status rows, the confirm, a
+  double tap, Cancel, a push during the question, and the asks once a
+  commit. `rntests/pull-request.rntest.tsx` renders the canvas screen against
+  the fake for the same states, the drill-ins, a teammate's merge elsewhere,
+  the link and the chat's line. `maestro/pull-request.yaml` (seed
+  `pull-request`) runs it on a simulator, on spare only.
 
 ## Variants
 

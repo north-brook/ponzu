@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BLOCKED, CLAUDE, CREATE, EFFORT_LABELS, NEEDS_YOU, WHERE } from "./copy";
+import { BLOCKED, CLAUDE, CREATE, EFFORT_LABELS, NEEDS_YOU, PR, WHERE } from "./copy";
 
 /*
  * The phone's setup says what the Mac's says. The Mac's words live in its JSX, so this reads
@@ -96,5 +96,22 @@ test("Needs you in the Mac's words", () => {
   };
   for (const [name, said] of Object.entries(words)) {
     expect({ name, found: source.includes(said) }).toEqual({ name, found: true });
+  }
+});
+
+test("the pull request sheet's button and the tab's words in the Mac's", () => {
+  const read = (path: string) =>
+    readFileSync(join(import.meta.dir, "../../..", path), "utf8").replace(/\s+/g, " ");
+  const chrome = read("apps/studio/src/cloud/window/next-action.tsx");
+  for (const [action, label] of Object.entries(PR.actions)) {
+    // As the Mac's table has it: `auto_merge: { label: "Auto-merge", …`.
+    const found = chrome.includes(`${action}: { label: "${label}"`);
+    expect({ action, found }).toEqual({ action, found: true });
+  }
+  const tab = chrome + read("apps/studio/src/cloud/pr-tab/pull-request-view.tsx");
+  for (const [name, said] of Object.entries(PR.mac)) {
+    const found =
+      tab.includes(`"${said}"`) || tab.includes(` ${said} `) || tab.includes(`>${said}<`);
+    expect({ name, found }).toEqual({ name, found: true });
   }
 });

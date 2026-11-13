@@ -71,21 +71,29 @@ describe("the canvas's floating stack", () => {
     expect(screen.getByLabelText("Pull request #412")).toBeTruthy();
   });
 
-  test("Chat opens the chat; the pull request says it comes in the next update", async () => {
+  test("Chat opens the chat, and the pull request its sheet, with no alert in between", async () => {
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     const onChat = jest.fn();
-    await render(Stack(head(), 412, onChat));
+    const onPullRequest = jest.fn();
+    const status = canvasStatus(head(), { status: "ready", doc: null });
+    await render(
+      <CanvasStack
+        bottom={42}
+        right={16}
+        prNumber={412}
+        chat={status.chat}
+        onChat={onChat}
+        onPullRequest={onPullRequest}
+      />,
+    );
     for (const id of ["stack-pr", "stack-chat"]) {
       expect(screen.getByTestId(id).props.accessibilityState).not.toMatchObject({ disabled: true });
     }
     await fireEvent.press(screen.getByTestId("stack-chat"));
     expect(onChat).toHaveBeenCalledTimes(1);
-    expect(alert).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByTestId("stack-pr"));
-    expect(alert).toHaveBeenLastCalledWith(
-      "Pull requests aren't on the iPhone yet. They come in the next update.",
-    );
-    expect(alert).toHaveBeenCalledTimes(1);
+    expect(onPullRequest).toHaveBeenCalledTimes(1);
+    expect(alert).not.toHaveBeenCalled();
     alert.mockRestore();
   });
 

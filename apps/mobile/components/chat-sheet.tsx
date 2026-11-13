@@ -108,6 +108,7 @@ export function ChatSheet({
   onDismiss,
   onOpenComment,
   onOpenLink,
+  onOpenPullRequest,
   top,
   right,
   maxWidth,
@@ -139,6 +140,8 @@ export function ChatSheet({
   onOpenComment: (threadId: string, readSeq: number | null) => void;
   /** A link in a reply was pressed, with the newest seq the thread held, as for a comment. */
   onOpenLink: (url: string, readSeq: number | null) => void;
+  /** A pull request line was pressed: the sheet goes, and the pull request sheet opens. */
+  onOpenPullRequest: (readSeq: number | null) => void;
   top: number;
   right?: number;
   maxWidth?: number;
@@ -279,13 +282,14 @@ export function ChatSheet({
   // as it held. Stable, so the memoized lines don't redraw for them.
   const readSeq = useRef<number | null>(null);
   readSeq.current = readTo(thread.items);
-  const leave = useRef({ onOpenComment, onOpenLink });
-  leave.current = { onOpenComment, onOpenLink };
+  const leave = useRef({ onOpenComment, onOpenLink, onOpenPullRequest });
+  leave.current = { onOpenComment, onOpenLink, onOpenPullRequest };
   const openComment = useCallback(
     (id: string) => leave.current.onOpenComment(id, readSeq.current),
     [],
   );
   const openLink = useCallback((url: string) => leave.current.onOpenLink(url, readSeq.current), []);
+  const openPullRequest = useCallback(() => leave.current.onOpenPullRequest(readSeq.current), []);
 
   const writable = !readOnly;
   // What the agent asks, in the composer's place, once the live rows say anything is open.
@@ -328,7 +332,13 @@ export function ChatSheet({
           );
         }}
         renderItem={({ item: row }) => (
-          <ChatLine row={row} meId={me.id} onOpenComment={openComment} onOpenLink={openLink} />
+          <ChatLine
+            row={row}
+            meId={me.id}
+            onOpenComment={openComment}
+            onOpenLink={openLink}
+            onOpenPullRequest={openPullRequest}
+          />
         )}
         ListEmptyComponent={
           empty || thread.failed ? (
@@ -501,11 +511,13 @@ const ChatLine = memo(function ChatLine({
   meId,
   onOpenComment,
   onOpenLink,
+  onOpenPullRequest,
 }: {
   row: ThreadRow;
   meId: string;
   onOpenComment: (threadId: string) => void;
   onOpenLink: (url: string) => void;
+  onOpenPullRequest: () => void;
 }) {
   const { item } = row;
   switch (item.kind) {
@@ -530,7 +542,7 @@ const ChatLine = memo(function ChatLine({
       // The agent's work is never a line: while a turn runs it is the foot's working line.
       return null;
     case "notice":
-      return <NoticeLine notice={item.payload} meId={meId} />;
+      return <NoticeLine notice={item.payload} meId={meId} onOpenPullRequest={onOpenPullRequest} />;
   }
 });
 
@@ -697,8 +709,19 @@ const AGENT_PR_VERB = {
   merged: "merged",
 } as const;
 
-/** What happened to the run that isn't anyone's words: quiet lines, an error in plain words. */
-function NoticeLine({ notice, meId }: { notice: ThreadNotice; meId: string }) {
+/**
+ * What happened to the run that isn't anyone's words: quiet lines, an error in plain words. A
+ * pull request's line opens the pull request sheet.
+ */
+function NoticeLine({
+  notice,
+  meId,
+  onOpenPullRequest,
+}: {
+  notice: ThreadNotice;
+  meId: string;
+  onOpenPullRequest: () => void;
+}) {
   const { color } = useTheme();
   const quiet = {
     fontFamily: font.sans,
@@ -710,6 +733,21 @@ function NoticeLine({ notice, meId }: { notice: ThreadNotice; meId: string }) {
     <Text testID={testID} style={quiet}>
       {words}
     </Text>
+  );
+  const pullRequest = (words: string) => (
+    <Pressable
+      testID="chat-pull-request"
+      accessibilityRole="button"
+      accessibilityLabel={words}
+      accessibilityHint={CHAT.openPullRequest}
+      hitSlop={6}
+      onPress={() => {
+        tick();
+        onOpenPullRequest();
+      }}
+    >
+      <Text style={{ ...quiet, textDecorationLine: "underline" }}>{words}</Text>
+    </Pressable>
   );
   switch (notice.type) {
     case "error":
@@ -735,10 +773,12 @@ function NoticeLine({ notice, meId }: { notice: ThreadNotice; meId: string }) {
     case "question":
       return said(`Asked: ${notice.text}${notice.answer ? ` → ${notice.answer}` : ""}`);
     case "pull_request":
-      return said(`Pull request #${notice.number} ${PR_VERB[notice.state]}: ${notice.title}`);
+      return pullRequest(
+        `Pull request #${notice.number} ${PR_VERB[notice.state]}: ${notice.title}`,
+      );
     case "pull_request_agent": {
       const as = notice.as ? (notice.as.id === meId ? "you" : who(notice.as, meId)) : null;
-      return said(
+      return pullRequest(
         `Claude ${AGENT_PR_VERB[notice.action]} #${notice.number}${as ? ` as ${as}` : ""}: ${notice.title}`,
       );
     }

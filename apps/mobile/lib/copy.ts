@@ -157,6 +157,8 @@ export const CHAT = {
   remove: (name: string) => `Remove ${name}`,
   /** VoiceOver's name for a comment's picture in the thread, which goes to the pin. */
   openComment: (place: string) => `Open the comment on ${place}`,
+  /** VoiceOver's hint on a pull request's line in the thread. */
+  openPullRequest: "Opens the pull request",
 } as const;
 
 /**
@@ -212,6 +214,67 @@ export const NEEDS_YOU = {
   /** The Chat button, while questions wait. */
   chat: (count: number) =>
     count === 1 ? "Chat, Ponzu has a question" : `Chat, Ponzu has ${count} questions`,
+} as const;
+
+/**
+ * The pull request sheet (components/pr-sheet.tsx, iPhone design §11 and §22). The foot button's
+ * labels are the Mac's chrome's (apps/studio/src/cloud/window/next-action.tsx), and the words its
+ * tab also says are the Mac's tab's (apps/studio/src/cloud/pr-tab/pull-request-view.tsx);
+ * copy.test.ts holds them to it. The rest is the phone's own.
+ */
+export const PR = {
+  /** The foot button, by the API's next action. Create PR is the Mac's (iPhone design §11). */
+  actions: {
+    ready: "Ready",
+    auto_merge: "Auto-merge",
+    auto_merge_on: "Auto-merge on",
+    fix_checks: "Fix checks",
+    resolve: "Resolve",
+    update_branch: "Update branch",
+    merge: "Merge",
+  },
+  /** The Mac's tab and chrome say these too. */
+  mac: {
+    autoMergeOn: "Merges once the checks pass",
+    noChecks: "No checks have reported",
+    noChecksRan: "No checks ran",
+    unreachable: "Couldn't reach GitHub.",
+    retry: "Try again",
+    openOnGithub: "Open on GitHub",
+    checks: "Checks",
+    comments: "Comments",
+    approvals: "Approvals",
+  },
+  /** The merge confirmation, a native action sheet (D13). There is never a bypass. */
+  confirm: (number: number, base: string) => `Merge #${number} into ${base}?`,
+  /** VoiceOver's name for the Merge button: which pull request. */
+  mergeLabel: (number: number) => `Merge #${number}`,
+  cancel: "Cancel",
+  /** Where the repo's rules hold a merge back and the repo has no auto-merge. */
+  needsMac: (rule: string) => `This needs the Mac to merge past ${rule}.`,
+  /** After Fix checks or Resolve: asked in the chat, once for this commit. */
+  asked: "Asked Claude in the chat.",
+  status: "Status",
+  files: (count: number) => (count === 1 ? "1 file" : `${count} files`),
+  /** The status card's rows. */
+  checksPassed: (count: number) => (count === 1 ? "1 check passed" : `${count} checks passed`),
+  checksFailed: (count: number) => (count === 1 ? "1 check failed" : `${count} checks failed`),
+  checksRunning: (done: number, count: number) => `${done} of ${count} checks finished`,
+  commentCount: (count: number) => (count === 1 ? "1 comment" : `${count} comments`),
+  back: "Back",
+  close: "Close",
+  /** The subtitle's state words. */
+  draft: "Draft",
+  merged: "Merged",
+  closed: "Closed",
+  /** A file whose diff the sheet can't show. */
+  binary: "A binary file. GitHub shows what changed.",
+  tooLarge: "Too large to show here. GitHub shows the whole diff.",
+  /** The canvas has no pull request (a link named the sheet before one was opened). */
+  none: "This canvas has no pull request yet.",
+  /** VoiceOver, on the stack's button and the sheet. */
+  button: (number: number) => `Pull request #${number}`,
+  loading: "Loading the pull request",
 } as const;
 
 /** What the canvases list says when the workspace has no canvases: where they come from. */

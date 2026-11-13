@@ -193,6 +193,23 @@ export function chromeAction(tab: PullRequestTab): NextAction | null {
   }
 }
 
+/**
+ * What Fix checks and Resolve ask of the agent, as the person's message in the thread: the Mac's
+ * and the iPhone's words, the same. Fix checks names the checks that failed.
+ */
+export function agentAsk(action: "fix_checks" | "resolve", tab: PullRequestTab): string {
+  if (action === "resolve") {
+    const base = tab.branch.base;
+    return `The branch conflicts with ${base}. Merge ${base} in, resolve the conflicts and push.`;
+  }
+  const failing = tab.pullRequest?.checks.items
+    .filter((check) => check.state === "failed" || check.state === "cancelled")
+    .map((check) => check.name);
+  return failing?.length
+    ? `Fix the failing checks on the pull request (${failing.join(", ")}) and push.`
+    : "Fix the failing checks on the pull request and push.";
+}
+
 /** What the repo's rules still want before a merge, for the confirmation to merge anyway. */
 export function rulesWant(pr: Pull): string {
   if (pr.reviewDecision === "changes_requested") return "A reviewer asked for changes.";

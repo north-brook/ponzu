@@ -16,3 +16,4 @@ executionOrder:
     - comment-modes
     - chat
     - needs-you
+    - pull-request

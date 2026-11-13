@@ -53,6 +53,11 @@ export const SCENARIOS = [
    * multi-select), a plan to approve, and a permission, four pages in all.
    */
   "needs-you",
+  /**
+   * Maya's Pricing page with its pull request ready to merge (`stockPullRequest`): checks
+   * passed, Theo approved, two comments, three files.
+   */
+  "pull-request",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -321,6 +326,63 @@ export async function stockAsks(world: FakeWorld): Promise<string[]> {
   ];
 }
 
+/** What `stockPullRequest` puts on the Pricing page's pull request, for tests to look for. */
+export const PR_SCENE = {
+  description: "Puts the three plans side by side, cheapest first, with a short FAQ under them.",
+  checks: ["ci / test", "ci / lint", "ci / visual"],
+  reviewer: "theo",
+  comments: [
+    { login: "theo", body: "The FAQ could be shorter." },
+    { login: "maya", body: "Cut it to four questions." },
+  ],
+  files: [
+    {
+      path: "src/components/plans.tsx",
+      additions: 3,
+      deletions: 1,
+      patch: [
+        "@@ -1,4 +1,6 @@",
+        " export function Plans() {",
+        '-  return <Plan name="Pro" />;',
+        "+  return (",
+        '+    <PlanRow plans={["Free", "Pro", "Team"]} />',
+        "+  );",
+        " }",
+      ].join("\n"),
+    },
+    {
+      path: "src/app/pricing/page.tsx",
+      additions: 2,
+      deletions: 0,
+      patch: "@@ -8,3 +8,5 @@\n <main>\n+  <Plans />\n+  <Faq />\n </main>",
+    },
+    { path: "public/plans.png", additions: 0, deletions: 0, patch: null },
+  ],
+} as const;
+
+/**
+ * The Pricing page's pull request once the world is ready: the agent pushed three files and kept
+ * its words on them, Maya opened it and marked it ready, its checks passed, Theo approved and
+ * two comments were left. Nothing stands in the way of Merge. The number is the fake's next.
+ */
+export async function stockPullRequest(world: FakeWorld): Promise<void> {
+  await world.ready;
+  const { fake, maya } = world;
+  const pricing = [...fake.canvases.values()].find(
+    (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === "Pricing page",
+  );
+  if (!pricing?.github) return;
+  const { api } = fake.connect(maya);
+  const github = pricing.github;
+  fake.agent(pricing.id).push(PR_SCENE.files.map((file) => ({ ...file, change: "modified" })));
+  github.describe(PR_SCENE.description);
+  await api.canvases.pullRequest.open(pricing.id);
+  await api.canvases.pullRequest.ready(pricing.id);
+  github.setChecks(PR_SCENE.checks.map((name) => ({ name, state: "passed" })));
+  github.review(PR_SCENE.reviewer, "approved");
+  for (const { login, body } of PR_SCENE.comments) github.comment(login, body);
+}
+
 export interface FakeCloud extends Backend {
   kind: "fake";
   /** The world now (`reset` makes a new one). */
@@ -360,6 +422,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
   const stocked = new WeakSet<FakeWorld>();
   const chatted = new WeakSet<FakeWorld>();
   const asked = new WeakSet<FakeWorld>();
+  const pulled = new WeakSet<FakeWorld>();
   const client = () => {
     const person = session.person;
     let known = clients.get(person.id);
@@ -458,6 +521,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         canvases: signedIn,
         chat: signedIn,
         "needs-you": signedIn,
+        "pull-request": signedIn,
       };
       // The rows change under the list as the live query would deliver them.
       // Maya is signed in once Northbrook exists, as someone already in two workspaces is: `me`
@@ -485,6 +549,15 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         const current = world;
         session.set({ status: "loading" });
         void stockAsks(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "pull-request" && !pulled.has(world)) {
+        pulled.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockPullRequest(current).finally(() => {
           if (world === current) session.set(states[scenario]);
         });
         return true;

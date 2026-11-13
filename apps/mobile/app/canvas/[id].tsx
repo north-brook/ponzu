@@ -1,4 +1,5 @@
 import type { Person } from "@ponzu/client/model";
+import { useSessionState } from "@ponzu/client/react";
 import { linkTarget, type Thread } from "@ponzu/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
@@ -26,6 +27,7 @@ import { DraftSheet } from "../../components/draft-sheet";
 import { Glass, GlassGroup } from "../../components/glass";
 import { Back, PageIcon } from "../../components/icons";
 import { CanvasHint, MoveBar } from "../../components/move-bar";
+import { PrSheet } from "../../components/pr-sheet";
 import { Sheet } from "../../components/sheet";
 import { Shimmer } from "../../components/shimmer";
 import { ThreadSheet } from "../../components/thread-sheet";
@@ -89,12 +91,13 @@ function leave() {
  * Each is one op through the replica (lib/canvas/comments.ts): on the canvas at once, its words
  * kept in their draft (lib/drafts.ts, on disk) until the API has them. Chat opens the canvas's
  * thread in its sheet (components/chat-sheet.tsx), to read Ponzu, say something, attach
- * pictures or stop a turn. The pull request sheet comes with its own slice; until then its
- * button is shown and says so.
+ * pictures or stop a turn. The pull request button, shown once the canvas has one, opens its
+ * sheet (components/pr-sheet.tsx), to look it over and take its next action, Merge among them.
  *
  * Opened from a row, a link or a push: `page` and `artboard` say where to open (a board on its
  * page, or a page, as @ponzu/core's `linkTarget` reads them); `sheet=chat` opens the chat, at
- * `message=<seq>` when it names one, and `question=<id>` (a push's) opens it at that question.
+ * `message=<seq>` when it names one, and `question=<id>` (a push's) opens it at that question;
+ * `sheet=pull-request` opens the pull request sheet.
  */
 export default function CanvasScreen() {
   const params = useLocalSearchParams<{
@@ -114,6 +117,9 @@ export default function CanvasScreen() {
   const insets = { ...safe, left: windowInsets.left, right: windowInsets.right };
   const { width } = useWindowDimensions();
   const { source, bridge, state, me } = useCanvasSource(canvasId);
+  const session = useSessionState(backend.session);
+  /** The person's GitHub login: on the pull request, their own words read "You". */
+  const viewerLogin = session.status === "signed_in" ? session.user.githubLogin : null;
   const head = useCanvasHead(canvasId);
   const view = useCanvasView(canvasId);
   const doc = state.doc;
@@ -236,8 +242,19 @@ export default function CanvasScreen() {
    */
   const [chat, setChat] = useState(params.sheet === "chat");
   const [chatFocus, setChatFocus] = useState(false);
+  /**
+   * The pull request sheet is up (iPhone design §11): opened by the stack's button, a pull
+   * request line in the chat, or a link or push (`sheet=pull-request`).
+   */
+  const [pullRequest, setPullRequest] = useState(params.sheet === "pull-request");
   useEffect(() => {
+    if (params.sheet === "pull-request") {
+      setChat(false);
+      setPullRequest(true);
+      return;
+    }
     if (params.sheet !== "chat") return;
+    setPullRequest(false);
     setChatFocus(false);
     setChat(true);
   }, [params.sheet, params.message, params.question]);
@@ -453,6 +470,7 @@ export default function CanvasScreen() {
     setPlacing(false);
     setHolding(null);
     setNotice(null);
+    setPullRequest(false);
     setChatFocus(true);
     setChat(true);
   };
@@ -465,6 +483,21 @@ export default function CanvasScreen() {
         .seen(canvasId, { seq: head.seq, ...(readSeq !== null ? { threadSeq: readSeq } : {}) })
         .catch(() => {});
     }
+  };
+  /** The pull request sheet, from the stack's button: whatever else was up gives way. */
+  const openPullRequest = () => {
+    tick();
+    setThreadId(null);
+    setPending(null);
+    setPlacing(false);
+    setHolding(null);
+    setNotice(null);
+    setPullRequest(true);
+  };
+  /** A pull request line in the chat: the chat is read as far as it held, and the sheet opens. */
+  const openPullRequestFromChat = (readSeq: number | null) => {
+    closeChat(readSeq);
+    setPullRequest(true);
   };
   /** Shows a page, or a board on its page, from the chat: the sheet has gone by then. */
   const showPlace = (at: { pageId?: string; artboardId?: string }) => {
@@ -603,7 +636,7 @@ export default function CanvasScreen() {
   // Under the title, most pressing first: a comment that didn't go, one waiting to, the canvas.
   const queued = waiting > 0 && state.status === "offline" ? COMMENT_WORDS.queued : null;
   const line = notice ?? queued ?? (placeholderLine ? null : status.line);
-  const sheetUp = Boolean(pending || thread || holding || movingDraft || chat);
+  const sheetUp = Boolean(pending || thread || holding || movingDraft || chat || pullRequest);
   const offline =
     state.status === "offline" || !onlineManager.isOnline() ? CANVAS_WORDS.offline : null;
   const foot = Math.max(insets.bottom, 16) + 8;
@@ -753,6 +786,7 @@ export default function CanvasScreen() {
           bottom={foot}
           right={16 + insets.right}
           prNumber={head?.prNumber ?? null}
+          onPullRequest={openPullRequest}
           chat={status.chat}
           onChat={openChat}
           commenting={placing}
@@ -871,6 +905,19 @@ export default function CanvasScreen() {
           onDismiss={closeChat}
           onOpenComment={openCommentFromChat}
           onOpenLink={openLink}
+          onOpenPullRequest={openPullRequestFromChat}
+          top={Math.max(CHAT_TOP, safe.top + 4)}
+          right={insets.right}
+        />
+      )}
+      {/* Only once the canvas is open for the person signed in now (`me`), as the chat. */}
+      {pullRequest && !chat && me && (
+        <PrSheet
+          canvasId={canvasId}
+          head={head}
+          viewerLogin={viewerLogin}
+          blocked={readOnly ?? offline}
+          onDismiss={() => setPullRequest(false)}
           top={Math.max(CHAT_TOP, safe.top + 4)}
           right={insets.right}
         />

@@ -1,7 +1,7 @@
 import type { RailSignal } from "@ponzu/client/model";
 import type { ReactNode } from "react";
-import { Alert, Text, View } from "react-native";
-import { NEEDS_YOU } from "../lib/copy";
+import { Text, View } from "react-native";
+import { NEEDS_YOU, PR } from "../lib/copy";
 import { Juice } from "../lib/slice";
 import { useTheme } from "../lib/theme";
 import { brand, font } from "../lib/tokens";
@@ -14,9 +14,9 @@ import { ChatIcon, CommentIcon, PullRequestIcon } from "./icons";
  * shows (the shared `railSignal`): a needs-you count on its top-right edge while the agent waits
  * on someone, else the turning yuzu slice while it wakes or works, else its own mark.
  *
- * Chat opens the chat sheet (components/chat-sheet.tsx). The pull request has no sheet on the
- * iPhone yet, so until it does, pressing it says so in one alert instead of doing nothing. The
- * questions the count stands for are answered in the chat's composer slot (needs-you.tsx).
+ * Chat opens the chat sheet (components/chat-sheet.tsx), and the pull request its own
+ * (components/pr-sheet.tsx). The questions the count stands for are answered in the chat's
+ * composer slot (needs-you.tsx).
  * Comment on a canvas the person may only look at is shown and said to be unavailable, not
  * hidden, so the stack never jumps.
  */
@@ -56,11 +56,7 @@ export function CanvasStack({
       style={{ position: "absolute", right, bottom, gap: 12, alignItems: "center", zIndex: 8 }}
     >
       {prNumber !== null && (
-        <Control
-          testID="stack-pr"
-          label={`Pull request #${prNumber}`}
-          onPress={onPullRequest ?? (() => Alert.alert(NOT_YET.pullRequest))}
-        >
+        <Control testID="stack-pr" label={PR.button(prNumber)} onPress={onPullRequest}>
           <PullRequestIcon color={color.ink} />
         </Control>
       )}
@@ -112,11 +108,6 @@ export function CanvasStack({
     </View>
   );
 }
-
-/** What the pull request says when pressed, until its sheet comes to the iPhone. */
-export const NOT_YET = {
-  pullRequest: "Pull requests aren't on the iPhone yet. They come in the next update.",
-} as const;
 
 /**
  * One glass circle; without `onPress`, its mark faint and the button said to be unavailable.
