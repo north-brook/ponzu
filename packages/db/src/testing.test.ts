@@ -55,8 +55,10 @@ const ROOT = join(import.meta.dir, "../../..");
 // and loaded the migrated one, so no test here or in any other file makes one.
 const preparedBeforeTests = testDbsPrepared();
 
-test("bun test makes the test databases before any test file loads", () => {
-  expect(preparedBeforeTests).toBe(true);
+test("bun test from the repository root makes the test databases before any test file loads", () => {
+  // Run from another directory (cd packages/db && bun test), bun does not read the root bunfig:
+  // nothing is preloaded, and the first test to ask makes the copy, as it always did.
+  expect(preparedBeforeTests).toBe(process.env.PONZU_TEST_DBS_PRELOADED === "1");
 });
 
 test("no test makes its own Postgres: each loads a copy from @ponzu/db/testing", () => {

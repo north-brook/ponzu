@@ -5,3 +5,6 @@
 import { prepareTestDbs } from "./testing.ts";
 
 await prepareTestDbs();
+// For testing.test.ts: this process was preloaded. A `bun test` run from another directory does
+// not read the root bunfig, has no preload, and makes its copy in the first test that asks.
+process.env.PONZU_TEST_DBS_PRELOADED = "1";
