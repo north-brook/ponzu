@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { emptyDoc, newOpId } from "@ponzu/core";
+import { type ClientOp, emptyDoc, newOpId } from "@ponzu/core";
+import { el } from "@ponzu/core/fixtures";
 // The real API, in process, to hold the typed client to the routes it is typed from. A test
 // may run the API's code; the package itself only ever imports its types.
 import {
@@ -15,6 +16,7 @@ import { type Api, createApi } from "./api.ts";
 import { systemClock } from "./clock.ts";
 import { ApiError } from "./errors.ts";
 import { createSession, type KeyValueStorage, SESSION_KEY } from "./session.ts";
+import { createFakeBackend } from "./testing/backend.ts";
 
 let t: TestApp;
 let ws: Workspace;
@@ -276,6 +278,129 @@ describe("against the API's own routes", () => {
       .canvases.stop(canvas.id)
       .catch((e) => e);
     expect([ines.status, ines.code]).toEqual([403, "forbidden"]);
+  });
+
+  test("search answers what the fake backend answers for the same canvas", async () => {
+    // The same steps, through the client, on the real API and on the fake. Only the agent may
+    // make a board, so each world makes it as its own agent.
+    type AgentCommit = (canvasId: string, ops: ClientOp[]) => Promise<unknown[]>;
+    const steps = async (
+      api: Api,
+      workspaceId: string,
+      repoId: string,
+      agentCommit: AgentCommit,
+    ) => {
+      const created = await api.canvases.create({ workspaceId, repoId, name: "Okapi launch" });
+      const { doc } = await api.canvases.doc(created.id);
+      const pageId = doc.pages[0]!.id;
+      const board = {
+        id: newOpId(),
+        op: {
+          op: "artboard.create",
+          page: pageId,
+          index: 0,
+          artboard: {
+            id: "ab_okapi",
+            name: "Okapi board",
+            x: 0,
+            y: 0,
+            root: el("ab_okapi", "section"),
+          },
+        },
+      } satisfies ClientOp;
+      expect(await agentCommit(created.id, [board])).toEqual([]);
+      const committed = await api.canvases.commit(created.id, [
+        { id: newOpId(), op: { op: "page.update", id: pageId, name: "okapi page" } },
+        {
+          id: newOpId(),
+          op: {
+            op: "thread.create",
+            thread: {
+              id: "th_okapi",
+              artboardId: "ab_okapi",
+              x: 1,
+              y: 2,
+              status: "open",
+              createdAt: 0,
+              updatedAt: 0,
+              messages: [
+                {
+                  id: "m_okapi",
+                  author: { kind: "user", name: "" },
+                  text: "Is the okapi\ntoo big here?",
+                  createdAt: 0,
+                },
+              ],
+            },
+          },
+        },
+      ]);
+      expect(committed.rejected).toEqual([]);
+      const said = await api.canvases.sendMessage(created.id, { text: "Draw the okapi pricing" });
+      const found = [
+        await api.workspaces.search(workspaceId, { q: "  okapi " }),
+        // workspaceWithRepo makes no GitHub organization, so the API knows no people to find
+        // here; people are compared in search.test.ts and apps/api/src/search/search.test.ts.
+        await api.workspaces.search(workspaceId, {
+          q: "okapi big",
+          groups: ["comments", "people"],
+        }),
+        await api.workspaces.search(workspaceId, { q: "?!" }),
+      ];
+      // The ids and times each world makes its own, and the avatars only the API's people have.
+      const own = new Map<string, string>([
+        [created.id, "<canvas>"],
+        [pageId, "<page>"],
+        [said.id, "<item>"],
+      ]);
+      return JSON.parse(
+        JSON.stringify(found, (key, value) => {
+          if (key === "at") return value === null ? null : "<at>";
+          // Where the message sits depends on what each world wrote to the thread before it.
+          if (key === "itemSeq") return value === said.seq ? "<seq>" : value;
+          if (key === "avatarUrl") return "<avatar>";
+          if (typeof value === "string" && own.has(value)) return own.get(value);
+          if (typeof value === "string" && value.startsWith("usr_")) return "<user>";
+          return value;
+        }),
+      );
+    };
+
+    const real = await steps(clientFor("maya"), ws.id, ws.repo.id, async (canvasId, ops) => {
+      const runner = await startRunner(t, canvasId);
+      const sent = await call(t, runner.headers, "POST", `/v1/canvases/${canvasId}/ops`, { ops });
+      expect(sent.status).toBe(200);
+      return sent.body.rejected;
+    });
+    const backend = createFakeBackend();
+    const maya = backend.addPerson({ login: "maya", name: "Maya" });
+    const ines = backend.addPerson({ login: "ines", name: "Ines" });
+    const fakeWs = backend.addWorkspace({
+      login: "acme",
+      members: { [maya.id]: "admin", [ines.id]: "member" },
+      repos: [{ name: "fernwood", access: { [ines.id]: "read" } }],
+    });
+    const fake = await steps(
+      backend.connect(maya).api,
+      fakeWs.id,
+      fakeWs.repos[0]!.id,
+      async (canvasId, ops) => {
+        backend.agent(canvasId).commit(ops.map(({ op }) => op));
+        return [];
+      },
+    );
+
+    expect(fake).toEqual(real);
+    // And it is a real answer, not two empty ones.
+    expect(real[0].comments[0]).toMatchObject({
+      snippet: "Is the okapi too big here?",
+      author: { kind: "user", id: "<user>", name: "Maya", login: "maya" },
+    });
+    expect(
+      ["canvases", "boards", "comments", "messages"].map((group) => real[0][group].length),
+    ).toEqual([1, 2, 1, 1]);
+    // Only the groups asked for, and every word must be found.
+    expect([real[1].comments.length, real[1].canvases, real[1].boards]).toEqual([1, [], []]);
   });
 
   test("the pull request: the tab, opening it, a file's diff, and a refusal by code", async () => {

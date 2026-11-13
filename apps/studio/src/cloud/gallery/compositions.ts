@@ -92,6 +92,14 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
+    // Every group search answers with, in its order: the board draws only the first three.
+    id: "sidebar-search-every-group",
+    title: "Search · every group",
+    ...WINDOW,
+    masks: CANVAS,
+    reference: true,
+  },
+  {
     id: "sidebar-previews-updating",
     title: "Sidebar · Previews updating while the agent works",
     ...WINDOW,

@@ -86,13 +86,14 @@ test("the shared rules run on the phone as they are: no React, no DOM, and only 
   });
   expect(built.success).toBe(true);
   expect(loaded).toContain("packages/client/src/model/status.ts");
-  // Every module the rules run: their own, the client's error type, and the runner protocol's
-  // constants (a file that imports nothing).
+  // Every module the rules run: their own, the client's error type, the runner protocol's
+  // constants and search's text rules (files that import nothing).
   const outside = loaded.filter(
     (path) =>
       !path.startsWith("packages/client/src/model/") &&
       path !== "packages/client/src/errors.ts" &&
-      path !== "apps/runner/src/api/protocol.ts",
+      path !== "apps/runner/src/api/protocol.ts" &&
+      path !== "packages/core/src/search-text.ts",
   );
   expect(outside).toEqual([]);
   const code = await built.outputs[0]!.text();

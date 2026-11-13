@@ -1,6 +1,6 @@
 import type { CanvasProps } from "@ponzu/canvas";
 import { isTyping } from "@ponzu/canvas/modifier-hint";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasMember, CanvasSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
@@ -65,13 +65,16 @@ export function useCanvasPanes({
   page: string | null;
   onPage: (id: string) => void;
   /**
-   * Where a ponzu:// link asked to open it: a page or board, a comment's thread on its pin, or
-   * the pull request tab (a notification's link). `at` is when, so the same link is followed again.
+   * Where a ponzu:// link, a notification or a search result asked to open it: a page, a board,
+   * or a comment's thread on the canvas; a line of the thread (`item`), which the rail shows; or
+   * the pull request tab. `at` is when: the newer of it and the last jump the thread made is
+   * followed, and the same link is followed again.
    */
   link: {
     page?: string;
     artboard?: string;
     thread?: string;
+    item?: { id: string; seq: number };
     tab?: "pull-request";
     at?: number;
   } | null;
@@ -90,7 +93,15 @@ export function useCanvasPanes({
   const [tabFor, setTabFor] = useState<string | null>(null);
   const [showing, setShowing] = useState<{ canvasId: string; link: BoardsJump }>();
   const prTab = canvasId !== null && tabFor === canvasId;
-  const shown = showing?.canvasId === canvasId ? showing.link : null;
+  const jumped = showing?.canvasId === canvasId ? showing.link : null;
+  // What of the link is a place on the canvas: none, for a line of the thread or the tab.
+  const place = useMemo(
+    () => (link && (link.page || link.artboard || link.thread) ? placeOf(link) : null),
+    [link],
+  );
+  // The thread's last jump, or the link the canvas was opened at (search's, on a canvas already
+  // open, comes after any jump): whichever was asked for last.
+  const shown = jumped && (!place || (jumped.at ?? 0) >= (place.at ?? 0)) ? jumped : null;
   const analytics = useAnalytics();
   const setPrTab = (open: boolean) => {
     if (canvasId && open !== prTab) {
@@ -98,22 +109,6 @@ export function useCanvasPanes({
     }
     setTabFor(open ? canvasId : null);
   };
-
-  // A link to the pull request opens its tab, once per link: closing it again stays closed.
-  const tabLinked = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (!canvasId || link?.tab !== "pull-request" || tabLinked.current === link.at) return;
-    tabLinked.current = link.at;
-    setTabFor(canvasId);
-  }, [canvasId, link]);
-  const boardsLink: BoardsJump | null = link
-    ? {
-        ...(link.page ? { page: link.page } : {}),
-        ...(link.artboard ? { artboard: link.artboard } : {}),
-        ...(link.thread ? { thread: link.thread } : {}),
-        ...(link.at ? { at: link.at } : {}),
-      }
-    : null;
 
   // The tab is read-only: ⌘Z there has nothing to undo. Uncaught, it would reach Edit › Undo,
   // which reverts the last typing anywhere in the window (the thread's draft, beside the tab) and
@@ -128,6 +123,22 @@ export function useCanvasPanes({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [prTab]);
+
+  // A link to the pull request (a notification's or a search result's): the tab opens, as ⌘P
+  // opens it. Each link once, when its canvas is the one open: closing it again stays closed.
+  const tabAsked = link?.tab === "pull-request" && canvasId ? `${canvasId}:${link.at ?? ""}` : null;
+  const tabTaken = useRef<string | null>(null);
+  // The last line of the thread a link asked for that the rail has shown: closing the rail and
+  // opening it again doesn't go back to it.
+  const [revealed, setRevealed] = useState<number | null>(null);
+  useEffect(() => {
+    if (!tabAsked || !canvasId || tabTaken.current === tabAsked) return;
+    tabTaken.current = tabAsked;
+    if (tabFor !== canvasId) {
+      analytics.capture("pane toggled", { pane: "pull_request", open: true, canvas_id: canvasId });
+    }
+    setTabFor(canvasId);
+  }, [tabAsked, canvasId, tabFor, analytics]);
 
   // Every jump the thread makes (a comment, a stretch of work, a link in a reply) is the canvas
   // following a link, as a ponzu:// one does: the same framing and the same mark.
@@ -207,6 +218,10 @@ export function useCanvasPanes({
         onOpenComment={onOpenComment}
         onOpenPlace={onOpenPlace}
         onOpenPullRequest={() => setPrTab(true)}
+        reveal={
+          link?.item && (link.at ?? 0) !== revealed ? { ...link.item, at: link.at ?? 0 } : null
+        }
+        onRevealed={setRevealed}
         say={say}
         {...(onConnectClaude ? { onConnectClaude } : {})}
       />
@@ -221,7 +236,8 @@ export function useCanvasPanes({
             me={me}
             page={page}
             onPage={onPage}
-            {...(shown ? { link: shown } : boardsLink ? { link: boardsLink } : {})}
+            {...(shown ? { link: shown } : place ? { link: place } : {})}
+            say={say}
             onClose={onClose}
           />
         </div>
@@ -235,5 +251,20 @@ export function useCanvasPanes({
         <PullRequestConfirmations open={open} />
       </>
     ),
+  };
+}
+
+/** A link's place on the canvas, as the canvas follows one: its page, board or comment. */
+function placeOf(link: {
+  page?: string;
+  artboard?: string;
+  thread?: string;
+  at?: number;
+}): BoardsJump {
+  return {
+    ...(link.page ? { page: link.page } : {}),
+    ...(link.artboard ? { artboard: link.artboard } : {}),
+    ...(link.thread ? { thread: link.thread } : {}),
+    ...(link.at !== undefined ? { at: link.at } : {}),
   };
 }

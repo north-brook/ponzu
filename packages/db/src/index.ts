@@ -296,6 +296,7 @@ export {
   type Question,
   takeSecretAnswer,
 } from "./queries/questions.ts";
+export { readableCanvases } from "./queries/readable.ts";
 export {
   getRepoAccess,
   listWorkspaceRepoAccess,
@@ -390,6 +391,30 @@ export {
   type SealedValue,
 } from "./queries/sealed.ts";
 export {
+  DOC_SEARCH_KINDS,
+  deleteSearchEntries,
+  listSearchEntries,
+  type MessageSearch,
+  queueSearchBackfill,
+  replaceDocSearchEntries,
+  SEARCH_GROUP_CAPS,
+  SEARCH_GROUP_KINDS,
+  SEARCH_GROUPS,
+  SEARCH_REINDEX_JOB,
+  type SearchGroup,
+  type SearchHit,
+  type SearchHits,
+  type SearchHitUser,
+  type SearchKey,
+  type SearchQuery,
+  type SearchReindexPayload,
+  type SearchRow,
+  type SearchTier,
+  searchCanvases,
+  toSearchRows,
+  upsertSearchEntries,
+} from "./queries/search.ts";
+export {
   admitSession,
   endSession,
   endUserSessions,
@@ -402,7 +427,9 @@ export {
   appendThreadItemOnce,
   attachCommentPicture,
   getComment,
+  getThreadItems,
   listThreadItems,
+  listThreadItemsAfter,
   type NewThreadItem,
   postMessage,
   type ThreadItem,

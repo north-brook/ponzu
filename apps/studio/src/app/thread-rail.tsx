@@ -1,7 +1,7 @@
 import { useLiveQuery } from "@ponzu/client/react";
 import { linkTarget } from "@ponzu/core";
 import { useMutation, useQueries } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Person, Repo, ThreadItem } from "../cloud/model.ts";
 import { ThreadRail } from "../cloud/thread/rail.tsx";
 import { ThreadSkeleton } from "../cloud/thread/thread-view.tsx";
@@ -23,7 +23,7 @@ import {
   type ThreadContext,
   toThreadItem,
 } from "./thread-map.ts";
-import type { PendingMessage } from "./thread-store.ts";
+import { type PendingMessage, revealStep, type ThreadSnapshot } from "./thread-store.ts";
 import { useSnapshot } from "./use-snapshot.ts";
 
 /** Where the canvas goes for a comment (the canvas's `link`). */
@@ -52,6 +52,8 @@ export function CanvasRail({
   onOpenPlace,
   onOpenPullRequest,
   onConnectClaude,
+  reveal = null,
+  onRevealed,
   say,
 }: {
   host: Host;
@@ -74,6 +76,13 @@ export function CanvasRail({
    * whether its sign-in ran out, so the dialog puts it as the strip did.
    */
   onConnectClaude?: (expired: boolean) => void;
+  /**
+   * A line of the thread to show (search's message): the rail pages back until it holds the
+   * line's seq, then brings it into view. `at` is when it was asked: each ask is shown once.
+   */
+  reveal?: { id: string; seq: number; at: number } | null;
+  /** The line asked for at `at` has been shown. */
+  onRevealed?: (at: number) => void;
   /** Says over the window what didn't happen. */
   say: (notice: string) => void;
 }) {
@@ -170,6 +179,9 @@ export function CanvasRail({
     [shown, doc, onOpenComment, say],
   );
 
+  const loadOlder = useCallback(() => open.thread.loadOlder(), [open.thread]);
+  const shownLine = useRevealed(thread, loadOlder, reveal);
+
   // What a link in the agent's words can find: the canvas as it is now, while it streams too.
   const places = useMemo<CanvasPlaces>(
     () => ({
@@ -197,7 +209,9 @@ export function CanvasRail({
         repoName={repo?.name ?? null}
         items={items}
         older={thread.older}
-        onLoadOlder={() => open.thread.loadOlder()}
+        onLoadOlder={loadOlder}
+        reveal={shownLine}
+        {...(onRevealed ? { onRevealed } : {})}
         agent={agentActivity(head ?? open.fresh?.head)}
         asks={asks}
         gate={gate}
@@ -240,6 +254,29 @@ export function CanvasRail({
       />
     </CanvasPlacesProvider>
   );
+}
+
+/**
+ * The line to show, once the thread holds as far back as it: null while the rail pages back
+ * toward its seq (a page at a time, at most REVEAL_PAGES), then `reveal`. When it can't be
+ * reached (the pages ran out, or history can't be read) the thread shows the oldest line held.
+ */
+export function useRevealed(
+  thread: Pick<ThreadSnapshot, "items" | "older">,
+  loadOlder: () => void,
+  reveal: { id: string; seq: number; at: number } | null,
+): { id: string; seq: number; at: number } | null {
+  const at = reveal?.at ?? null;
+  const asked = useRef<{ at: number | null; pages: number }>({ at: null, pages: 0 });
+  if (asked.current.at !== at) asked.current = { at, pages: 0 };
+  const step = revealStep(thread, reveal, asked.current.pages);
+  useEffect(() => {
+    if (step !== "page") return;
+    asked.current.pages++;
+    loadOlder();
+  }, [step, loadOlder]);
+  if (!reveal || step === "wait" || step === "page") return null;
+  return reveal;
 }
 
 /** A question's line with what was picked, once that is known. */

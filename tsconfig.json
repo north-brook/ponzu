@@ -2,6 +2,7 @@
   "extends": "./tsconfig.base.json",
   "include": [
     "packages/*/src",
+    "packages/db/scripts",
     "apps/api/src",
     "apps/api/scripts",
     "apps/api/evals",

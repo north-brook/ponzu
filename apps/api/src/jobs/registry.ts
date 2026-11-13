@@ -5,6 +5,7 @@ import { githubJobs } from "./kinds/github.ts";
 import { notificationJobs } from "./kinds/notifications.ts";
 import { peopleJobs } from "./kinds/people.ts";
 import { pullRequestJobs } from "./kinds/pull-requests.ts";
+import { searchJobs } from "./kinds/search.ts";
 import type { JobDeps, RunningJob } from "./run.ts";
 
 /*
@@ -34,6 +35,7 @@ export const JOB_MODULES: readonly (() => JobKinds)[] = [
   pullRequestJobs,
   environmentJobs,
   peopleJobs,
+  searchJobs,
   notificationJobs,
   accountJobs,
 ];

@@ -41,6 +41,8 @@
     "expo-server-sdk": "8.0.0",
     "hono": "^4.13.17",
     "jose": "^6.2.17",
+    "mdast-util-from-markdown": "2.1.0",
+    "mdast-util-to-string": "4.0.0",
     "posthog-node": "^5.68.2",
     "resend": "6.37.0",
     "universal-github-app-jwt": "2.2.2",

@@ -20,9 +20,9 @@ import {
   type ThreadItem,
   type TurnRecord,
 } from "@ponzu/runner/protocol";
-import type { AnswerBody, Api } from "../api.ts";
+import { type AnswerBody, type Api, SEARCH_GROUPS, SEARCH_QUERY_MAX } from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
-import { ApiError, networkError } from "../errors.ts";
+import { ApiError, abortError, networkError } from "../errors.ts";
 import { createLive, type Live, MAX_LIVE_QUERIES } from "../live/live.ts";
 import { LIVE_COLUMNS, type LiveQueryName, type RawRow } from "../live/rows.ts";
 import type { Profile } from "../rpc.ts";
@@ -30,6 +30,7 @@ import type { Session, SessionState } from "../session.ts";
 import { FakeClaude } from "./claude.ts";
 import { FakePullRequests } from "./pull-requests.ts";
 import { type FakeQuery, FakeRealtime, fakeSeal } from "./realtime.ts";
+import { fakeSearch } from "./search.ts";
 import { FakeSettings, type SettingsWorld } from "./settings.ts";
 
 /*
@@ -796,6 +797,56 @@ export class FakeBackend {
             this.changed();
             return { member: memberRow(workspace, userId) };
           }),
+        // As the route: the body is checked before membership, so a non-member's bad request
+        // is the same 400 a member gets; then 404 for a workspace they are not in.
+        search: (id, body, { signal } = {}) =>
+          abortable(signal, () =>
+            call(() => {
+              const query = body.q.trim();
+              const groups = body.groups ?? SEARCH_GROUPS;
+              if (
+                query.length < 1 ||
+                query.length > SEARCH_QUERY_MAX ||
+                groups.length > SEARCH_GROUPS.length ||
+                groups.some((group) => !SEARCH_GROUPS.includes(group))
+              ) {
+                throw new ApiError(
+                  400,
+                  "invalid_request",
+                  "The request is not what this route takes.",
+                );
+              }
+              const { workspace } = member(id);
+              return fakeSearch({
+                query,
+                groups,
+                canvases: this.visibleCanvases(workspace.id, person.id).map((canvas) => ({
+                  id: canvas.id,
+                  name: canvas.sequencer.doc.name,
+                  doc: canvas.sequencer.doc,
+                  lastActivityAt: Date.parse(canvas.lastActivityAt),
+                  thread: canvas.thread.map((entry) => entry.item),
+                  pull: canvas.github?.titled ?? null,
+                })),
+                people: [...workspace.members].map(([userId, role]) => {
+                  const who = this.people.get(userId)!;
+                  return {
+                    userId,
+                    login: who.githubLogin,
+                    name: who.name,
+                    avatarUrl: who.avatarUrl,
+                    admin: role === "admin",
+                  };
+                }),
+                account: (userId) => {
+                  const who = this.people.get(userId);
+                  return who
+                    ? { name: who.name, login: who.githubLogin, avatarUrl: who.avatarUrl }
+                    : undefined;
+                },
+              });
+            }),
+          ),
       },
       repos: {
         ideas: (id) =>
@@ -1681,6 +1732,30 @@ export class FakeBackend {
   private id(prefix: string): string {
     return `${prefix}_${String(++this.ids).padStart(16, "0")}`;
   }
+}
+
+/**
+ * `run`'s answer, unless `signal` aborts first: then an `AbortError`, as the real client's
+ * request gives, whatever `run` later does.
+ */
+function abortable<T>(signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
+  if (!signal) return run();
+  if (signal.aborted) return Promise.reject(abortError(signal));
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(abortError(signal));
+    signal.addEventListener("abort", abort, { once: true });
+    run().then(
+      (value) => {
+        signal.removeEventListener("abort", abort);
+        if (signal.aborted) reject(abortError(signal));
+        else resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", abort);
+        reject(signal.aborted ? abortError(signal) : error);
+      },
+    );
+  });
 }
 
 function repoPermission(repo: FakeRepo, userId: string): Permission {

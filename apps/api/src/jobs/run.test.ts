@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { jobs } from "@ponzu/db";
+import { jobs, SEARCH_REINDEX_JOB } from "@ponzu/db";
 import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
 import { ASSET_KEY_RETIRE_JOB } from "../canvases/asset-key.ts";
 import { CANVAS_FILES_DELETE_JOB } from "../canvases/files.ts";
@@ -33,6 +33,7 @@ test("the registry runs every kind the API records, each from one module", () =>
       BASE_REBUILD_JOB,
       PEOPLE_JOB,
       CANVAS_FILES_DELETE_JOB,
+      SEARCH_REINDEX_JOB,
       NOTIFY_JOB,
       DELIVER_JOB,
       BADGE_JOB,

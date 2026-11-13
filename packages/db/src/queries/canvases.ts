@@ -1,5 +1,5 @@
-import type { Doc } from "@ponzu/core";
-import { and, desc, eq, getTableColumns, inArray, isNull, or, sql } from "drizzle-orm";
+import { type Doc, docSearchEntries, SEARCH_VERSION } from "@ponzu/core";
+import { and, desc, eq, getTableColumns, isNull, or, sql, type WithSubquery } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import type { CanvasHead } from "../head.ts";
 import { newAssetKey, newId } from "../ids.ts";
@@ -14,14 +14,16 @@ import {
   type RepoPermission,
   repoAccess,
   repos,
+  searchState,
   threadItems,
   workspaces,
 } from "../schema/index.ts";
 import type { Repo } from "./accounts.ts";
 import { eventRow } from "./events.ts";
 import { timeParam } from "./json.ts";
-import { READABLE_PERMISSIONS } from "./repo-access.ts";
+import { readableCanvases } from "./readable.ts";
 import { run } from "./run.ts";
+import { insertMessageRow, type MessageSearch, toSearchRows, upsertSearchRows } from "./search.ts";
 import { isStorable, scrubbed, unstorableDocument } from "./text.ts";
 
 // Whoever knows a canvas's asset key can read its files, so no query hands it back with the
@@ -49,7 +51,13 @@ export interface NewCanvas {
    * What its owner says first, as a message: its thread item and its event, and the PostHog
    * session of the app that sent it, if it said.
    */
-  firstMessage?: { item: Json; event: Json; posthogSessionId?: string | null };
+  firstMessage?: {
+    item: Json;
+    event: Json;
+    posthogSessionId?: string | null;
+    /** The message as search finds it, indexed with it. Not indexed when left out. */
+    search?: MessageSearch;
+  };
 }
 
 /** The unique index a create with a key already used breaks. */
@@ -62,6 +70,10 @@ export const BRANCH_TAKEN = "canvases_repo_id_branch_key";
  * in the thread and the feed when it has one. Every canvas has a checkpoint from then on, which
  * is what `readDocSource` relies on. A `createKey` or a branch already taken fails the whole
  * statement with a `QueryError` naming `CREATE_KEY_TAKEN` or `BRANCH_TAKEN`.
+ *
+ * The same statement indexes it for search: the document's entries, the first message's (when
+ * it says what to index), and `search_state` at the current `SEARCH_VERSION` and seq 0, so the
+ * backfill never needs to visit it.
  */
 export async function createCanvas(
   db: Db,
@@ -69,6 +81,24 @@ export async function createCanvas(
 ): Promise<Canvas> {
   if (!isStorable(doc)) throw unstorableDocument();
   const id = newId("cnv");
+  const indexed: WithSubquery[] = [
+    db
+      .$with("indexed_state")
+      .as(
+        db
+          .insert(searchState)
+          .values({ canvasId: id, version: SEARCH_VERSION, indexedSeq: 0, indexedAt: sql`now()` })
+          .returning({ canvasId: searchState.canvasId }),
+      ),
+  ];
+  const rows = toSearchRows(docSearchEntries(doc));
+  if (rows.length > 0) {
+    indexed.push(
+      db
+        .$with("indexed_doc", { canvasId: sql<string>`canvas_id` })
+        .as(sql`${upsertSearchRows(id, JSON.stringify(rows), sql`true`)} returning canvas_id`),
+    );
+  }
   const checkpoint = db
     .$with("checkpoint")
     .as(
@@ -104,12 +134,24 @@ export async function createCanvas(
           userId: values.ownerId,
           payload: scrubbed(firstMessage.item),
         })
-        .returning({ id: threadItems.id }),
+        .returning({
+          id: threadItems.id,
+          seq: threadItems.seq,
+          createdAt: threadItems.createdAt,
+        }),
     ),
   ];
+  const message = firstMessage?.search && insertMessageRow(id, firstMessage.search, "said");
+  if (said && message) {
+    indexed.push(
+      db
+        .$with("indexed_message", { canvasId: sql<string>`canvas_id` })
+        .as(sql`${message} returning canvas_id`),
+    );
+  }
   const [canvas] = await run(
     db
-      .with(checkpoint, ...(said ?? []))
+      .with(checkpoint, ...(said ?? []), ...indexed)
       .insert(canvases)
       // 160 random bits: the key is all that guards the canvas's files.
       .values({ ...values, id, assetKey: newAssetKey() })
@@ -339,8 +381,9 @@ export interface CanvasListItem extends CanvasHead {
 
 /**
  * A workspace's canvases, most recently active first, with how far `userId` has looked at each:
- * those in a repo `repo_access` says they can read, and their own Scratch canvases. That they are
- * a member, and that those answers are recent, is the caller's to make sure of.
+ * those `readableCanvases` lets them read (their own Scratch canvases, and those in a repo
+ * `repo_access` says they can read, while they are a member). Search uses the same rule. That
+ * those answers are recent is the caller's to make sure of.
  */
 export function listWorkspaceCanvases(
   db: Db,
@@ -365,17 +408,9 @@ export function listWorkspaceCanvases(
         canvasReads,
         and(eq(canvasReads.canvasId, canvases.id), eq(canvasReads.userId, userId)),
       )
-      .leftJoin(
-        repoAccess,
-        and(eq(repoAccess.repoId, canvases.repoId), eq(repoAccess.userId, userId)),
-      )
       .where(
         and(
-          eq(canvases.workspaceId, workspaceId),
-          or(
-            and(isNull(canvases.repoId), eq(canvases.ownerId, userId)),
-            inArray(repoAccess.permission, READABLE_PERMISSIONS),
-          ),
+          readableCanvases({ workspaceId, userId }),
           status ? eq(canvases.status, status) : undefined,
         ),
       )

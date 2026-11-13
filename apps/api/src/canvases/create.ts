@@ -62,10 +62,13 @@ export async function startCanvas(
   const effort =
     request.effort ?? effortOrDefault(offer, model, user.defaultEffort ?? DEFAULT_EFFORT);
   const topic = branchTopic(message?.text ?? (name === "Untitled" ? "" : name));
+  const from = personFor(user);
   const firstMessage = message && {
-    item: { text: message.text, from: personFor(user) },
+    item: { text: message.text, from },
     event: { text: message.text },
     posthogSessionId: appSession(),
+    // Indexed in the create's own statement, as `postMessage` indexes every later one.
+    search: { text: message.text, author: { kind: "user" as const, id: from.id, name: from.name } },
   };
   for (let attempt = 1; ; attempt++) {
     const taken = repo

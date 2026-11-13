@@ -11,6 +11,7 @@ import { receiptsStep } from "./steps/receipts.ts";
 import { resolveQuestionsStep } from "./steps/resolve-questions.ts";
 import { retentionStep } from "./steps/retention.ts";
 import { sandboxesStep } from "./steps/sandboxes.ts";
+import { searchBackfillStep } from "./steps/search-backfill.ts";
 import { selfcheckStep } from "./steps/selfcheck.ts";
 
 /*
@@ -47,6 +48,7 @@ export const CRON_STEPS: readonly CronStep[] = [
   jobsStep,
   installationsStep,
   sandboxesStep,
+  searchBackfillStep,
   receiptsStep,
   resolveQuestionsStep,
   pruneNotificationsStep,

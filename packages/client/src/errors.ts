@@ -47,6 +47,21 @@ export async function errorOf(response: Response): Promise<ApiError> {
   );
 }
 
+/**
+ * The error a request given up on through its `AbortSignal` rejects with: the signal's own
+ * reason when it is an error (a browser's `AbortError`), else an `Error` named `AbortError`, as
+ * `fetch` would give. Not an `ApiError`: nothing went wrong, and nothing is worth retrying.
+ * Hermes may have no `DOMException`, so none is made here.
+ */
+export function abortError(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error && reason.name === "AbortError") return reason;
+  const error = new Error("The request was given up on.");
+  error.name = "AbortError";
+  (error as { cause?: unknown }).cause = reason;
+  return error;
+}
+
 /** Whatever `fetch` threw, as the `network` error it means. */
 export function networkError(cause: unknown): ApiError {
   const error = new ApiError(0, "network", "Ponzu could not be reached. Check your connection.");

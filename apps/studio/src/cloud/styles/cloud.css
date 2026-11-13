@@ -484,6 +484,38 @@
   animation: leave var(--dur-pane) var(--ease-out);
 }
 
+/*
+ * A line of the thread search took the person to: washed in pith, the ground matches sit on,
+ * for 1.2 s, then fading at the pane's pace. The wash reaches a little past the line (a ring of
+ * the same color), so a bubble on it reads as marked. Never set with reduced motion
+ * (thread-view.tsx).
+ */
+@keyframes reveal-wash {
+  from,
+  to {
+    background-color: var(--c-pith);
+    box-shadow: 0 0 0 6px var(--c-pith);
+  }
+}
+
+[data-revealed] {
+  border-radius: 10px;
+  animation:
+    reveal-wash 1200ms linear,
+    reveal-wash-out var(--dur-pane) var(--ease-out) 1200ms;
+}
+
+@keyframes reveal-wash-out {
+  from {
+    background-color: var(--c-pith);
+    box-shadow: 0 0 0 6px var(--c-pith);
+  }
+  to {
+    background-color: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
 /* A new working state settling in where the last one was. */
 @keyframes settle {
   from {

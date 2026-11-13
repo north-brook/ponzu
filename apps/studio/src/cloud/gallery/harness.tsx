@@ -50,20 +50,42 @@ function searchFixtures(query: string, canvases: CanvasSummary[]): SearchResults
       const matches = find(text(item));
       return matches.length ? [{ item, matches }] : [];
     });
+  const all = [f.heroResults, f.pricingResults, f.everyResults];
+  // The canvases only search finds (not in the sidebar's list), after the list's own.
+  const found = all.flatMap((r) => r.canvases.map((hit) => hit.canvas));
+  const listed = [...canvases, ...f.settled];
+  const named = [...listed, ...found.filter((c) => !listed.some((l) => l.id === c.id))];
   return {
     query,
-    canvases: hits([...canvases, ...f.settled], (d) => d.name).map(({ item, matches }) => ({
+    canvases: hits(named, (d) => d.name).map(({ item, matches }) => ({
       canvas: item,
       matches,
     })),
-    boards: hits(f.heroResults.boards, (b) => b.name).map(({ item, matches }) => ({
-      ...item,
-      matches,
-    })),
-    comments: hits(f.heroResults.comments, (c) => c.text).map(({ item, matches }) => ({
-      ...item,
-      matches,
-    })),
+    boards: hits(
+      all.flatMap((r) => r.boards),
+      (b) => b.name,
+    ).map(({ item, matches }) => ({ ...item, matches })),
+    comments: hits(
+      all.flatMap((r) => r.comments),
+      (c) => c.snippet,
+    ).map(({ item, matches }) => ({ ...item, matches })),
+    messages: hits(
+      all.flatMap((r) => r.messages),
+      (m) => m.snippet,
+    ).map(({ item, matches }) => ({ ...item, matches })),
+    pullRequests: hits(
+      all.flatMap((r) => r.pullRequests),
+      (p) => p.title,
+    ).map(({ item, matches }) => ({ ...item, matches })),
+    people: all
+      .flatMap((r) => r.people)
+      .flatMap((person) => {
+        const nameMatches = find(person.name ?? "");
+        const loginMatches = find(person.login);
+        return nameMatches.length || loginMatches.length
+          ? [{ ...person, nameMatches, loginMatches }]
+          : [];
+      }),
   };
 }
 
@@ -150,7 +172,12 @@ export function Harness({
                     onQueryChange={setQuery}
                     results={results}
                     onOpenResult={(key) => {
+                      // What was opened, for the gallery's tests: the app opens it in place.
+                      (window as { searchOpened?: string }).searchOpened = key;
                       if (key.startsWith("canvas:")) setOpenId(key.slice("canvas:".length));
+                      if (key.startsWith("person:")) {
+                        setFilter({ person: key.slice("person:".length), projects: null });
+                      }
                       setQuery(null);
                     }}
                     onOpen={openCanvas}

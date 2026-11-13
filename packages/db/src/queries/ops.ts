@@ -1,10 +1,17 @@
-import type { Op } from "@ponzu/core";
+import type { Op, SearchEntry } from "@ponzu/core";
 import { type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import type { ActorKind, Json, OpKind } from "../schema/index.ts";
 import { eventRow, type NewEvent } from "./events.ts";
 import { queryJson } from "./json.ts";
+import {
+  emptySearchRows,
+  type SearchKey,
+  toSearchKeys,
+  toSearchRows,
+  upsertSearchRows,
+} from "./search.ts";
 import { isStorable, scrubbed, toStorableJson } from "./text.ts";
 
 /** Who made a change. It comes from the caller's token, never from what they sent. */
@@ -92,6 +99,13 @@ export interface CommitInput {
   actor: Actor;
   events?: OpEvent[];
   head?: { name: string; icon: string | null };
+  /**
+   * What the ops change in the canvas's search entries: `docSearchChanges(before, after, ops)`
+   * from `@ponzu/core`, written in the same statement, and only if the ops are. Leave it out
+   * (as `docSearchChanges` answers null for ops that touch nothing searched) and the statement
+   * carries no search SQL at all.
+   */
+  search?: { upsert: readonly SearchEntry[]; remove: readonly SearchKey[] };
 }
 
 /**
@@ -117,7 +131,7 @@ export interface LogEntry extends NewOp {
 /** The statement behind `commitOps` and `commitReversal`. */
 export async function commit(
   db: Db,
-  { canvasId, expectedSeq, actor, events = [], head }: CommitInput,
+  { canvasId, expectedSeq, actor, events = [], head, search }: CommitInput,
   entries: LogEntry[],
 ): Promise<CommitResult> {
   if (entries.length === 0) throw new Error("A commit needs at least one op.");
@@ -137,6 +151,7 @@ export async function commit(
       ...(comment ? { comment: scrubbed(comment), itemId: newId("ti") } : {}),
     })),
   );
+  const indexed = searchChanges(canvasId, search);
   const result = await queryJson<{
     seq: number;
     conflict: boolean;
@@ -221,7 +236,7 @@ export async function commit(
           join appended a on a.client_op_id = t.e->>'opId'
          where t.e->'comment' is not null
          order by t.ord
-      )
+      )${indexed}
       select json_build_object(
         'seq', coalesce((select seq from bumped), (select seq from canvases where id = ${canvasId})),
         'conflict', exists (select 1 from fresh) and not exists (select 1 from bumped),
@@ -245,6 +260,31 @@ export async function commit(
     ops: result.ops.map((entry) => toStoredOp(entry.op)),
     replayed: result.ops.filter((entry) => entry.replayed).map((entry) => entry.op.id),
   };
+}
+
+/**
+ * The commit statement's search `with` entries, written only if its ops are (`bumped`): the
+ * entries that are new or changed, and the keys that are gone, emptied (see `emptySearchRows`
+ * for why not deleted). Nothing at all when there is nothing to write. A key both upserted and
+ * removed is upserted, so no row is touched twice in the statement.
+ */
+function searchChanges(canvasId: string, search: CommitInput["search"]): SQL {
+  if (!search) return sql.empty();
+  const rows = toSearchRows(search.upsert);
+  const kept = new Set(rows.map((row) => `${row.kind}:${row.ref}`));
+  const gone = toSearchKeys(search.remove).filter((key) => !kept.has(`${key.kind}:${key.ref}`));
+  const bumped = sql`exists (select 1 from bumped)`;
+  const parts: SQL[] = [];
+  if (rows.length > 0) {
+    parts.push(
+      sql`search_upserted as (${upsertSearchRows(canvasId, JSON.stringify(rows), bumped)})`,
+    );
+  }
+  if (gone.length > 0) {
+    parts.push(sql`search_removed as (${emptySearchRows(canvasId, JSON.stringify(gone), bumped)})`);
+  }
+  if (parts.length === 0) return sql.empty();
+  return sql`, ${sql.join(parts, sql`, `)}`;
 }
 
 export type ReadOpsResult =

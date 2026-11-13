@@ -188,6 +188,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "sidebar-filter": () => <CanvasWindow />,
   "sidebar-search": () => <CanvasWindow query="" />,
   "sidebar-search-results": () => <CanvasWindow query="hero" />,
+  "sidebar-search-every-group": () => <CanvasWindow query="park" />,
   share: () => <CanvasWindow />,
   "share-not-joined": () => <CanvasWindow members={f.membersMixed} />,
   "share-reset-links": () => <CanvasWindow resetLinks="offered" />,

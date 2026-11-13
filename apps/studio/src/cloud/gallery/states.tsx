@@ -367,7 +367,48 @@ export function States() {
             <SearchResultsView
               query="hero"
               results={f.heroResults}
-              selected="board:ab_hero_b"
+              selected="board:cnv_quieter/ab_hero_b"
+              onSelect={ignore}
+              onOpenResult={ignore}
+            />
+          </div>
+          <div className="flex w-[284px] flex-col">
+            <SearchResultsView
+              query="pricing"
+              results={f.pricingResults}
+              selected="page:cnv_quieter/pg_pricing"
+              onSelect={ignore}
+              onOpenResult={ignore}
+            />
+          </div>
+        </Section>
+
+        <Section title="Search · every group">
+          <div className="flex w-[284px] flex-col">
+            <SearchResultsView
+              query="park"
+              results={f.everyResults}
+              selected="message:cnv_park/ti_park_answer"
+              onSelect={ignore}
+              onOpenResult={ignore}
+            />
+          </div>
+        </Section>
+
+        <Section title="Search · nothing, and no answer">
+          <div className="flex w-[284px] flex-col">
+            <SearchResultsView
+              query="zebra"
+              results={{
+                query: "zebra",
+                canvases: [],
+                boards: [],
+                comments: [],
+                messages: [],
+                pullRequests: [],
+                people: [],
+              }}
+              selected={null}
               onSelect={ignore}
               onOpenResult={ignore}
             />
@@ -375,7 +416,8 @@ export function States() {
           <div className="flex w-[284px] flex-col">
             <SearchResultsView
               query="zebra"
-              results={{ query: "zebra", canvases: [], boards: [], comments: [] }}
+              results={null}
+              failed
               selected={null}
               onSelect={ignore}
               onOpenResult={ignore}

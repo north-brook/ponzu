@@ -104,6 +104,20 @@ export const LEDGER_REASONS = ["grant", "use", "topup", "refund", "adjustment"] 
 export const WEBHOOK_SOURCES = ["github", "stripe", "workos"] as const;
 
 /**
+ * What a search entry is (`search_entries.kind`): a canvas's name, a page's or a board's name, a
+ * message of a comment thread, a thread message (a person's, or the agent's settled answer), or
+ * a pull request's title. The same list as `SEARCH_KINDS` in `@ponzu/core`, which a test holds
+ * in step; it is written out here so this file imports nothing.
+ */
+export const SEARCH_KINDS = [
+  "canvas",
+  "page",
+  "board",
+  "comment",
+  "message",
+  "pull_request",
+] as const;
+/**
  * What Ponzu pings a person about (docs/cloud.md, "Notifications"). Each is under one of the
  * person's toggles, except the four billing kinds, which are always on and go to a workspace's
  * admins. apps/api/src/notifications/kinds.ts gives each its toggle, where it opens and its
@@ -181,6 +195,7 @@ export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
 export type SandboxState = (typeof SANDBOX_STATES)[number];
 export type AgentBlocker = (typeof AGENT_BLOCKERS)[number];
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
+export type SearchKind = (typeof SEARCH_KINDS)[number];
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export type NotificationOpen = (typeof NOTIFICATION_OPENS)[number];
 export type NotificationReadVia = (typeof NOTIFICATION_READ_VIA)[number];

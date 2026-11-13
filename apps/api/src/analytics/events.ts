@@ -135,6 +135,19 @@ export interface ServerEvents {
   "question asked": { canvas_id: string; question_id: string; kind: string };
   "question answered": { canvas_id: string; question_id: string; kind: string };
 
+  // Search
+  /**
+   * A search of a workspace was answered. Never the words: how long the query was, how many
+   * terms it made, how many hits came back and in which groups, and how long it took.
+   */
+  "search answered": {
+    q_length: number;
+    terms: number;
+    results: number;
+    /** The groups with at least one hit, in the order clients show them. */
+    groups: string[];
+    ms: number;
+  };
   // Notifications
   /**
    * Ponzu told a person something (a `notifications` row): `muted` when their toggle was off,
