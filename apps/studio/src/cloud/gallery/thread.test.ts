@@ -648,6 +648,8 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(total(lastHeld)).toBeLessThan(1);
     expect(gone.leaving).toEqual([]);
     expect(Math.abs(gone.answerBottom! - lastHeld.answerBottom!)).toBeLessThan(1);
+    // Nor the question below it: a gap removed with the lines would move it and not the answer.
+    expect(Math.abs(gone.askTop! - lastHeld.askTop!)).toBeLessThan(1);
     expect(frames.at(-1)!.leaving).toEqual([]);
     // The answer has settled into the working line's room, and stays there: in every frame
     // painted after the end it only moved down, and it rests there.
