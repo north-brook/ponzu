@@ -1287,10 +1287,21 @@ export function Canvas({
     setBoxes((prev) => (sameBoxes(prev, next) ? prev : next));
   };
   const pinTarget = pinDrag?.moved ? pinDrag.target : undefined;
+  // A board's DOM is built the first time it goes live (snapshot.tsx), after the page has
+  // mounted: the pins on its nodes are measured again then, once a frame however many build in it.
+  const [builtBoards, setBuiltBoards] = useState(0);
+  const builtFrame = useRef(0);
+  const boardBuilt = useCallback(() => {
+    builtFrame.current ||= requestAnimationFrame(() => {
+      builtFrame.current = 0;
+      setBuiltBoards((n) => n + 1);
+    });
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(builtFrame.current), []);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- what the boxes depend on
   useLayoutEffect(
     () => measureBoxes.current(),
-    [doc, page, selection, measured, pinTarget, unsentPins, pending],
+    [doc, page, selection, measured, pinTarget, unsentPins, pending, builtBoards],
   );
 
   // The camera moves the layers directly, once a frame, without rendering.
@@ -1300,8 +1311,9 @@ export function Canvas({
   // board coming on or off screen, a tall board's band, a gesture starting or stopping):
   // the canvas renders only then, and each board only when its own inputs change.
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-  // Boards go live nearest the middle of the view first. Asked only when one
-  // queues to, so it reads the camera then; stable, so boards don't re-render.
+  // Boards go live nearest the middle of the view first. Asked by the thaw queue
+  // each frame a board waits in it, so it reads the camera then; stable, so
+  // boards don't re-render.
   const rankRef = useRef<(id: string) => number>(() => 0);
   rankRef.current = (id: string) => {
     const ab = boards.find((b) => b.id === id);
@@ -1491,6 +1503,7 @@ export function Canvas({
                   }
                   cheap={cold.has(ab.id)}
                   skeleton={skeletons.has(ab.id)}
+                  onBuilt={boardBuilt}
                   rankOf={rankOf}
                   arrivals={arrivals}
                   // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
@@ -2326,6 +2339,7 @@ const Board = memo(function Board({
   attention,
   cheap,
   skeleton,
+  onBuilt,
   rankOf,
   arrivals,
   radius,
@@ -2355,6 +2369,8 @@ const Board = memo(function Board({
   /** On a cold open: live while its picture is made, or a skeleton of it. */
   cheap: boolean;
   skeleton: boolean;
+  /** Its DOM was built after it mounted, the first time it went live. */
+  onBuilt: () => void;
   /** Its distance from the middle of the view, for which board goes live first. */
   rankOf: (id: string) => number;
   /** An agent's new pieces, which arrive as they render. */
@@ -2382,6 +2398,11 @@ const Board = memo(function Board({
   const loopsUrl = useMemo(
     () => source.loopsUrl && ((id: string) => source.loopsUrl!(id, version, colorScheme)),
     [source, version, colorScheme],
+  );
+  const pictures = !!source.snapshotUrl;
+  const fill = useMemo(
+    () => placeholderFill(ab, colorScheme, pictures ? "#fff" : "transparent", tokens),
+    [ab, colorScheme, pictures, tokens],
   );
   const visible = y0 === undefined || y1 === undefined ? undefined : { y0, y1 };
   // The board's own corners where it rounds its root, the view's few px where it doesn't: the
@@ -2427,7 +2448,13 @@ const Board = memo(function Board({
         rank={rank}
         cost={boardCost(ab).elements}
         skeleton={skeleton}
-        fill={placeholderFill(ab)}
+        // Without pictures a placeholder shows only until the board's turn to go live, a frame
+        // or a few: a colour that isn't known for sure is left clear rather than guessed white.
+        fill={fill}
+        // A fit-content board's height comes from its DOM: the page's bounds, the camera's fit
+        // and which boards are on screen all need it, so it's built at once (hidden, not drawn).
+        build={fixed === null}
+        onBuilt={onBuilt}
       >
         {(hidden) => (
           <ArtboardView
