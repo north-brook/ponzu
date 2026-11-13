@@ -63,7 +63,7 @@
     },
     "apps/desktop": {
       "name": "@ponzu/desktop",
-      "version": "1.80.1",
+      "version": "2.1.0",
       "dependencies": {
         "electron-updater": "6.8.9",
       },
@@ -80,7 +80,7 @@
     },
     "apps/mobile": {
       "name": "@ponzu/mobile",
-      "version": "0.12.1",
+      "version": "1.0.0",
       "dependencies": {
         "@expo-google-fonts/funnel-display": "^0.4.1",
         "@expo-google-fonts/ibm-plex-mono": "^0.4.1",

@@ -2735,9 +2735,10 @@ an hour, at its last whole second. A cut (`cutAwake`) meters the piece so far ex
 would, under the same id rule (`<canvas>/<epoch ms of where the piece began>`), attribution and
 rate card, and moves `awake_since` on to the cut; `state_at` still says when it woke, and is what
 the sweep's dead-runner check and the `sandbox slept` event's `awake_ms` read. A cut holds to the
-stretch it saw, and a move out of `awake` holds to the `awake_since` it read and tries once more
-if a cut landed meanwhile, so a cut racing a sleep or another cut never meters a second twice or
-loses one. Each sandbox is cut at most three times a run. While `PONZU_BILLING` is unset or `off`
+stretch it saw, and a move out of `awake` (a sleep, a stop, a retire or a restart in place)
+holds to the `awake_since` it read and goes again, up to four times in all, while a cut keeps
+landing meanwhile, so a cut racing a sleep or another cut never meters a second twice or loses
+one, and the sleep still happens. Each sandbox is cut at most three times a run. While `PONZU_BILLING` is unset or `off`
 nothing is cut, and a stretch is metered whole when it ends, as before.
 
 **Adjustments.** `apps/api/scripts/credit.ts <workspace> <credits> "<note>"` writes one

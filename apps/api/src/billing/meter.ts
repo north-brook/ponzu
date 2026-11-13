@@ -18,7 +18,11 @@ import { billingPeriod } from "./period.ts";
 
 /** An awake stretch is cut once it has run this long. */
 export const CUT_EVERY_MS = 60 * 60_000;
-/** Cuts of one sandbox in one run, at most: a sweep that was down catches up over a few minutes. */
+/**
+ * Cuts of one sandbox in one run, at most: a sweep that was down catches up over a few minutes.
+ * A move out of `awake` tries one more time than this (`MOVE_ATTEMPTS` in the database's
+ * `queries/sandboxes.ts`), so it outlasts a run's cuts; raise both together.
+ */
 export const MAX_CUTS_PER_RUN = 3;
 
 /**

@@ -366,6 +366,55 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     }
   }, 60_000);
 
+  test("a sleep or a restart racing a meter's three cuts in a row meters every second once", async () => {
+    const limits = { perWorkspace: 100, perOwner: 100 };
+    const woke = new Date(Date.UTC(2026, 10, 30, 20));
+    const second = (n: number) => new Date(woke.getTime() + n * 1000);
+    for (let round = 0; round < 12; round++) {
+      const { canvas } = await seedCanvas(db);
+      await beginSandbox(db, { canvasId: canvas.id, now: woke, by: "w", limits });
+      await moveSandbox(db, {
+        canvasId: canvas.id,
+        from: ["waking"],
+        to: "awake",
+        now: woke,
+        by: "w",
+      });
+      // As `meterAwake` cuts a sandbox a sweep left behind: one cut after another, each from
+      // where the last one left the stretch. The move out of `awake` can lose to each in turn.
+      const chain = async () => {
+        let since = woke;
+        for (const at of [second(3600), second(7200), second(10_800)]) {
+          if (!(await cutAwake(db, { canvasId: canvas.id, at, observedSince: since }))) return;
+          since = at;
+        }
+      };
+      // Half the rounds put it to sleep, half restart it in place (a claim from `awake`).
+      const leave =
+        round % 2 === 0
+          ? moveSandbox(db, {
+              canvasId: canvas.id,
+              from: ["awake"],
+              to: "asleep",
+              now: second(14_400),
+            })
+          : claimSandbox(db, {
+              canvasId: canvas.id,
+              from: ["awake"],
+              now: second(14_400),
+              by: "restart",
+              limits,
+            });
+      const [, left] = await Promise.all([chain(), leave]);
+      expect(left).not.toBeNull();
+      const used = await db
+        .select({ seconds: usageEvents.seconds })
+        .from(usageEvents)
+        .where(eq(usageEvents.canvasId, canvas.id));
+      expect(used.reduce((sum, event) => sum + event.seconds!, 0)).toBe(14_400);
+    }
+  }, 60_000);
+
   test("one person starting Claude sign-ins at once has one open", async () => {
     const user = await seedUser(db);
     const now = new Date();

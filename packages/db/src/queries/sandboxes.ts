@@ -134,7 +134,24 @@ export async function claimSandbox(
   return claimFrom(await move(db, { canvasId, from, to: "waking", now, by, limits }));
 }
 
-type MoveResult = { row: Record<string, unknown> | null; full: boolean };
+type MoveResult = {
+  row: Record<string, unknown> | null;
+  full: boolean;
+  /** The row's `awake_since` as the move read it (a move statement's own answer only). */
+  seen?: string | null;
+};
+
+/** Whether the row's `awake_since` is no longer `seen`, the value a failed move read. */
+async function awakeSinceMoved(db: Db, canvasId: string, seen: string | null): Promise<boolean> {
+  const [row] = await run(
+    db
+      .select({ awakeSince: sandboxes.awakeSince })
+      .from(sandboxes)
+      .where(eq(sandboxes.canvasId, canvasId)),
+  );
+  const now = row?.awakeSince?.getTime() ?? null;
+  return now !== (seen === null ? null : new Date(seen).getTime());
+}
 
 function claimFrom(result: MoveResult | null): SandboxClaim {
   if (result?.row) return { sandbox: toSandbox(result.row) };
@@ -204,14 +221,20 @@ export interface Move {
  * A move to `asleep` forgets the session's address and port token: nothing of it runs.
  */
 export async function moveSandbox(db: Db, request: Move): Promise<SandboxRow | null> {
-  let result = await move(db, request);
-  // A move out of `awake` holds to the stretch it read (see `move`), so a meter's cut that
-  // landed while it waited on the row makes it do nothing. Tried once more from what is there
-  // now: it either moves the row and meters what is left of the stretch, or finds what a lost
-  // race always finds.
-  if (!result?.row && request.from.includes("awake")) result = await move(db, request);
+  const result = await move(db, request);
   return result?.row ? toSandbox(result.row) : null;
 }
+
+/**
+ * Attempts of a move out of `awake`. It holds to the stretch it read (see `moveOnce`), so a
+ * meter's cut, or a wake, that landed while it waited on the row makes it do nothing; it then
+ * goes again from what is there now, and either moves the row and meters what is left of the
+ * stretch, or finds what a lost race always finds. The meter cuts one sandbox at most three times
+ * in a run, one after another, so a move can lose to each of them in turn and still move on its
+ * fourth. A move that failed for any other reason (another state, a lease, fresh activity) finds
+ * `awake_since` where it read it, and is not tried again.
+ */
+const MOVE_ATTEMPTS = 4;
 
 const CHANGE_COLUMNS = {
   sessionId: "session_id",
@@ -223,7 +246,21 @@ const CHANGE_COLUMNS = {
 } as const;
 const TIME_COLUMNS = { sessionStartedAt: "session_started_at", expiresAt: "expires_at" } as const;
 
+/** `moveOnce`, again while it moved nothing out of `awake` (see `MOVE_ATTEMPTS`). */
 async function move(
+  db: Db,
+  request: Move & { limits?: SandboxLimits },
+): Promise<MoveResult | null> {
+  let result = await moveOnce(db, request);
+  if (!request.from.includes("awake")) return result;
+  for (let attempt = 1; attempt < MOVE_ATTEMPTS && !result?.row && !result?.full; attempt++) {
+    if (!(await awakeSinceMoved(db, request.canvasId, result?.seen ?? null))) break;
+    result = await moveOnce(db, request);
+  }
+  return result;
+}
+
+async function moveOnce(
   db: Db,
   {
     canvasId,
@@ -282,7 +319,7 @@ async function move(
     // (`cutAwake`) that commits while this waits on the row moves `awake_since` on, and metering
     // from the old start would collide with the cut's event and lose what came after it; a wake
     // that commits meanwhile starts a stretch this read as not awake, and would go unmetered. So
-    // it moves nothing then, and `moveSandbox` tries again. A row in any other state is as before.
+    // it moves nothing then, and `move` tries again. A row in any other state is as before.
     sql`(s.state <> 'awake'
          or s.awake_since is not distinct from (select b.awake_since from before b))`,
   ];
@@ -343,7 +380,8 @@ async function move(
       )
       select json_build_object(
         'row', (select row_to_json(moved) from moved),
-        'full', ${limits ? sql`not ${roomFor(sql`${canvasId}`, limits)}` : sql`false`}
+        'full', ${limits ? sql`not ${roomFor(sql`${canvasId}`, limits)}` : sql`false`},
+        'seen', (select b.awake_since from before b)
       ) as result
     `,
   );
