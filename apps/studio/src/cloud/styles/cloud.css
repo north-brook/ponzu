@@ -199,16 +199,17 @@
 }
 
 /*
- * While an edge is dragged (`data-pane-drag`): a sheet over the whole window, so the cursor is
- * the column-resize one wherever the pointer goes and nothing under it (a control, a link, the
- * canvas's frames, which would swallow the pointer) sees the pointer. No text is selected on
- * the way: the edge's press is the library's, which keeps it from starting a selection.
+ * While an edge is dragged (`data-pane-drag`, "moving" once the pointer has left the press, so
+ * a click or a double click still lands on the edge): a sheet over the whole window, so the
+ * cursor is the column-resize one wherever the pointer goes and nothing under it (a control, a
+ * link, the canvas's frames, which would swallow the pointer) sees the pointer. No text is
+ * selected on the way: the edges' presses keep the pointer from starting a selection.
  *
  * One pseudo-element, not a rule for everything in the window: a `[data-pane-drag] *` rule
  * restyled every element there is, every board's included, when the drag began and again when
  * it ended (apps/studio/perf, website.resize-*).
  */
-[data-pane-drag]::after {
+[data-pane-drag="moving"]::after {
   content: "";
   position: fixed;
   inset: 0;
