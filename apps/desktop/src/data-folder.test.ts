@@ -48,14 +48,18 @@ test.skipIf(process.platform === "win32")(
   "the throwaway folder goes once the app has exited, with what it wrote as it went",
   async () => {
     const folder = throwawayDataFolder();
-    const app = spawn("/bin/sh", ["-c", `sleep 0.4; echo late > "${folder}/Local State"`]);
+    // The app runs until the test lets it go, by its standard input: no clock decides whether
+    // it is still running when the folder is looked at.
+    const app = spawn("/bin/sh", ["-c", 'read go; echo late > "$0/Local State"', folder], {
+      stdio: ["pipe", "ignore", "inherit"],
+    });
+    const exited = new Promise<number | null>((resolve) => app.once("exit", resolve));
     removeOnceExited(folder, app.pid!);
-    await new Promise((resolve) => setTimeout(resolve, 150));
     expect(existsSync(folder)).toBe(true);
-    await new Promise((resolve) => app.once("exit", resolve));
-    for (let tries = 0; existsSync(folder) && tries < 40; tries++) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
+    app.stdin!.end("go\n");
+    // Its last write lands in the folder: had the folder gone while it ran, the write would fail.
+    expect(await exited).toBe(0);
+    while (existsSync(folder)) await new Promise((resolve) => setTimeout(resolve, 20));
     expect(existsSync(folder)).toBe(false);
   },
 );

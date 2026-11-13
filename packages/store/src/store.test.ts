@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, open as openFile, rm } from "node:fs/promises";
+import { type FileHandle, mkdtemp, open as openFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type PElement, parseArtboardFile, parseHtml } from "@ponzu/core";
@@ -739,16 +739,20 @@ describe("an artboard file caught while something is still writing it", () => {
       for (const end = Date.now() + 3000; !ok() && Date.now() < end; ) await settle(10);
       return ok();
     };
+    // Closed whatever happens: a file handle left to the garbage collector throws there, into
+    // whichever test is running then, and a watcher left open keeps reading the folder.
+    let fh: FileHandle | undefined;
+    let d: Design | undefined;
     try {
       const fs = new FsAdapter(root);
       for (const [p, text] of Object.entries(seed)) await fs.write(p, text);
-      const d = await Design.open(fs, { holdDelay: 3000 });
+      d = await Design.open(fs, { holdDelay: 3000 });
       // The watcher hears the writes above late; let that pass.
       await settle(300);
       const pieces = edited.match(/[\s\S]{1,40}/g)!;
-      const fh = await openFile(join(root, path), "w");
+      fh = await openFile(join(root, path), "w");
       await fh.write(pieces.shift()!);
-      expect(await until(() => d.heldFiles.includes(path))).toBe(true);
+      expect(await until(() => d!.heldFiles.includes(path))).toBe(true);
       expect(hero(d)).toMatchObject({ id: "ab_hero", name: "Hero" });
       for (const piece of pieces) {
         await fh.write(piece);
@@ -756,11 +760,13 @@ describe("an artboard file caught while something is still writing it", () => {
         expect(hero(d).id).toBe("ab_hero");
       }
       await fh.close();
-      expect(await until(() => hero(d).x === 900)).toBe(true);
+      fh = undefined;
+      expect(await until(() => hero(d!).x === 900)).toBe(true);
       expect(hero(d).id).toBe("ab_hero");
       expect(d.heldFiles).toEqual([]);
-      await d.close();
     } finally {
+      await fh?.close();
+      await d?.close();
       await rm(root, { recursive: true, force: true });
     }
   });
