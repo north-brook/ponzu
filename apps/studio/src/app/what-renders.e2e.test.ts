@@ -106,6 +106,21 @@ describe.skipIf(!chromiumPath)("what one change in a canvas draws", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
     page.on("pageerror", (error) => errors.push(String(error)));
+    // The canvas's files, served from what the in-memory API holds, at whichever address its
+    // file links are at: a picture that can't load gives way to the line without it.
+    await page.route("https://assets.test/**", async (route) => {
+      const bytes = await page.evaluate((asked) => {
+        for (const canvas of window.ponzuFake!.backend.canvases.values()) {
+          for (const { ref, bytes } of canvas.pictures.values()) {
+            const at = new RegExp(`/${canvas.id}(-\\d+)?/${ref}$`);
+            if (at.test(asked)) return [...bytes];
+          }
+        }
+        return null;
+      }, route.request().url());
+      if (!bytes) return route.fulfill({ status: 404, body: "" });
+      return route.fulfill({ status: 200, contentType: "image/webp", body: Buffer.from(bytes) });
+    });
     await page.addInitScript(COUNTER);
     await page.goto(`${server.url}?as=returning`);
     await page.locator("[data-canvas-row]").first().waitFor({ timeout: 30_000 });
@@ -303,10 +318,15 @@ describe.skipIf(!chromiumPath)("what one change in a canvas draws", () => {
   test("the thread's pictures move to the new address when the file links are reset", async () => {
     // The rail no longer draws again for every op, so it must still hear the source's new file
     // address, which comes with no change to the document at all.
+    // Those loaded: one that failed would give way to the line without it a moment later.
     const pictures = () =>
       thread()
         .locator("img[src^='https://assets.test/']")
-        .evaluateAll((imgs) => imgs.map((img) => (img as HTMLImageElement).src));
+        .evaluateAll((imgs) =>
+          (imgs as HTMLImageElement[])
+            .filter((img) => img.complete && img.naturalWidth > 0)
+            .map((img) => img.src),
+        );
     // A teammate's seeded comment gets a picture, which the rail shows from the canvas's files.
     await page.evaluate(async (id) => {
       const w = window.ponzuFake!;
