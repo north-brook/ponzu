@@ -82,10 +82,44 @@ describeLive("billing's one-winner writes on a real Postgres", ({ db, close }) =
         settleCardSetup(db, { id: setup!.id, outcome, at: new Date() }),
       ),
     );
-    expect(settled.filter((answer) => answer!.settled)).toHaveLength(1);
-    const outcome = settled.find((answer) => answer!.settled)!.setup.payload.outcome;
-    // Every later answer reports the first one's outcome.
-    for (const answer of settled) expect(answer!.setup.payload.outcome).toBe(outcome);
+    // `added` may replace a `cancelled` that committed first (the card Stripe has is the truth),
+    // so the cancel can settle too, but only before an `added`, and `added` settles exactly once.
+    const won = settled.filter((answer) => answer!.settled);
+    const added = won.filter((answer) => answer!.setup.payload.outcome === "added");
+    expect(added).toHaveLength(1);
+    expect(won.length).toBeLessThanOrEqual(2);
+    const { rows } = (await run(
+      db.execute(
+        sql`select payload ->> 'outcome' as outcome from auth_states where id = ${setup!.id}`,
+      ),
+    )) as unknown as { rows: { outcome: string }[] };
+    expect(rows[0]!.outcome).toBe("added");
+  });
+
+  test("a setup settled the same way by three at once is settled by exactly one", async () => {
+    for (const outcomes of [
+      ["added", "added", "added"],
+      ["cancelled", "cancelled", "expired"],
+    ] as const) {
+      const workspace = await freshWorkspace();
+      const admin = await seedUser(db, "ines");
+      const now = new Date();
+      const setup = await beginCardSetup(db, {
+        userId: admin.id,
+        workspaceId: workspace.id,
+        capCents: 10_000,
+        scheme: "ponzu",
+        now,
+        expiresAt: new Date(now.getTime() + 35 * 60_000),
+      });
+      const settled = await Promise.all(
+        outcomes.map((outcome) => settleCardSetup(db, { id: setup!.id, outcome, at: new Date() })),
+      );
+      expect(settled.filter((answer) => answer!.settled)).toHaveLength(1);
+      const outcome = settled.find((answer) => answer!.settled)!.setup.payload.outcome;
+      // Every later answer reports the first one's outcome.
+      for (const answer of settled) expect(answer!.setup.payload.outcome).toBe(outcome);
+    }
   });
 
   test("two gate refreshes at once each see the other's write", async () => {
