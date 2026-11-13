@@ -86,6 +86,17 @@ variables, quits when started with a debugging port, and has no developer tools.
 PONZU_TEST_BUILD=1 bun run package:dir          # for spare or CI to drive, signed in
 ```
 
+`PONZU_FAKE_BACKEND=1` runs the studio on Ponzu Cloud in memory (the studio's fake host, the
+one its headless tests use) instead of the service, so the packaged app can be measured on a
+canvas of its own without an account. A test build or a development build takes it; a release
+ignores it, and a release's studio, built for production, has no fake in it at all (CI checks the
+packaged studio for it). Launched that way the app is apart from the person, like the smoke
+check: a throwaway data folder, no keychain, no links claimed, and every request that would leave
+the computer refused. Its studio must be built with `--mode e2e` for the fake to be there;
+`scripts/measure/run.sh` builds such an app and measures it (`scripts/measure/measure.ts`: open,
+idle, comments, pan and zoom, switching canvases, a long idle, with macOS `footprint` of each
+process). It opens a window, so it runs on the test Mac, never a person's own.
+
 ## Layout
 
 ```

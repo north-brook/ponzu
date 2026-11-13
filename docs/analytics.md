@@ -13,9 +13,9 @@ One PostHog project per environment.
 | dev (`api-dev.ponzu.design`, the Ponzu Dev app) | **Ponzu Dev** |
 | production, after cutover | **Ponzu** |
 
-The pre-cloud product's project, and the telemetry in `apps/mobile` and `apps/web` that reports
-to it, are left alone. They are deleted or repointed at cutover, and that project is retired
-after it. The 1.x command line, which also reports to it, is no longer on this branch.
+Ponzu for iPhone sends no analytics yet: `apps/mobile/lib/telemetry.ts` names its events, but
+`canTrack` is false and `track` does nothing. The website has its own cookieless analytics (see
+[The website](#the-website)). The 1.x command line is no longer on this branch.
 
 ## Switching it on
 
@@ -70,7 +70,8 @@ API.
   it authenticated as.
 - **Never in the way.** PostHog being down, slow or blocked costs nothing a person sees. Nothing
   on a request's path waits on PostHog; every capture is wrapped so it cannot throw into product
-  code; the queues are bounded (1,000 events); and each send has a time limit (5 seconds on the
+  code; the queues are bounded (1,000 events on the API and the runner, 100 in the Mac app's main
+  process); and each send has a time limit (5 seconds on the
   API, kept alive past the response by Vercel's `waitUntil`).
 - **Never a secret.** No tokens, API keys, OAuth codes, Ponzu's own session ids, Claude
   credentials, vault contents, webhook payloads, authorization headers or request bodies. A URL
@@ -112,6 +113,9 @@ Every event about a workspace also carries `workspace_id`.
 | `notification created` | `kind`, `muted`, `suppressed` (`pref_off`, `looking`, `rate`, `no_device`, or null), `pushes`, `deferred` | A person was told something (an inbox row was written). `pushes`: how many phones it was planned for; `deferred`: they wait for the person at their Mac. About the person told. Never its title, body or link. |
 | `push sent` | `kind` | Expo took a push to one phone. About the person it is for. |
 | `push failed` | `kind`, `error` | Expo refused a push, in its ticket or later in its receipt, with Expo's code (`DeviceNotRegistered`, `MessageRateExceeded`, …). Never the token. |
+| `email sent` | `kind` | Resend took an email (`digest`, `billing`, `team`, `recap` or `notice`), or had taken it already under the same key. About the person it is for. Never the address, subject or body. |
+| `email refused` | `kind`, `failure` | Resend refused an email and it will not be tried again, with Resend's code (`validation_error`, …). About the person it was for. |
+| `email unsubscribed` | `kind`, `via` (`one_click` or `page`) | A person turned an email off from the email itself: their mail app's one-click unsubscribe, or the button on the link's page. Following the link alone captures nothing. |
 | `pull request created` / `merged` / `closed` | `canvas_id`, `number` | Once each, whichever of a route and a webhook sees it first. |
 | `sandbox woke` | `canvas_id`, `start` (`create`, `resume`, `restart`), `fresh`, `recreated`, `duration_ms`, `image` | About the canvas's owner, whose Claude it runs on. `duration_ms` is from the wake's start until `ponzu-start` was sent. `create`: the session booted on an empty disk (a first wake, a new image, or a snapshot that expired); `resume`: from its snapshot; `restart`: the runner started again in a session that was already running (a changed Claude credential, or a session left running). `fresh`: the disk was empty, so the runner rebuilds from git and the last checkpoint. `recreated`: the sandbox was deleted and made again on a new image (docs/cloud.md, "How images roll out"). `image` is the `ponzu-runner@sha256:…` it runs. |
 | `sandbox slept` | `canvas_id`, `why` (`idle`, `claude_unusable`, `claude_disconnected`, `owner_left`, `restart`, `failed`, `cycle`, `expired`), `awake_ms` | The sandbox was stopped after its runner shut down, and `awake_ms` metered. `restart`: put to sleep to be woken again at once (a runner unheard for 90 seconds, a lapsed or stalled turn); `cycle`: its session neared Vercel's 24-hour cap; `expired`: Vercel had already stopped the session when the sweep went to extend it. About the canvas's owner. |
@@ -229,7 +233,7 @@ a canvas is its `canvas_id`.
 | `page switched` | `canvas_id` | |
 | `pane toggled` | `pane`: `sidebar`, `thread`, `pull_request`; `open`; `canvas_id` | |
 | `comment mode entered` | `canvas_id` | the canvas's Comment tool, by button or `C` |
-| `hotkey used` | `hotkey`: `mod+k`, `mod+n`, `mod+,`, `mod+j` | the window's ⌘ shortcuts |
+| `hotkey used` | `hotkey`: `mod+k`, `mod+n`, `mod+,`, `mod+b`, `mod+alt+b`, `mod+p`, `mod+shift+enter` | the window's ⌘ shortcuts (`useShortcut`); ⌘1 to ⌘9 are not counted |
 | `settings section viewed` | `section` | |
 | `notice shown` | `notice` | a calm state, by what it is, never its words (`NoticeName`) |
 | `notification shown` | `kind`, `surface`: `mac` | the Mac showed a banner from the person's inbox; never its title or body |
@@ -287,7 +291,7 @@ to the studio over the bridge, so the environment a build was made for decides t
 - `PONZU_POSTHOG_KEY`: the project token, `phc_…`. Unset: nothing is reported, nothing of
   PostHog loads in the studio, and the content security policy reaches none of it.
 - `PONZU_POSTHOG_HOST`: default `https://us.i.posthog.com`. The policy then allows exactly that
-  host and its `-assets` host (remote config); no script source is added, since the studio
+  host, and for PostHog's own cloud (`us` or `eu`) also its `-assets` host (remote config); no script source is added, since the studio
   bundles PostHog whole (`posthog-js/full/no-external`) and never loads one.
 - `PONZU_POSTHOG_REPLAY`: `full` or `private` (anything else is `private`).
 
@@ -360,7 +364,18 @@ answers, usually a second or less: the app opened event, the first page view and
 a recording may go before the studio learns the switch is off, and from then on nothing does.
 An API instance other than the one that took the `PATCH` keeps sending about the person for up
 to a minute, until its copy of who is out is read again. The website's own analytics are cookieless and anonymous, and
-are not tied to the account.
+are not tied to the account (below).
+
+## The website
+
+The website (`apps/web`) starts PostHog only when `NEXT_PUBLIC_POSTHOG_KEY` is set and the
+browser sends neither Do Not Track nor Global Privacy Control (`components/consent.ts`,
+`components/site-analytics.ts`). It runs cookieless, through `/ingest` on its own domain, with no
+person profiles, autocapture or recordings. It sends page views, `download clicked` (`href`,
+`page`), the phone handoff's `handoff opened`, `handoff copied`, `handoff shared` and
+`handoff arrived` (`os`), `page crashed` and `page ready` (`components/health.ts`), uncaught
+errors and web vitals. The crash marker it reads on the next visit sits in the tab's session
+storage.
 
 ## What the Mac app never sends
 

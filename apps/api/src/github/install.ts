@@ -101,7 +101,7 @@ export const SETUP_RESULTS: readonly SetupPage["kind"][] = [
  * (`link-scheme.ts`).
  */
 export async function finishSetup(
-  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics">,
+  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics" | "mail" | "config">,
   query: {
     state?: string;
     installationId?: number;
@@ -173,7 +173,7 @@ export async function installStatus(
 }
 
 async function settle(
-  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics">,
+  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics" | "mail" | "config">,
   userId: string,
   query: { installationId?: number; setupAction?: "install" | "update" | "request" },
 ): Promise<SetupPage> {

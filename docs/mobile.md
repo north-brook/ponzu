@@ -7,12 +7,13 @@ is an Expo app (SDK 58, React Native 0.88, Expo Router, NativeWind), iOS only.
 Everything it says to Ponzu goes through `@ponzu/client`, on the React Native
 side. Its design is `.context/cloud/program/designs/iphone.md`.
 
-This is being rebuilt from the 1.x app, which talked to paired Macs over
-Tailscale. That data layer, pairing, Tailscale and the camera are gone. What
-is built so far: the native modules the cloud app needs, the two app
-variants, the cloud seams (`lib/cloud/`), launch, sign-in, the update screen,
-a plain list of canvases, a settings sheet that signs out, and a canvas, live
-and read only. Setup, comments and the rest arrive slice by slice.
+It replaced the 1.x app, which talked to paired Macs over Tailscale; that
+data layer, pairing, Tailscale and the camera are gone. iPhone 1.1.0, in
+TestFlight, has launch, sign-in, setup, the canvases list, search, new
+canvas, a live canvas with comments and comment pictures, the chat, needs
+you, the pull request with Merge, and pings, which are built but stay off
+until the API sends them (below, "Pings"). Still to come: the filter, the
+rest of iPad and iPhone Duo, standby, analytics, and the last of settings.
 
 ## Layout
 
@@ -808,9 +809,8 @@ Two apps build from this project (`app.config.ts`, by `APP_VARIANT`):
 Neither takes universal links yet: `app.config.ts` sets no `associatedDomains`,
 because `ponzu.design` serves no apple-app-site-association file and the
 provisioning profile may lack the capability. Universal links on
-`ponzu.design` return with the association file. Until
-cutover only Ponzu Dev is installed from the `cloud` branch, so no cloud build
-ever reaches a phone running the 1.x app or TestFlight's groups. The
+`ponzu.design` return with the association file. Ponzu Dev never goes to
+TestFlight: it is a development client or a preview build. The
 `preview` profile is internal distribution on the `preview` channel and EAS
 environment. `.eas/workflows/preview.yml` runs only by hand (`eas
 workflow:run preview.yml`): agents never deploy, so nothing starts it on a
@@ -1017,7 +1017,12 @@ that changed only `apps/mobile`.
   `POSTHOG_CLI_PROJECT_ID` (PostHog project `677204`) there too upload
   source maps: from production builds through PostHog's build plugin in
   `app.config.ts`, and from production updates through
-  `eas/posthog_upload_sourcemaps` in `production.yml`.
+  `eas/posthog_upload_sourcemaps` in `production.yml`. Neither is set
+  today: without them the source-map step fails, so `shared.yml` and
+  `production.yml` runs show red even though the update is published, and
+  crash stacks are not symbolicated. Setting `POSTHOG_CLI_API_KEY` changes
+  the native fingerprint (`app.config.ts` adds PostHog's plugin only when it
+  is set), so add both together with a planned new build.
 
 ## Checks
 
@@ -1025,8 +1030,7 @@ that changed only `apps/mobile`.
 scope` job (`scripts/ci/scope.ts`) decides what a pull request can affect;
 `Mobile checks` (typecheck, tests, component tests and `expo export
 --platform ios`) runs when it touches the phone or what it runs (the canvas,
-`@ponzu/client`, `@ponzu/core`), for pull requests into `cloud` too, and
-`Mobile` reports for every pull request. `Mobile iOS` runs the Maestro flows
-on spare's runners, for pull requests into `main` only until the cloud app's
-flows have passed twice on the job runner; see
+`@ponzu/client`, `@ponzu/core`), and `Mobile` reports for every pull
+request. `Mobile iOS` runs the Maestro flows on spare's runners for the same
+pull requests, when they come from this repository; see
 [`apps/mobile/maestro/README.md`](../apps/mobile/maestro/README.md).

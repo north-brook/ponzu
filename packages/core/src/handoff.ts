@@ -77,6 +77,19 @@ export interface Handoff {
   closes?: boolean;
   /** A page that says something went wrong: the mark goes quiet. */
   problem?: boolean;
+  /**
+   * One button that posts back to the page's own address, for a page that asks before it acts
+   * (an email's unsubscribe link: following it changes nothing, the button does). Only with no
+   * `link`. The policy then lets a form post to the page's own origin, and nowhere else.
+   */
+  form?: {
+    /** Where it posts: a path and query on the page's own origin, like `/v1/email/unsubscribe?t=…`. */
+    action: string;
+    /** Hidden fields it sends, as name and value. */
+    fields: Record<string, string>;
+    /** The button's words. */
+    label: string;
+  };
 }
 
 /*
@@ -241,6 +254,7 @@ p { margin: 0; max-width: 460px; color: var(--muted); text-wrap: balance; }
   text-decoration: none;
   transition: translate 150ms ease-out;
 }
+button.cta { border: 0; font-family: inherit; line-height: inherit; cursor: pointer; }
 .cta:hover { translate: 0 -1px; }
 .cta:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .cta svg { width: 16px; height: 16px; }
@@ -326,11 +340,27 @@ function handoffHashes(): Promise<{ script: string; style: string }> {
 
 /**
  * Everything the page may do: its own script and style, by hash, a font from inside that style
- * sheet, and nothing else. No request, no form, no frame around it.
+ * sheet, and nothing else. No request, no frame around it, and no form unless the page has its
+ * one button (`form`), which may post only to the page's own origin.
  */
-export async function handoffPolicy(): Promise<string> {
+export async function handoffPolicy({ form = false }: { form?: boolean } = {}): Promise<string> {
   const { script, style } = await handoffHashes();
-  return `default-src 'none'; script-src ${script}; style-src ${style}; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+  return `default-src 'none'; script-src ${script}; style-src ${style}; font-src data:; base-uri 'none'; form-action ${form ? "'self'" : "'none'"}; frame-ancestors 'none'`;
+}
+
+/** The page's one button, posting back to its own origin. */
+function formMarkup({ action, fields, label }: NonNullable<Handoff["form"]>): string {
+  // A path, not `//host/…`, which a browser reads as another origin.
+  if (!/^\/(?!\/)[A-Za-z0-9_\-./?=&%~]*$/.test(action)) {
+    throw new Error("A handoff's form posts only to a path on its own origin.");
+  }
+  const hidden = Object.entries(fields)
+    .map(
+      ([name, value]) =>
+        `<input type="hidden" name="${escapeAttribute(name)}" value="${escapeAttribute(value)}">`,
+    )
+    .join("");
+  return `\n<form method="post" action="${escapeAttribute(action)}">${hidden}<button class="cta" type="submit">${escapeText(label)}</button></form>`;
 }
 
 /**
@@ -340,6 +370,7 @@ export async function handoffPolicy(): Promise<string> {
 export async function renderHandoff(page: Handoff): Promise<{ html: string; csp: string }> {
   const { link } = page;
   if (link && !isAppLink(link.href)) throw new Error("A handoff opens only the apps' own links.");
+  if (link && page.form) throw new Error("A handoff has a link to open or a form, not both.");
   const attributes = [
     `data-state="opening"`,
     link ? `data-link="${escapeAttribute(link.href)}"` : "",
@@ -358,7 +389,7 @@ export async function renderHandoff(page: Handoff): Promise<{ html: string; csp:
           `\n<a class="cta" href="${escapeAttribute(link.href)}" data-retry>${slice("")}Open ${escapeText(link.app)}</a>`,
         ),
       ]
-    : [view("opening", page.view)];
+    : [view("opening", page.view, page.form ? formMarkup(page.form) : "")];
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -379,5 +410,5 @@ ${views.join("\n")}
 </body>
 </html>
 `;
-  return { html, csp: await handoffPolicy() };
+  return { html, csp: await handoffPolicy({ form: page.form !== undefined }) };
 }

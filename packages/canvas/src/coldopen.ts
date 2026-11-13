@@ -9,7 +9,7 @@
  * a decode and a texture), and no looping animation (a layer per element).
  */
 
-import type { Artboard, PElement, PNode } from "@ponzu/core";
+import { type Artboard, type PElement, type PNode, parseTokens } from "@ponzu/core";
 
 /** A board is cheap to show live with at most this many elements... */
 const CHEAP_ELEMENTS = 1500;
@@ -85,13 +85,49 @@ export function coldLive(boards: Artboard[]): Set<string> {
   return out;
 }
 
-/** The colour a placeholder fills with: the board's own background, or white. */
-export function placeholderFill(ab: Artboard): string {
+const PLAIN = /^(#[0-9a-f]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-z]+)$/i;
+
+/**
+ * The colour a placeholder fills with: the board's own background, or `otherwise`. A
+ * `light-dark()` of two plain colours takes the one for the board's scheme, and a `var()` of a
+ * token the canvas declares once (and doesn't theme with a media query) takes the token's colour.
+ */
+export function placeholderFill(
+  ab: Artboard,
+  scheme: "light" | "dark" = "light",
+  otherwise = "#fff",
+  tokens = "",
+): string {
   const s = ab.root.style;
-  const bg = s["background-color"] ?? s.background ?? "";
-  // A plain colour only: gradients and images are what the picture is for.
-  if (/^(#[0-9a-f]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-z]+)$/i.test(bg.trim())) return bg.trim();
-  return "#fff";
+  const bg = (s["background-color"] ?? s.background ?? "").trim();
+  return plainColour(bg, scheme, tokens, 0) ?? otherwise;
+}
+
+/** A plain colour only: gradients and images are what the picture is for. */
+function plainColour(
+  v: string,
+  scheme: "light" | "dark",
+  tokens: string,
+  depth: number,
+): string | undefined {
+  if (PLAIN.test(v)) return v;
+  if (depth > 2) return undefined;
+  const pair = /^light-dark\(\s*([^,()]+(?:\([^)]*\))?)\s*,\s*([^,()]+(?:\([^)]*\))?)\s*\)$/i.exec(
+    v,
+  );
+  if (pair) return plainColour(pair[scheme === "dark" ? 2 : 1]!.trim(), scheme, tokens, depth + 1);
+  const ref = /^var\(\s*(--[\w-]+)\s*(?:,\s*([^()]+(?:\([^)]*\))?)\s*)?\)$/.exec(v);
+  if (!ref) return undefined;
+  // A token declared twice, or themed by a media query, may be either colour: not guessed, and
+  // not its var() fallback either, which is for a token the canvas doesn't declare at all.
+  const name = ref[1]!;
+  if (/prefers-color-scheme/i.test(tokens) && new RegExp(`${name}\\s*:`).test(tokens)) {
+    return undefined;
+  }
+  const declared = tokens ? parseTokens(tokens).filter((t) => t.name === name) : [];
+  if (declared.length === 1) return plainColour(declared[0]!.value, scheme, tokens, depth + 1);
+  if (declared.length === 0 && ref[2]) return plainColour(ref[2].trim(), scheme, tokens, depth + 1);
+  return undefined;
 }
 
 /** Elements skeletons may add up to on a cold page, after the cheap boards. */

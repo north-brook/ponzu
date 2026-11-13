@@ -174,6 +174,11 @@ export interface PonzuDesktop {
     linkScheme: string;
     /** Null when nothing is to be reported: then the studio loads none of PostHog. */
     analytics: AnalyticsSetup | null;
+    /**
+     * A test build told to run the studio on Ponzu Cloud in memory (PONZU_FAKE_BACKEND): the
+     * studio does so only when it was built with the fake in it. Absent in a release.
+     */
+    fake?: boolean;
   };
   session: {
     state(): Promise<SessionState>;

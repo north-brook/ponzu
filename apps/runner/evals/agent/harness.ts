@@ -16,6 +16,7 @@ import { ClaudeAgent } from "../../src/agent/sdk.ts";
 import { FakeRunnerApi } from "../../src/api/fake.ts";
 import type {
   AgentPullRequestAction,
+  Effort,
   EventBody,
   GitReport,
   Person,
@@ -101,9 +102,68 @@ export interface TurnOutcome {
   ended: string | null;
 }
 
+/** The model and effort a turn runs at, and the label its rows carry (null: a canvas's defaults). */
+export interface AgentRun {
+  model: string;
+  effort: Effort;
+  ranOn: string | null;
+  /** What the report calls the rows that ran here. */
+  title: string;
+}
+
+/** A canvas's defaults, which the quality run measures: Opus 5.5 at high. */
+export const CANVAS_DEFAULTS: AgentRun = {
+  model: "claude-opus-5-5",
+  effort: "high",
+  ranOn: null,
+  title: "Cases",
+};
+
+/**
+ * Where else a run may go (`--on`). `dev-key` is the builders' rules: the development key, Haiku
+ * at low effort. The exact checks (a pull request opened, a merge only when asked) do not depend
+ * on the model's eloquence, so this run proves the guardrails cheaply; it is not a quality measure,
+ * and its rows never stand in for a row at a canvas's defaults.
+ */
+export const RUN_ON: Record<string, AgentRun> = {
+  "dev-key": {
+    model: "claude-haiku-5-5",
+    effort: "low",
+    ranOn: "dev-key/haiku/low",
+    title: "Under the builders' rules",
+  },
+};
+
+/** The run `--on <name>` asks for, or a canvas's defaults without it. An unknown name throws. */
+export function agentRun(on: string | null | undefined): AgentRun {
+  if (!on) return CANVAS_DEFAULTS;
+  // Only a name of RUN_ON's own: `--on constructor` names nothing.
+  const run = Object.hasOwn(RUN_ON, on) ? RUN_ON[on] : undefined;
+  if (!run) {
+    throw new Error(
+      `No run called "${on}": --on takes ${Object.keys(RUN_ON).join(", ")}, or nothing for a canvas's defaults.`,
+    );
+  }
+  return run;
+}
+
+/** The session the fake API hands the runner: the canvas, its repository, and the run's model. */
+export function turnSession(setup: TurnSetup, run: AgentRun = CANVAS_DEFAULTS) {
+  return {
+    canvas: { id: setup.canvasId, name: setup.doc.name },
+    repo: setup.repo ? { owner: "ada", name: "fitness-app", defaultBranch: "main" } : null,
+    branch: setup.repo ? BRANCH : null,
+    model: run.model,
+    effort: run.effort,
+    link: `https://ponzu.design/canvases/${setup.canvasId}`,
+  };
+}
+
 export interface HarnessOptions {
   /** The evals' Anthropic API key (`ANTHROPIC_API_KEY`), never a sign-in. Never logged. */
   apiKey: string;
+  /** The model and effort the turn runs at; a canvas's defaults unless said. */
+  run?: AgentRun;
   /** Claude Code. */
   claude: string;
   /** A Chromium for screenshots. */
@@ -174,14 +234,7 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
 
   const api = new FakeRunnerApi({
     doc: structuredClone(setup.doc),
-    session: {
-      canvas: { id: setup.canvasId, name: setup.doc.name },
-      repo: setup.repo ? { owner: "ada", name: "fitness-app", defaultBranch: "main" } : null,
-      branch: setup.repo ? BRANCH : null,
-      model: "claude-opus-5-5",
-      effort: "high",
-      link: `https://ponzu.design/canvases/${setup.canvasId}`,
-    },
+    session: turnSession(setup, opts.run),
   });
   api.pullRequest = setup.pullRequest ?? null;
   // The stand-in GitHub is the bare repository: the fake API answers from what it holds, so a
