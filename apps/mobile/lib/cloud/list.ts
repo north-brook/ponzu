@@ -1,11 +1,17 @@
 import type { CanvasListRow, QuestionRow } from "@ponzu/client";
 import {
   type Ask,
+  applyFilter,
+  type CanvasFilter,
   type CanvasPreview,
   type CanvasSummary,
+  isFiltering,
   orderCanvases,
   orderSettled,
   type Person,
+  type ProjectCount,
+  projectCounts,
+  pruneFilter,
   type RowIndicator,
   rowIndicator,
   toAsk,
@@ -104,6 +110,66 @@ export function buildList(rows: readonly CanvasListRow[], context: ListContext):
       (canvas) => ({ id: canvas.id, canvas, question: null }),
     ),
   };
+}
+
+/** What the filter offers on a workspace (components/filter-sheet.tsx), as the Mac's does. */
+export interface FilterChoices {
+  /**
+   * The Person section: the viewer first, then everyone else in the workspace. Empty on a
+   * personal workspace, which has nobody else to filter by; null while a team's members aren't
+   * known yet.
+   */
+  people: Person[] | null;
+  /** Each repo with canvases, then Scratch, with how many: active and settled alike. */
+  projects: ProjectCount[];
+}
+
+/**
+ * The filter's choices on a workspace: its canvases' projects with their counts (the shared
+ * `projectCounts`) and, on a team, its members with the viewer first, as the Mac's filter menu
+ * lists them. `members` null is not known yet.
+ */
+export function filterChoices(
+  canvases: readonly CanvasSummary[],
+  context: {
+    kind: WorkspaceKind;
+    members: ReadonlyMap<string, Person> | null;
+    me: string | null;
+  },
+): FilterChoices {
+  const projects = projectCounts([...canvases]);
+  if (context.kind === "personal") return { people: [], projects };
+  if (!context.members) return { people: null, projects };
+  const all = [...context.members.values()];
+  const me = all.filter((person) => person.id === context.me);
+  return { people: [...me, ...all.filter((person) => person.id !== context.me)], projects };
+}
+
+/**
+ * The filter kept for a workspace, as it applies to the choices there now: a repo no canvas is
+ * in any more, or someone gone from the workspace, no longer counts (`pruneFilter`), so a filter
+ * kept from before never hides every canvas.
+ */
+export function filterInView(kept: CanvasFilter, choices: FilterChoices): CanvasFilter {
+  return pruneFilter(
+    kept,
+    choices.projects.map((project) => project.key),
+    choices.people?.map((person) => person.id) ?? null,
+  );
+}
+
+/** Only the rows the filter keeps, active and settled alike (the shared `applyFilter`). */
+export function filterList(list: CanvasList, filter: CanvasFilter): CanvasList {
+  if (!isFiltering(filter)) return list;
+  const keep = (rows: ListRow[]) => {
+    const canvases = applyFilter(
+      rows.map((row) => row.canvas),
+      filter,
+    );
+    const kept = new Set(canvases.map((canvas) => canvas.id));
+    return rows.filter((row) => kept.has(row.id));
+  };
+  return { active: keep(list.active), settled: keep(list.settled) };
 }
 
 /** The canvases whose questions are watched: the first few active ones waiting on the viewer. */

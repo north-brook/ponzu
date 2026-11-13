@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from "react-native";
-import { EMPTY_CANVASES } from "../lib/copy";
+import { EMPTY_CANVASES, FILTER } from "../lib/copy";
 import { select } from "../lib/haptics";
 import { useTheme } from "../lib/theme";
 import { PREVIEW, ROW_HEIGHT } from "./canvas-row";
@@ -81,6 +81,42 @@ export function EmptyTrace({ margin }: { margin: number }) {
       >
         {EMPTY_CANVASES}
       </Text>
+    </View>
+  );
+}
+
+/**
+ * A filter that keeps nothing: the Mac sidebar's line, and Clear filter. Not the empty
+ * workspace's trace: there are canvases, the filter hides them.
+ */
+export function FilteredEmpty({ margin, onClear }: { margin: number; onClear?: () => void }) {
+  const { color } = useTheme();
+  return (
+    <View testID="canvases-filtered" style={{ marginHorizontal: margin, marginTop: 12, gap: 4 }}>
+      <Text style={{ fontFamily: "Inter", fontSize: 15, lineHeight: 22, color: color.muted }}>
+        {FILTER.none}
+      </Text>
+      {onClear && (
+        <Pressable
+          testID="canvases-clear-filter"
+          accessibilityRole="button"
+          accessibilityLabel={FILTER.clear}
+          onPress={() => {
+            select();
+            onClear();
+          }}
+          style={({ pressed }) => ({
+            alignSelf: "flex-start",
+            minHeight: 44,
+            justifyContent: "center",
+            opacity: pressed ? 0.6 : 1,
+          })}
+        >
+          <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 15, color: color.ink }}>
+            {FILTER.clear}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }

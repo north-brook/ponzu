@@ -6,23 +6,30 @@ import type { CanvasList as List, ListRow } from "../lib/cloud/list";
 import { fail, select, thud } from "../lib/haptics";
 import { useListNotice } from "../lib/list-notice";
 import { useTheme } from "../lib/theme";
-import { EmptyTrace, SettledHeader, SkeletonRows } from "./canvas-list-parts";
+import { EmptyTrace, FilteredEmpty, SettledHeader, SkeletonRows } from "./canvas-list-parts";
 import { CanvasRow, type RowAction } from "./canvas-row";
 
 /**
  * The canvases list under the tab's header: live rows in the Mac's order with their three
  * lines, the settled ones folded into a tray at the foot (closed until opened), the rows' shapes
- * while nothing has come, and a faint trace for a workspace with nothing in it. Offline it shows
+ * while nothing has come, a faint trace for a workspace with nothing in it, and a plain line
+ * with Clear filter when a filter keeps nothing. Offline it shows
  * the last rows kept on disk, as they were, not dimmed.
  */
 export function CanvasList({
   list,
   loading,
   margin,
+  filtering = false,
+  onClearFilter,
 }: {
+  /** The rows to show: through the person's filter, on the Canvases tab. */
   list: List | undefined;
   loading: boolean;
   margin: number;
+  /** A filter is on: an empty list says nothing matches it, with a way to clear it. */
+  filtering?: boolean;
+  onClearFilter?: () => void;
 }) {
   const { color } = useTheme();
   const [trayOpen, setTrayOpen] = useState(false);
@@ -72,7 +79,14 @@ export function CanvasList({
           onAction={act}
         />
       ))}
-      {list && list.active.length === 0 && settled.length === 0 && <EmptyTrace margin={margin} />}
+      {list &&
+        list.active.length === 0 &&
+        settled.length === 0 &&
+        (filtering ? (
+          <FilteredEmpty margin={margin} onClear={onClearFilter} />
+        ) : (
+          <EmptyTrace margin={margin} />
+        ))}
       {settled.length > 0 && (
         <SettledHeader
           count={settled.length}

@@ -12,8 +12,9 @@ data layer, pairing, Tailscale and the camera are gone. iPhone 1.1.0, in
 TestFlight, has launch, sign-in, setup, the canvases list, search, new
 canvas, a live canvas with comments and comment pictures, the chat, needs
 you, the pull request with Merge, and pings, which are built but stay off
-until the API sends them (below, "Pings"). Still to come: the filter, the
-rest of iPad and iPhone Duo, standby, analytics, and the last of settings.
+until the API sends them (below, "Pings"). The list's filter came after it.
+Still to come: the rest of iPad and iPhone Duo, standby, analytics, and the
+last of settings.
 
 ## Layout
 
@@ -158,6 +159,24 @@ The Canvases tab is the Mac sidebar at phone size (`components/canvas-list.tsx`,
 - While nothing has come the rows' shapes stand in, in the chip colour, and
   the lockup's slice juices. A workspace with no canvases shows a faint trace
   of rows and "No canvases yet. Canvases you make in Ponzu show up here."
+
+**The filter** is the Mac sidebar's filter menu as a sheet
+(`components/filter-sheet.tsx`, `app/filter.tsx`), in its words, on the
+shared rules in `@ponzu/client/model` (`filter.ts`). Filter sits in the
+header beside New canvas once the workspace has canvases, and reads "Filter
+(on)" to VoiceOver, drawn selected, while a filter is on. The sheet has
+Person (Everyone, You, then the workspace's other members, one at a time; a
+personal workspace has none) and Repo (each repo with canvases and then
+Scratch, with how many, settled ones counted). Each choice changes the list at
+once, active rows and the settled tray alike; unchecking the last project is
+no filter, as on the Mac. Clear filter, in the sheet while a filter is on,
+puts everything back. A filter that keeps nothing says "No canvases match this
+filter." with Clear filter under it, never the empty workspace's trace. The
+filter is kept per person and per workspace (`ponzu.filter.<userId>`,
+`lib/cloud/filter.ts`) and comes back on the next launch; a kept repo with no
+canvases now, or someone gone from the workspace, is dropped as it is read
+(`pruneFilter`), so an old filter never hides every canvas. Search and New
+canvas's first offer look at every canvas, whatever the filter.
 
 The workspace in view is kept per person (`ponzu.workspace.<userId>`) and is
 one choice for the whole app (`lib/cloud/workspace.ts`): settings lists the
@@ -492,8 +511,9 @@ state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
 (the Pricing page's thread with a turn running), `needs-you` (the Pricing
 page waiting on two questions, a plan and a permission), `pull-request` (its
 pull request ready to merge), `pings` (`needs-you` on an API that sends
-pings) and `search` (the `chat` thread, and Maya's comment on the Plans
-board, to be found). Every other scenario is an API that sends none. With `&relaunch=1`
+pings), `search` (the `chat` thread, and Maya's comment on the Plans
+board, to be found) and `filter` (Maya's canvases beside her teammate Jun's,
+a Checkout in site and a settled Sign-up form in app). Every other scenario is an API that sends none. With `&relaunch=1`
 the next launch is put in the same state too, once, so a flow can end the app
 and open it from a ping. Only a fake build takes that link. With the authorize
 page running, the fake's install links open its `/install` page, which comes

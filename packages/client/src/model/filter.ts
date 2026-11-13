@@ -55,6 +55,45 @@ export function isProjectChecked(filter: CanvasFilter, key: string): boolean {
   return filter.projects === null || filter.projects.includes(key);
 }
 
+/**
+ * A filter as storage held it, checked field by field: anything that isn't one counts as none
+ * (a person that isn't an id is everyone; projects that aren't a list are every project, and
+ * keys that aren't strings are dropped).
+ */
+export function readFilter(value: unknown): CanvasFilter {
+  const f = value && typeof value === "object" ? (value as Partial<CanvasFilter>) : null;
+  const person = typeof f?.person === "string" ? f.person : null;
+  const projects = Array.isArray(f?.projects)
+    ? f.projects.filter((p): p is string => typeof p === "string")
+    : null;
+  return { person, projects };
+}
+
+/**
+ * The filter as it applies to what the workspace holds now. A filter kept from before can name a
+ * project no canvas is in any more, or a person no longer offered: those are dropped, so it never
+ * hides every canvas for a reason the filter can't show. Projects left covering every one, or
+ * none, are no project filter, as `toggleProject` has it. `people` null is not known yet: the
+ * person stays. Unchanged, it is the same filter.
+ */
+export function pruneFilter(
+  filter: CanvasFilter,
+  projects: readonly string[],
+  people: readonly string[] | null,
+): CanvasFilter {
+  const person =
+    filter.person !== null && people !== null && !people.includes(filter.person)
+      ? null
+      : filter.person;
+  let kept = filter.projects;
+  if (kept !== null) {
+    const live = kept.filter((k) => projects.includes(k));
+    const everyOrNone = live.length === 0 || projects.every((k) => live.includes(k));
+    kept = everyOrNone ? null : live.length === kept.length ? kept : live;
+  }
+  return person === filter.person && kept === filter.projects ? filter : { person, projects: kept };
+}
+
 export interface ProjectCount {
   key: string;
   /** Null for Scratch. */

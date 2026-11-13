@@ -5,6 +5,8 @@ import {
   NO_FILTER,
   projectCounts,
   projectKey,
+  pruneFilter,
+  readFilter,
   repoKey,
   SCRATCH,
   toggleProject,
@@ -81,4 +83,41 @@ test("project counts: repos with canvases, most first, then Scratch", () => {
     ["lenny", 1],
     [SCRATCH, 1],
   ]);
+});
+
+test("a filter from storage is read field by field; anything else is none", () => {
+  expect(readFilter({ person: "sam", projects: [FERNWOOD, 2] })).toEqual({
+    person: "sam",
+    projects: [FERNWOOD],
+  });
+  expect(readFilter({ person: 1, projects: "all" })).toEqual(NO_FILTER);
+  expect(readFilter(null)).toEqual(NO_FILTER);
+  expect(readFilter("filter")).toEqual(NO_FILTER);
+});
+
+test("a project no canvas is in any more is dropped, so it never hides everything", () => {
+  // Only a repo gone: nothing left to keep, so no project filter at all.
+  const gone = { person: null, projects: ["repo:gone"] };
+  expect(pruneFilter(gone, ALL, null)).toEqual(NO_FILTER);
+  expect(ids(applyFilter(canvases, pruneFilter(gone, ALL, null)))).toEqual(["a", "b", "c", "d"]);
+  // A repo gone beside one still here: the one here stays checked.
+  expect(pruneFilter({ person: null, projects: [LENNY, "repo:gone"] }, ALL, null)).toEqual({
+    person: null,
+    projects: [LENNY],
+  });
+  // What's left checks every project there is: no project filter.
+  const both = { person: null, projects: [FERNWOOD, LENNY] };
+  expect(pruneFilter(both, [FERNWOOD, LENNY], null)).toEqual(NO_FILTER);
+});
+
+test("a person no longer offered is everyone; not known yet, they stay", () => {
+  const sam = { person: "sam", projects: null };
+  expect(pruneFilter(sam, ALL, ["maya"])).toEqual(NO_FILTER);
+  expect(pruneFilter(sam, ALL, null)).toBe(sam);
+  expect(pruneFilter(sam, ALL, ["sam", "maya"])).toBe(sam);
+});
+
+test("a filter with nothing stale is the same filter", () => {
+  const filter = { person: "sam", projects: [FERNWOOD, SCRATCH] };
+  expect(pruneFilter(filter, ALL, ["sam"])).toBe(filter);
 });

@@ -1,4 +1,4 @@
-import { type CanvasFilter, NO_FILTER } from "../cloud/filter.ts";
+import { type CanvasFilter, NO_FILTER, readFilter } from "../cloud/filter.ts";
 import { PANES, paneWidth } from "../cloud/window/panes.ts";
 
 /*
@@ -84,13 +84,6 @@ function stringRecord(value: unknown): Record<string, string> {
 function filterRecord(value: unknown): Record<string, CanvasFilter> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const filters: Record<string, CanvasFilter> = {};
-  for (const [id, filter] of Object.entries(value)) {
-    const f = filter as Partial<CanvasFilter> | null;
-    const person = typeof f?.person === "string" ? f.person : null;
-    const projects = Array.isArray(f?.projects)
-      ? f.projects.filter((p): p is string => typeof p === "string")
-      : null;
-    filters[id] = { person, projects };
-  }
+  for (const [id, filter] of Object.entries(value)) filters[id] = readFilter(filter);
   return filters;
 }

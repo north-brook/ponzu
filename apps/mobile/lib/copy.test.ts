@@ -6,6 +6,7 @@ import {
   CLAUDE,
   CREATE,
   EFFORT_LABELS,
+  FILTER,
   NEEDS_YOU,
   PINGS,
   PR,
@@ -163,5 +164,19 @@ test("Search in the Mac's ⌘K's words, where they say the same thing", () => {
   };
   for (const [name, words] of Object.entries(said)) {
     expect({ name, found: source.includes(words) }).toEqual({ name, found: true });
+  }
+});
+
+test("the filter in the Mac's filter menu's words", () => {
+  const read = (file: string) =>
+    readFileSync(join(import.meta.dir, "../../studio/src/cloud/sidebar", file), "utf8").replace(
+      /\s+/g,
+      " ",
+    );
+  const source = read("filter-menu.tsx") + read("sidebar.tsx");
+  for (const [name, words] of Object.entries(FILTER)) {
+    // A string in the source, or the words between tags (JSX puts them on their own line).
+    const found = [`"${words}"`, `>${words}<`, `> ${words} <`].some((s) => source.includes(s));
+    expect({ name, found }).toEqual({ name, found: true });
   }
 });
