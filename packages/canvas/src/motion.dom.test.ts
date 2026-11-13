@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { dirname, join } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { launchChromium, type TestChromium } from "@ponzu/render/testing";
+import { bundle } from "./dom-lib.ts";
 
 /*
  * Motion and BoardDetail in a real browser: animation events, CSS animations
@@ -10,13 +11,6 @@ import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
  */
 
 type Page = Parameters<NonNullable<ChromiumOptions["preparePage"]>>[0];
-type Browser = { newPage(): Promise<Page>; close(): Promise<void> };
-const { chromium: playwright } = (await import(
-  Bun.resolveSync(
-    "playwright-core",
-    dirname(Bun.resolveSync("@ponzu/render/chromium", import.meta.dir)),
-  )
-)) as { chromium: { launch(o: object): Promise<Browser> } };
 const chromium = findChromium();
 setDefaultTimeout(30_000);
 
@@ -28,17 +22,13 @@ window.pz = { fieldsOf, Motion, MOTION_CSS, BoardDetail, STILL_CSS, handoffToVid
 `;
 
 describe.skipIf(!chromium)("motion in Chromium", () => {
-  let browser: Browser;
+  let browser: TestChromium;
   let page: Page;
 
   beforeAll(async () => {
-    const dir = import.meta.dir;
-    const entry = join(dir, ".motion-entry.ts");
-    await Bun.write(entry, ENTRY);
-    const built = await Bun.build({ entrypoints: [entry], target: "browser", format: "esm" });
-    await Bun.file(entry).delete();
-    const code = await built.outputs[0]!.text();
-    browser = await playwright.launch({ executablePath: chromium!, headless: true });
+    // Built from an entry in memory: one written beside the sources was deleted by another run.
+    const code = await bundle("motion", ENTRY);
+    browser = await launchChromium(chromium!);
     page = await browser.newPage();
     await page.setContent("<!doctype html><div id=host></div>");
     await page.addScriptTag({ content: code, type: "module" });
@@ -76,21 +66,36 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
       ),
     ).toBe(2);
     // One more starts: the animationstart event adds it, without asking the document again.
+    // Motion takes it in the frame after the event, so the test waits for that event and then a
+    // frame: not for a length of time, which a busy machine's frames can outlast.
     const n = await page.evaluate(async () => {
       const w = window as any;
       const root = document.getElementById("host")!.shadowRoot!;
       const d = document.createElement("div");
       d.className = "s";
+      // Motion's listener on the root was added first, so it has seen the event when this runs,
+      // and the frame asked for here comes after the one it asked for.
+      const started = new Promise<void>((resolve) => {
+        const on = (e: Event) => {
+          if (e.target !== d) return;
+          root.removeEventListener("animationstart", on);
+          requestAnimationFrame(() => resolve());
+        };
+        root.addEventListener("animationstart", on);
+      });
       root.querySelector("section")!.append(d);
-      await new Promise((r) => setTimeout(r, 100));
+      await started;
       return w.motion.running.size as number;
     });
     expect(n).toBe(3);
-    // One is removed: animationcancel drops it.
+    // One is removed: animationcancel drops it. Its events never reach the root, so Motion
+    // watches removals: its observer has run by the next microtask, and drops it in the frame
+    // after, before the one asked for here.
     const m = await page.evaluate(async () => {
       const w = window as any;
       document.getElementById("host")!.shadowRoot!.querySelector(".s")!.remove();
-      await new Promise((r) => setTimeout(r, 100));
+      await Promise.resolve();
+      await new Promise((r) => requestAnimationFrame(r));
       return w.motion.running.size as number;
     });
     expect(m).toBe(2);

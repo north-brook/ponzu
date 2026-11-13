@@ -9,6 +9,7 @@ import {
   notifyWorkspaceFacts,
   stampDigestSent,
 } from "@ponzu/db";
+import { renderEmail, SITE_URL } from "@ponzu/email";
 import { z } from "zod";
 import type { Deps } from "../deps/index.ts";
 import { MailError, mailErrorOf } from "../deps/mail.ts";
@@ -48,9 +49,6 @@ export const DIGEST_LINES_PER_GROUP = 10;
 
 /** How long a send that Resend could not take now waits before it is tried again. */
 const DIGEST_RETRY_MS = 5 * 60_000;
-
-/** Where a canvas's link lands: the site's page that hands it to the app. */
-export const SITE_URL = "https://ponzu.design";
 
 const DigestPayload = z.object({
   userId: z.string().min(1).max(64),
@@ -200,88 +198,17 @@ export async function digestGroups(
   return groups.sort((a, b) => b.newest - a.newest).map(({ group }) => group);
 }
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-/** "Ponzu: 3 things on 2 canvases", "… and your plan", or "Ponzu: 1 thing on your plan". */
-export function digestSubject(things: number, canvases: number, billing: boolean): string {
-  const where = [
-    ...(canvases > 0 ? [count(canvases, "canvas", "canvases")] : []),
-    ...(billing ? ["your plan"] : []),
-  ].join(" and ");
-  return `Ponzu: ${count(things, "thing", "things")} on ${where}`;
-}
-
-const INTRO = "Here is what Ponzu told you about in the last day.";
-const FOOTER = "You get this email once a day because it is on in Ponzu's Settings.";
-const STOP = "Stop these emails";
-
-function escapeHtml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-const moreLine = (more: number) => `And ${more} more.`;
-
-/** The email itself, from its groups. */
-export function digestEmail(
+/**
+ * The email itself, from its groups, rendered by @ponzu/email's digest template: a canvas-first
+ * subject ("Kettle onboarding: 3 things since yesterday"), each group's name as a heading and
+ * its lines as link rows. The same groups render the same bytes, so a retry under the same
+ * idempotency key sends what the first attempt did.
+ */
+export async function digestEmail(
   groups: readonly DigestGroup[],
   { unsubscribeUrl }: { unsubscribeUrl: string },
-): DigestEmail {
-  const things = groups.reduce((sum, group) => sum + group.lines.length + group.more, 0);
-  const canvases = groups.filter((group) => !group.billing).length;
-  const subject = digestSubject(
-    things,
-    canvases,
-    groups.some((group) => group.billing),
-  );
-
-  const text = [
-    INTRO,
-    "",
-    ...groups.flatMap((group) => [
-      group.name,
-      ...group.lines.map((line) => `- ${line.text}${line.href ? ` ${line.href}` : ""}`),
-      ...(group.more > 0 ? [`- ${moreLine(group.more)}`] : []),
-      "",
-    ]),
-    FOOTER,
-    `${STOP}: ${unsubscribeUrl}`,
-    "",
-  ].join("\n");
-
-  const font =
-    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;";
-  const html = [
-    "<!doctype html>",
-    '<html lang="en"><head><meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width,initial-scale=1">',
-    `<title>${escapeHtml(subject)}</title></head>`,
-    `<body style="margin:0;padding:24px 16px;background:#ffffff;color:#1c1c1c;${font}font-size:15px;line-height:1.5">`,
-    '<div style="max-width:560px;margin:0 auto">',
-    `<p style="margin:0 0 20px">${escapeHtml(INTRO)}</p>`,
-    ...groups.map((group) =>
-      [
-        `<h2 style="margin:20px 0 6px;font-size:16px;font-weight:600">${escapeHtml(group.name)}</h2>`,
-        '<ul style="margin:0;padding-left:20px">',
-        ...group.lines.map((line) => {
-          const words = escapeHtml(line.text);
-          return line.href
-            ? `<li><a href="${escapeHtml(line.href)}" style="color:#1c1c1c">${words}</a></li>`
-            : `<li>${words}</li>`;
-        }),
-        ...(group.more > 0 ? [`<li>${escapeHtml(moreLine(group.more))}</li>`] : []),
-        "</ul>",
-      ].join(""),
-    ),
-    `<p style="margin:28px 0 0;color:#6b6b6b;font-size:13px">${escapeHtml(FOOTER)} `,
-    `<a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b6b6b">${STOP}</a>.</p>`,
-    "</div></body></html>",
-  ].join("");
-
+): Promise<DigestEmail> {
+  const { subject, html, text } = await renderEmail("digest", { groups, unsubscribeUrl });
   return { subject, html, text };
 }
 
@@ -323,7 +250,7 @@ export async function runDigestJob(
   }
 
   const unsubscribe = await unsubscribeUrl(deps, userId);
-  const email = digestEmail(groups, { unsubscribeUrl: unsubscribe });
+  const email = await digestEmail(groups, { unsubscribeUrl: unsubscribe });
   try {
     await deps.mail.send({
       to: person.email,

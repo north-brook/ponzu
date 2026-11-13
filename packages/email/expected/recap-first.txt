@@ -1,0 +1,22 @@
+Subject: Shipped this week: Kettle onboarding
+Preview: Pull request #41 was merged on Tuesday.
+
+Friday, November 13
+
+Shipped this week
+
+Merged since last Friday, from canvases you own.
+
+Kettle onboarding https://ponzu.design/canvases/cnv_1?open=pull-request
+
+#41 merged Tuesday
+
+This is your first Friday recap. It comes only in weeks when a pull request from a canvas you own is merged. The link below turns it off.
+
+Have a good weekend.
+
+You get this on Fridays when a pull request from a canvas you own was merged.
+
+Stop Friday emails https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.recap.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

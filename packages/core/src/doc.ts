@@ -232,6 +232,231 @@ export function applyOp(doc: Doc, op: Op): Op {
 }
 
 /**
+ * `applyOp` without changing `doc`: the document with the op in, and the op that undoes it.
+ * Only what the op changes is new, along with the path down to it (the pages list and the page,
+ * the board and the nodes above a changed node, the threads list and the thread): every page,
+ * board, node, thread and message the op leaves alone is the very same object in both. So a
+ * comment leaves every board as it was, and a style change on one node leaves the other boards
+ * and the rest of its own board as they were, which is what lets whoever draws them skip them.
+ *
+ * Throws OpError, as `applyOp` does, when the op doesn't fit; `doc` is untouched either way.
+ * Neither document may be changed in place afterwards: they share their parts.
+ */
+export function withOp(doc: Doc, op: Op): { doc: Doc; inverse: Op } {
+  const draft = new Draft(doc);
+  const inverse = draft.apply(op);
+  return { doc: draft.doc, inverse };
+}
+
+/**
+ * A copy of a document that copies its parts only on the way to changing them. Before each op
+ * it copies everything `apply` will change for that op, so `apply` changes only copies.
+ */
+class Draft {
+  readonly doc: Doc;
+  /** The copies made here, which `apply` may change. */
+  private readonly own = new WeakSet<object>();
+
+  constructor(base: Doc) {
+    this.doc = this.copy(base);
+  }
+
+  apply(op: Op): Op {
+    // A batch that fails partway leaves the draft half changed, and the draft is dropped.
+    if (op.op === "batch") {
+      const inverses = op.ops.map((child) => this.apply(child));
+      return { op: "batch", ops: inverses.reverse() };
+    }
+    this.prepare(op);
+    return apply(this.doc, op, null);
+  }
+
+  /** Copy whatever `apply` changes for `op`, found the way `apply` finds it. */
+  private prepare(op: Exclude<Op, { op: "batch" }>): void {
+    const pageAt = (id: string) => this.doc.pages.findIndex((p) => p.id === id);
+    switch (op.op) {
+      case "insert":
+        this.node(op.parent);
+        break;
+      case "remove":
+      case "style":
+      case "attrs":
+      case "name":
+      case "children":
+        this.node(op.id);
+        break;
+      case "move":
+        this.node(op.id);
+        this.node(op.parent);
+        break;
+      case "artboard.create":
+        this.artboards(pageAt(op.page));
+        break;
+      case "artboard.delete":
+        this.artboards(this.pageOf(op.id));
+        break;
+      case "artboard.update": {
+        const artboard = this.artboard(op.id);
+        if (artboard) this.field(artboard, "root");
+        break;
+      }
+      case "artboard.move":
+        this.artboards(this.pageOf(op.id));
+        this.artboards(pageAt(op.page));
+        break;
+      case "page.create":
+      case "page.delete":
+      case "page.move":
+        this.field(this.doc, "pages");
+        break;
+      case "page.update":
+        this.page(pageAt(op.id));
+        break;
+      case "page.order":
+      case "file.rename":
+      case "file.icon":
+      case "file.scratch":
+      case "tokens":
+        // Only the document's own fields, and the document is a copy.
+        break;
+      case "thread.create":
+      case "thread.delete":
+        this.field(this.doc, "threads");
+        break;
+      case "thread.update":
+        this.thread(op.id);
+        break;
+      case "thread.message":
+      case "thread.unmessage": {
+        const thread = this.thread(op.id);
+        if (thread) this.field(thread, "messages");
+        break;
+      }
+      case "thread.edit": {
+        const thread = this.thread(op.id);
+        if (!thread) break;
+        const messages = this.field(thread, "messages");
+        const at = messages.findIndex((m) => m.id === op.messageId);
+        if (at >= 0) this.item(messages, at);
+        break;
+      }
+      case "note":
+        this.field(this.doc, "notes");
+        break;
+      default: {
+        // A new kind of op has to say here what it changes, or it would change a shared part.
+        const unknown: never = op;
+        throw new OpError(`Unknown op ${(unknown as { op: string }).op}.`);
+      }
+    }
+  }
+
+  /** The index of the page `findArtboard` finds board `id` on, or -1. */
+  private pageOf(id: string): number {
+    return this.doc.pages.findIndex((p) => p.artboards.some((a) => a.id === id));
+  }
+
+  /** The page at `index` copied, with its list of boards. Nothing for -1. */
+  private artboards(index: number): void {
+    const page = this.page(index);
+    if (page) this.field(page, "artboards");
+  }
+
+  private page(index: number): PageState | undefined {
+    if (index < 0) return undefined;
+    return this.item(this.field(this.doc, "pages"), index);
+  }
+
+  /** The board `findArtboard` finds for `id`, copied along with its page's list of boards. */
+  private artboard(id: string): Artboard | undefined {
+    const p = this.pageOf(id);
+    if (p < 0) return undefined;
+    this.artboards(p);
+    const boards = this.doc.pages[p]!.artboards;
+    return this.item(
+      boards,
+      boards.findIndex((a) => a.id === id),
+    );
+  }
+
+  /**
+   * The node `locate` finds for `id` copied, with its children's list and every node above it
+   * up to its board. Nothing when there is none: `apply` will say so.
+   */
+  private node(id: string): void {
+    const pages = this.doc.pages;
+    for (let p = 0; p < pages.length; p++) {
+      const boards = pages[p]!.artboards;
+      for (let b = 0; b < boards.length; b++) {
+        const path = nodePath(boards[b]!.root, id);
+        if (!path) continue;
+        this.artboards(p);
+        const board = this.item(this.doc.pages[p]!.artboards, b);
+        let node = this.field(board, "root");
+        this.field(node, "children");
+        for (const index of path) {
+          node = this.item(node.children, index) as PElement;
+          this.field(node, "children");
+        }
+        return;
+      }
+    }
+  }
+
+  /** The thread with `id` copied, with the list of threads. */
+  private thread(id: string): Thread | undefined {
+    const at = this.doc.threads.findIndex((t) => t.id === id);
+    if (at < 0) return undefined;
+    return this.item(this.field(this.doc, "threads"), at);
+  }
+
+  /** `parent[key]`, a copy made here: `parent` has to be one too. */
+  private field<T extends object, K extends keyof T>(parent: T, key: K): T[K] & object {
+    const value = parent[key] as T[K] & object;
+    if (this.own.has(value)) return value;
+    const copy = this.copy(value);
+    parent[key] = copy;
+    return copy;
+  }
+
+  /** `list[index]`, a copy made here: `list` has to be one too. */
+  private item<T extends object>(list: T[], index: number): T {
+    const value = list[index]!;
+    if (this.own.has(value)) return value;
+    const copy = this.copy(value);
+    list[index] = copy;
+    return copy;
+  }
+
+  /** One level: the same keys in the same order, or the same items. */
+  private copy<T extends object>(value: T): T {
+    const copy = (Array.isArray(value) ? value.slice() : { ...value }) as T;
+    this.own.add(copy);
+    return copy;
+  }
+}
+
+/**
+ * The child indexes from `root` down to the node `findNode` finds for `id`: none for the root
+ * itself, null when it isn't there. It searches in `findNode`'s order, so a canvas that holds
+ * an id twice gets the path to the same one `apply` will change.
+ */
+function nodePath(root: PElement, id: string): number[] | null {
+  if (root.id === id) return [];
+  const stack: { el: PElement; path: number[] }[] = [{ el: root, path: [] }];
+  while (stack.length) {
+    const { el, path } = stack.pop()!;
+    for (let i = 0; i < el.children.length; i++) {
+      const c = el.children[i]!;
+      if (c.kind !== "el") continue;
+      if (c.id === id) return [...path, i];
+      stack.push({ el: c, path: [...path, i] });
+    }
+  }
+  return null;
+}
+
+/**
  * What puts back, exactly, everything a batch has changed so far. A batch that fails partway
  * must leave the doc as it found it, and the inverse ops can't promise that: they find nodes
  * by id, which a canvas may hold twice, and a deleted thread comes back at the end of the list.

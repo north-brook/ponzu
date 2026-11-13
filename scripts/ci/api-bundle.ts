@@ -4,11 +4,15 @@
  * loads the bundle in Node, the runtime it is served on. The API's tests run its TypeScript
  * under Bun, so they cannot see a bundle that does not load: an import the bundler cannot
  * follow, something only Bun has, a module that needs more than the environment to start.
+ * Then it checks what @ponzu/email brings in (React in production, no Tailwind, Prism or
+ * marked), and renders an email from a bundle built the same way, in Node.
  *
  *   bun scripts/ci/api-bundle.ts
  */
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const api = resolve(import.meta.dir, "../../apps/api");
 
@@ -62,3 +66,69 @@ const check = `
   console.log("The API bundle loads in Node " + process.versions.node + " and answers.");
 `;
 run("node", ["--input-type=module", "--eval", check], environment);
+
+/*
+ * @ponzu/email inlines React and react-email into the bundle. React picks its development build
+ * when NODE_ENV is not "production" (apps/api/scripts/build.ts defines it), and react-email
+ * carries Tailwind, Prism and marked for components Ponzu never uses, which tree-shaking should
+ * leave out. Bun writes each bundled module's path as a comment, so a path is proof it is in.
+ */
+const dist = join(api, "dist");
+const sources = readdirSync(dist, { recursive: true, encoding: "utf8" })
+  .filter((file) => file.endsWith(".js"))
+  .map((file) => ({ file, text: readFileSync(join(dist, file), "utf8") }));
+const FORBIDDEN: [string, RegExp][] = [
+  ["React's development build", /react(-dom-server\.node|-dom|-jsx-runtime)?\.development\.js/],
+  ["Tailwind", /node_modules\/(\.bun\/)?tailwindcss[@/]/],
+  ["Prism", /node_modules\/(\.bun\/)?prismjs[@/]/],
+  ["marked", /node_modules\/(\.bun\/)?marked[@/]/],
+];
+for (const { file, text } of sources) {
+  for (const [what, pattern] of FORBIDDEN) {
+    if (pattern.test(text)) {
+      console.error(`dist/${file} carries ${what}.`);
+      process.exit(1);
+    }
+  }
+}
+if (!sources.some(({ text }) => /react-dom-server\.node\.production\.js/.test(text))) {
+  console.error("dist carries no React production server build: is @ponzu/email still in it?");
+  process.exit(1);
+}
+const bytes = readdirSync(dist, { recursive: true, encoding: "utf8" })
+  .map((file) => statSync(join(dist, file)))
+  .filter((stat) => stat.isFile())
+  .reduce((sum, stat) => sum + stat.size, 0);
+console.log(`dist is ${(bytes / 1024 / 1024).toFixed(2)} MB, with no development React,`);
+console.log("Tailwind, Prism or marked.");
+
+// One email rendered from a bundle built with the API's options, run in Node.
+const out = mkdtempSync(join(tmpdir(), "ponzu-email-bundle-"));
+try {
+  const built = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "api-bundle-email.ts")],
+    outdir: out,
+    target: "node",
+    format: "esm",
+    external: ["hono", "hono/*"],
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  if (!built.success) {
+    for (const log of built.logs) console.error(log);
+    process.exit(1);
+  }
+  const rendered = spawnSync("node", [join(out, "api-bundle-email.js")], { encoding: "utf8" });
+  if (rendered.status !== 0) {
+    console.error(rendered.stderr);
+    process.exit(rendered.status ?? 1);
+  }
+  const email = JSON.parse(rendered.stdout) as { subject: string; html: string; node: string };
+  const subject = "Kettle onboarding and Northbrook's plan: 3 things since yesterday";
+  if (email.subject !== subject || !email.html.includes("Kettle onboarding")) {
+    console.error(`The bundled render answered ${JSON.stringify(email.subject)}.`);
+    process.exit(1);
+  }
+  console.log(`A bundle built the same way renders the digest in Node ${email.node}.`);
+} finally {
+  rmSync(out, { recursive: true, force: true });
+}

@@ -1,0 +1,12 @@
+Subject: You've reached this month's $100 cap
+Preview: New work waits until the cap is raised or it resets on December 9.
+
+You've reached this month's $100 cap.
+
+No new work starts on your canvases until you raise the cap, or until it resets on December 9. Work already running finishes, and Ponzu never bills past the cap.
+
+Raise the cap https://ponzu.design/settings?section=usage&workspace=ws_northbrook&n=ntf_1
+
+You get this because Ponzu bills your personal workspace. Billing emails can't be turned off.
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

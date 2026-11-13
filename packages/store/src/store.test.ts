@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, open as openFile, rm } from "node:fs/promises";
+import { type FileHandle, mkdtemp, open as openFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type PElement, parseArtboardFile, parseHtml } from "@ponzu/core";
@@ -735,32 +735,61 @@ describe("an artboard file caught while something is still writing it", () => {
 
   test("on disk, an emptied file being written slowly keeps its artboard", async () => {
     const root = await mkdtemp(join(tmpdir(), "ponzu-midwrite-"));
-    const until = async (ok: () => boolean) => {
-      for (const end = Date.now() + 3000; !ok() && Date.now() < end; ) await settle(10);
-      return ok();
-    };
+    // Closed whatever happens: a file handle left to the garbage collector throws there, into
+    // whichever test is running then.
+    let fh: FileHandle | undefined;
+    let d: Design | undefined;
     try {
       const fs = new FsAdapter(root);
       for (const [p, text] of Object.entries(seed)) await fs.write(p, text);
-      const d = await Design.open(fs, { holdDelay: 3000 });
-      // The watcher hears the writes above late; let that pass.
-      await settle(300);
-      const pieces = edited.match(/[\s\S]{1,40}/g)!;
-      const fh = await openFile(join(root, path), "w");
-      await fh.write(pieces.shift()!);
-      expect(await until(() => d.heldFiles.includes(path))).toBe(true);
-      expect(hero(d)).toMatchObject({ id: "ab_hero", name: "Hero" });
-      for (const piece of pieces) {
+      // The folder is read from disk as it is, but the test says when it changed. The system's
+      // watcher can report a write seconds late on a busy Mac, and this test is about what a
+      // read of a half-written file does, not about when the watcher gets round to it.
+      let tell: ((paths: string[]) => void) | undefined;
+      fs.watch = (onChange) => {
+        tell = onChange;
+        return () => {
+          tell = undefined;
+        };
+      };
+      let onRead: (() => void) | undefined;
+      const readAll = fs.readAll.bind(fs);
+      fs.readAll = async () => {
+        const bag = await readAll();
+        onRead?.();
+        return bag;
+      };
+      // Report the change and wait until the design has read the folder and dealt with what it
+      // read: the rest of that runs as soon as the read is back, before the next turn of the loop.
+      const heard = async () => {
+        const read = new Promise<void>((r) => (onRead = r));
+        tell!([path]);
+        await read;
+        onRead = undefined;
+        await new Promise((r) => setImmediate(r));
+      };
+      // Long enough never to run out here: letting go of a file that stays half-written is
+      // "a file left without its section is taken as written once it stops changing".
+      d = await Design.open(fs, { holdDelay: 3_600_000 });
+      // Everything up to the section's closing tag is half a file; the closing tag finishes it.
+      const end = edited.lastIndexOf("</section>");
+      const pieces = edited.slice(0, end).match(/[\s\S]{1,40}/g)!;
+      fh = await openFile(join(root, path), "w");
+      for (const piece of ["", ...pieces]) {
         await fh.write(piece);
-        await settle(5);
-        expect(hero(d).id).toBe("ab_hero");
+        await heard();
+        expect(d.heldFiles).toEqual([path]);
+        expect(hero(d)).toMatchObject({ id: "ab_hero", name: "Hero", x: 0 });
       }
+      await fh.write(edited.slice(end));
       await fh.close();
-      expect(await until(() => hero(d).x === 900)).toBe(true);
-      expect(hero(d).id).toBe("ab_hero");
+      fh = undefined;
+      await heard();
       expect(d.heldFiles).toEqual([]);
-      await d.close();
+      expect(hero(d)).toMatchObject({ id: "ab_hero", name: "Hero", x: 900 });
     } finally {
+      await fh?.close();
+      await d?.close();
       await rm(root, { recursive: true, force: true });
     }
   });

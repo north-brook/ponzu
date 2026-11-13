@@ -129,16 +129,20 @@ export function commentRecipients(
 }
 
 /**
- * A billing ping: the workspace's admins, or for a personal workspace its person. Always on,
- * whatever their toggles say.
+ * A billing ping: an organisation's admins, or for a personal workspace only its person, the
+ * member whose GitHub user is the account the workspace is (`users.github_user_id =
+ * workspaces.github_account_id`). Anyone else in a personal workspace is a collaborator on its
+ * repos and hears nothing about its bill, whatever their role. Always on, whatever their
+ * toggles say.
  */
 export function billingRecipients(workspace: {
   kind: WorkspaceKind;
-  members: readonly { userId: string; role: MemberRole }[];
+  githubAccountId: number;
+  members: readonly { userId: string; role: MemberRole; githubUserId: number }[];
 }): string[] {
   const who =
     workspace.kind === "personal"
-      ? workspace.members
+      ? workspace.members.filter((member) => member.githubUserId === workspace.githubAccountId)
       : workspace.members.filter((member) => member.role === "admin");
   return finish(
     who.map((member) => member.userId),

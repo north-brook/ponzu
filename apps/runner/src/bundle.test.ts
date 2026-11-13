@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,12 +26,26 @@ test("a different file makes a different archive", () => {
   expect(Buffer.compare(Buffer.from(tgz(files())), Buffer.from(tgz(other)))).not.toBe(0);
 });
 
-test("tar reads it back: sorted plain files, root's, 0644, at the fixed time", () => {
+/**
+ * tar, awaited, never spawnSync: Bun 1.4.2's sync spawns can lose a child's exit in a
+ * `bun test --parallel` worker and wait on it forever (oven-sh/bun#47257).
+ */
+async function runTar(args: string[]) {
+  const child = Bun.spawn(["tar", ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const [stdout, , status] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { status, stdout };
+}
+
+test("tar reads it back: sorted plain files, root's, 0644, at the fixed time", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ponzu-tgz-"));
   try {
     const file = join(dir, "b.tgz");
     writeFileSync(file, tgz(files()));
-    const listed = spawnSync("tar", ["-tzf", file], { encoding: "utf8" });
+    const listed = await runTar(["-tzf", file]);
     expect(listed.status).toBe(0);
     expect(listed.stdout.trim().split("\n")).toEqual([
       "manifest.json",
@@ -41,7 +54,7 @@ test("tar reads it back: sorted plain files, root's, 0644, at the fixed time", (
     ]);
     const out = join(dir, "out");
     mkdirSync(out);
-    expect(spawnSync("tar", ["-xzf", file, "-C", out]).status).toBe(0);
+    expect((await runTar(["-xzf", file, "-C", out])).status).toBe(0);
     expect(readFileSync(join(out, "supervise.js"))).toEqual(Buffer.from(files()[2]!.bytes));
     const tar = gunzipSync(readFileSync(file));
     expect(tar.length % 512).toBe(0);

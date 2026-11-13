@@ -13,6 +13,21 @@ import { type Flight, type FlightOrigin, fly, threadComposer } from "./flight.ts
 /** How long the thread's pane stays open once the composer has landed, before it closes. */
 export const LANDING_BEAT_MS = 1400;
 
+/**
+ * How a beat passes: it calls `over` once it has, unless the function it gives back calls it off
+ * first. A number is that many milliseconds on the window's clock; the in-memory host's tests
+ * pass a beat of their own, to end it when they say (app/fake-host.ts).
+ */
+export type Beat = (over: () => void) => () => void;
+
+/** A beat of `ms` on the window's clock. */
+export function beatOf(ms: number): Beat {
+  return (over) => {
+    const timer = setTimeout(over, ms);
+    return () => clearTimeout(timer);
+  };
+}
+
 /** A send from the create page, from the moment it went: each has its own key. */
 export interface Sent {
   key: string;
@@ -32,7 +47,7 @@ export interface Sent {
 export function useLanding(
   sent: Sent | null,
   onSettle: (open: boolean) => void,
-  beatMs = LANDING_BEAT_MS,
+  beat: number | Beat = LANDING_BEAT_MS,
 ): void {
   const settleRef = useRef(onSettle);
   settleRef.current = onSettle;
@@ -43,7 +58,8 @@ export function useLanding(
   useLayoutEffect(() => {
     if (key === null) return;
     let over = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    const pass = typeof beat === "number" ? beatOf(beat) : beat;
+    let callOff: (() => void) | undefined;
     let flight: Flight | null = null;
     /** Whether the composer has landed: until it has, the person's going to the pane waits. */
     let down = false;
@@ -110,7 +126,7 @@ export function useLanding(
         return;
       }
       caret();
-      timer = setTimeout(() => end(false), beatMs);
+      callOff = pass(() => end(false));
     };
     caret();
     const target = threadComposer();
@@ -123,12 +139,12 @@ export function useLanding(
 
     function stop() {
       over = true;
-      clearTimeout(timer);
+      callOff?.();
       flight?.land();
       unlisten();
     }
     return stop;
-  }, [key, beatMs]);
+  }, [key, beat]);
 }
 
 /**

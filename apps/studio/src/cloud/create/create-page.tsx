@@ -26,7 +26,7 @@ export interface CreatePageProps {
   /**
    * A send has gone: the hero leaves and the composer is away (travelling to the thread, then
    * there), leaving the dotted ground for the new canvas's boards. Back to false, a send that
-   * failed finds everything where it was.
+   * failed finds everything where it was, the caret in the field.
    */
   launched?: boolean;
   /** Null until the person's defaults are known: a canvas sent then starts on them. */
@@ -110,6 +110,16 @@ export function CreatePage({
       el.style.right = "";
       el.style.width = "";
     };
+  }, [launched]);
+  // A send that came back (launched, then not) gives the caret back to the field. Here, as the
+  // page that shows the field again is committed, not a frame after the failure: a busy machine
+  // can draw that frame before React has committed, while the field is still hidden, and the
+  // caret would be lost.
+  const wasLaunched = useRef(launched);
+  useLayoutEffect(() => {
+    const cameBack = wasLaunched.current && !launched;
+    wasLaunched.current = launched;
+    if (cameBack) field.current?.focus({ preventScroll: true });
   }, [launched]);
   // The ideas take their turns only while there is an empty field to show them in.
   const suggestion = useSuggestion(

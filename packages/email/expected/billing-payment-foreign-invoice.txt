@@ -1,0 +1,16 @@
+Subject: Northbrook's payment of $123.40 didn't go through
+Preview: Canvases keep working until December 15 at 9 pm.
+
+Northbrook's payment of $123.40 didn't go through.
+
+Canvases in Northbrook keep working until December 15 at 9 pm. If the invoice is still unpaid then, no new work starts until it's paid.
+
+Any admin can change the card in Plan and usage.
+
+Open Plan and usage https://ponzu.design/settings?section=usage&workspace=ws_northbrook&n=ntf_1
+
+You get this because you're an admin of Northbrook on Ponzu. Billing emails go to every admin and can't be turned off.
+
+Questions? Reply to this email.
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

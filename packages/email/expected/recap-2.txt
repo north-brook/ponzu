@@ -1,0 +1,24 @@
+Subject: Shipped this week: Kettle onboarding and Pricing page
+Preview: 3 pull requests from your canvases were merged this week.
+
+Friday, November 13
+
+Shipped this week
+
+Merged since last Friday, from canvases you own.
+
+Kettle onboarding https://ponzu.design/canvases/cnv_1?open=pull-request
+
+#41 and #44 merged this week
+
+Pricing page https://ponzu.design/canvases/cnv_2?open=pull-request
+
+#44 merged Wednesday
+
+Have a good weekend.
+
+You get this on Fridays when a pull request from a canvas you own was merged.
+
+Stop Friday emails https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.recap.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

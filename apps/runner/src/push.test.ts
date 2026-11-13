@@ -1,10 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BranchPush, classify, pushFailureForAgent, pushFailureText } from "./push.ts";
-import { agentShell, ShellError } from "./save/shell.ts";
+import { agentShell, ShellError, text } from "./save/shell.ts";
 import { type Git, gitIn } from "./save/work.ts";
 
 const dirs: string[] = [];
@@ -22,31 +21,34 @@ const ENV = {
   GIT_CONFIG_NOSYSTEM: "1",
 };
 
-function sh(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" }).trim();
+// Awaited, never execFileSync: Bun 1.4.2's sync spawns can lose a child's exit in a
+// `bun test --parallel` worker and wait on it forever (oven-sh/bun#47257).
+const shell = agentShell(undefined, ENV);
+async function sh(cwd: string, ...args: string[]): Promise<string> {
+  return text(await shell(["git", ...args], { cwd })).trim();
 }
 
 /** A repository on "GitHub" (a bare one) with `main`, and a checkout of it on the canvas's branch. */
-function repo() {
+async function repo() {
   const root = mkdtempSync(join(tmpdir(), "ponzu-push-"));
   dirs.push(root);
   const origin = join(root, "origin.git");
   const seed = join(root, "seed");
-  sh(root, "init", "-q", "--bare", "-b", "main", origin);
-  sh(root, "init", "-q", "-b", "main", seed);
+  await sh(root, "init", "-q", "--bare", "-b", "main", origin);
+  await sh(root, "init", "-q", "-b", "main", seed);
   writeFileSync(join(seed, "README.md"), "fern\n");
-  sh(seed, "add", ".");
-  sh(seed, "commit", "-qm", "First");
-  sh(seed, "push", "-q", origin, "main");
+  await sh(seed, "add", ".");
+  await sh(seed, "commit", "-qm", "First");
+  await sh(seed, "push", "-q", origin, "main");
   const work = join(root, "work");
-  sh(root, "clone", "-q", origin, work);
-  sh(work, "switch", "-qc", "pz/hero");
+  await sh(root, "clone", "-q", origin, work);
+  await sh(work, "switch", "-qc", "pz/hero");
   let n = 0;
-  const commit = (dir = work) => {
+  const commit = async (dir = work) => {
     writeFileSync(join(dir, `screen-${++n}.html`), `<p>${n}</p>\n`);
-    sh(dir, "add", ".");
-    sh(dir, "commit", "-qm", `Screen ${n}`);
-    return sh(dir, "rev-parse", "HEAD");
+    await sh(dir, "add", ".");
+    await sh(dir, "commit", "-qm", `Screen ${n}`);
+    return await sh(dir, "rev-parse", "HEAD");
   };
   const git = gitIn(agentShell(undefined, ENV), "git", work);
   return { root, origin, work, commit, git };
@@ -89,25 +91,27 @@ function refusingFirst(git: Git, n: number): Git {
 }
 
 test("commits the agent left unpushed go to GitHub, and nothing is pushed when there is nothing", async () => {
-  const r = repo();
+  const r = await repo();
   const { push, events } = pusher(r.git);
   expect(await push.unpushed()).toBe(0);
   expect(await push.push()).toEqual({ unpushed: 0, pushed: 0, failure: null });
   expect(events).toEqual([]);
 
-  const head = r.commit();
-  r.commit();
+  const head = await r.commit();
+  await r.commit();
   expect(await push.unpushed()).toBe(2);
   expect(await push.push()).toEqual({ unpushed: 0, pushed: 2, failure: null });
-  expect(sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(sh(r.work, "rev-parse", "HEAD"));
-  expect(sh(r.origin, "rev-parse", "refs/heads/pz/hero~1")).toBe(head);
+  expect(await sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(
+    await sh(r.work, "rev-parse", "HEAD"),
+  );
+  expect(await sh(r.origin, "rev-parse", "refs/heads/pz/hero~1")).toBe(head);
   expect(await push.unpushed()).toBe(0);
   expect(events).toMatchObject([{ name: "git_push", ok: true, attempt: 0 }]);
 });
 
 test("a push GitHub refuses as 'Repository not found' is tried again with a new token, and lands", async () => {
-  const r = repo();
-  r.commit();
+  const r = await repo();
+  await r.commit();
   const { push, erased, slept, events } = pusher(refusingFirst(r.git, 2));
   const outcome = await push.push();
   expect(outcome).toEqual({ unpushed: 0, pushed: 1, failure: null });
@@ -118,12 +122,14 @@ test("a push GitHub refuses as 'Repository not found' is tried again with a new 
   ]);
   expect(slept).toEqual([2_000, 5_000]);
   expect(events.map((e) => e.ok)).toEqual([false, false, true]);
-  expect(sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(sh(r.work, "rev-parse", "HEAD"));
+  expect(await sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(
+    await sh(r.work, "rev-parse", "HEAD"),
+  );
 });
 
 test("a push that keeps failing gives up after the waits, or by the deadline, and says why", async () => {
-  const r = repo();
-  r.commit();
+  const r = await repo();
+  await r.commit();
   const { push, slept } = pusher(refusingFirst(r.git, 99));
   const outcome = await push.push();
   expect(outcome.unpushed).toBe(1);
@@ -146,17 +152,17 @@ test("a push that keeps failing gives up after the waits, or by the deadline, an
 });
 
 test("a branch that moved on GitHub is never pushed over, and a deleted one is pushed again only with new commits", async () => {
-  const r = repo();
-  r.commit();
+  const r = await repo();
+  await r.commit();
   const { push } = pusher(r.git);
   await push.push();
 
   // Someone pushed to the branch on GitHub from elsewhere.
   const other = join(r.root, "other");
-  sh(r.root, "clone", "-q", "-b", "pz/hero", r.origin, other);
-  const theirs = r.commit(other);
-  sh(other, "push", "-q", "origin", "pz/hero");
-  r.commit();
+  await sh(r.root, "clone", "-q", "-b", "pz/hero", r.origin, other);
+  const theirs = await r.commit(other);
+  await sh(other, "push", "-q", "origin", "pz/hero");
+  await r.commit();
 
   const diverged = pusher(r.git);
   const outcome = await diverged.push.push();
@@ -164,42 +170,44 @@ test("a branch that moved on GitHub is never pushed over, and a deleted one is p
   expect(outcome.unpushed).toBe(1);
   // Not tried again, and GitHub's commit is still there.
   expect(diverged.erased).toEqual([]);
-  expect(sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(theirs);
+  expect(await sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(theirs);
 
   // The branch deleted on GitHub (merged, say) at the commit the checkout has: left deleted.
-  sh(r.origin, "update-ref", "-d", "refs/heads/pz/hero");
-  sh(r.work, "reset", "-q", "--hard", "HEAD~1");
+  await sh(r.origin, "update-ref", "-d", "refs/heads/pz/hero");
+  await sh(r.work, "reset", "-q", "--hard", "HEAD~1");
   const gone = pusher(r.git);
   expect(await gone.push.unpushed()).toBe(0);
   expect(await gone.push.push()).toEqual({ unpushed: 0, pushed: 0, failure: null });
   expect(gone.events).toEqual([]);
-  expect(() => sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).toThrow();
+  await expect(sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).rejects.toThrow();
 
   // New commits on it: GitHub lacks them, so it goes back with them, as the agent's push would.
-  r.commit();
+  await r.commit();
   expect((await pusher(r.git).push.push()).failure).toBeNull();
-  expect(sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(sh(r.work, "rev-parse", "HEAD"));
+  expect(await sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(
+    await sh(r.work, "rev-parse", "HEAD"),
+  );
 });
 
 test("a branch pruned after its merge is not put back on GitHub", async () => {
-  const r = repo();
-  r.commit();
+  const r = await repo();
+  await r.commit();
   await pusher(r.git).push.push();
   // Merged and deleted on GitHub, and a fetch pruned it here: the upstream stays configured.
-  sh(r.origin, "update-ref", "-d", "refs/heads/pz/hero");
-  sh(r.work, "fetch", "-q", "--prune", "origin");
+  await sh(r.origin, "update-ref", "-d", "refs/heads/pz/hero");
+  await sh(r.work, "fetch", "-q", "--prune", "origin");
   const pruned = pusher(r.git);
   expect(await pruned.push.unpushed()).toBe(0);
   expect((await pruned.push.push()).pushed).toBe(0);
-  expect(() => sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).toThrow();
+  await expect(sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).rejects.toThrow();
 
   // A checkout restored without its upstream: the merged pull request says the same.
-  sh(r.work, "branch", "-q", "--unset-upstream");
+  await sh(r.work, "branch", "-q", "--unset-upstream");
   expect(await pusher(r.git).push.unpushed()).toBe(1);
   const merged = pusher(r.git, { merged: () => true });
   expect(await merged.push.unpushed()).toBe(0);
   expect((await merged.push.push()).pushed).toBe(0);
-  expect(() => sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).toThrow();
+  await expect(sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).rejects.toThrow();
 });
 
 test("what git says decides whether to try again", () => {

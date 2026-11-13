@@ -1,7 +1,18 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, test } from "bun:test";
 import { ApiError } from "@ponzu/client";
 import type { DeepLink } from "@ponzu/desktop/bridge";
 import { linksWithInstalls } from "./installs.ts";
+
+/*
+ * The asking runs on a clock the test moves, never the machine's: a loaded machine changes how
+ * late a timer fires, and so which of two timers fires first, but not what is asked or heard here.
+ */
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+afterEach(() => {
+  jest.useRealTimers();
+});
 
 type Answer =
   | { status: "waiting"; expiresAt: string }
@@ -45,19 +56,10 @@ function world(answers: (Answer | Error)[]) {
     pollMs: 5,
   });
   const heard: DeepLink[] = [];
-  let told = () => {};
-  /** Settles once the first link reaches the app's listeners, however long the asking took. */
-  const outcome = new Promise<void>((resolve) => {
-    told = resolve;
-  });
-  links.onLink((link) => {
-    heard.push(link);
-    told();
-  });
+  links.onLink((link) => heard.push(link));
   return {
     links,
     heard,
-    outcome,
     asked,
     opened,
     forward: () => forward,
@@ -67,7 +69,18 @@ function world(answers: (Answer | Error)[]) {
   };
 }
 
-const settle = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Moves the clock on by `ms`, a millisecond at a time, letting each ask that comes due finish
+ * (the answer it awaits is a promise, so a few turns of the microtask queue) before going on.
+ */
+const pass = async (ms: number) => {
+  for (let i = 0; i < ms; i++) {
+    jest.advanceTimersByTime(1);
+    for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+  }
+};
+/** How often the world asks (its `pollMs`). */
+const POLL = 5;
 const later = new Date(Date.now() + 15 * 60_000).toISOString();
 
 test("a build that takes no links: the install's outcome comes by asking, and Ponzu comes forward", async () => {
@@ -77,14 +90,19 @@ test("a build that takes no links: the install's outcome comes by asking, and Po
   ]);
   await w.links.installGithub({ githubAccountId: 7 });
   expect(w.opened).toEqual(["https://github.com/apps/ponzu-dev/installations/new?target=7"]);
+  expect(w.asked).toEqual([]);
 
-  // The outcome comes on the second ask, whenever a loaded machine runs it; after it, no more.
-  await w.outcome;
-  await settle();
+  // Asked once a poll on: still waiting, so nothing heard yet.
+  await pass(POLL);
+  expect(w.asked).toEqual(["auth_1"]);
+  expect(w.heard).toEqual([]);
 
+  // The outcome comes on the second ask; after it, however long, no more.
+  await pass(POLL);
+  expect(w.heard).toEqual([{ kind: "github_setup", result: "installed", workspaceId: "ws_lenny" }]);
+  await pass(POLL * 20);
   expect(w.asked).toEqual(["auth_1", "auth_1"]);
   expect(w.forward()).toBe(1);
-  expect(w.heard).toEqual([{ kind: "github_setup", result: "installed", workspaceId: "ws_lenny" }]);
 });
 
 test("the page's link and the answer are one outcome, acted on once, whichever comes first", async () => {
@@ -92,14 +110,17 @@ test("the page's link and the answer are one outcome, acted on once, whichever c
   await first.links.installGithub({});
   // The shell's link arrives before the app has asked.
   first.shellSends({ kind: "github_setup", result: "installed", workspaceId: "ws_1" });
-  await settle();
+  await pass(POLL * 4);
+  expect(first.asked).toEqual(["auth_1"]);
   expect(first.heard).toHaveLength(1);
   // The shell brought Ponzu forward with its link; asking doesn't do it again.
   expect(first.forward()).toBe(0);
 
   const second = world([{ status: "settled", result: "requested", workspaceId: null }]);
   await second.links.installGithub({});
-  await settle();
+  await pass(POLL);
+  expect(second.asked).toEqual(["auth_1"]);
+  // The answer came first; the shell's link after it is the same outcome.
   second.shellSends({ kind: "github_setup", result: "requested" });
   expect(second.heard).toEqual([{ kind: "github_setup", result: "requested" }]);
   expect(second.forward()).toBe(1);
@@ -124,19 +145,25 @@ test("asking goes on through a network failure, and stops at expiry or for an in
     { status: "settled", result: "pending", workspaceId: null },
   ]);
   await flaky.links.installGithub({});
-  await settle();
+  await pass(POLL);
+  expect(flaky.asked).toEqual(["auth_1"]);
+  expect(flaky.heard).toEqual([]);
+  // The failed ask is asked again a poll later, and that answer is heard.
+  await pass(POLL);
+  expect(flaky.asked).toEqual(["auth_1", "auth_1"]);
   expect(flaky.heard).toEqual([{ kind: "github_setup", result: "pending" }]);
 
   const expired = world([{ status: "expired" }]);
   await expired.links.installGithub({});
-  await settle();
+  await pass(POLL * 20);
   expect(expired.asked).toHaveLength(1);
   expect(expired.heard).toEqual([]);
 
   const gone = world([new ApiError(404, "not_found", "There is no such install.")]);
   await gone.links.installGithub({});
-  await settle();
+  await pass(POLL * 20);
   expect(gone.asked).toHaveLength(1);
+  expect(gone.heard).toEqual([]);
   expect(gone.forward()).toBe(0);
 });
 

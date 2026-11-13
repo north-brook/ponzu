@@ -1,0 +1,18 @@
+Subject: Shipped this week: 2 canvases, 3 pull requests merged
+Preview: 3 pull requests from your canvases were merged this week.
+
+Friday, November 13
+
+Shipped this week
+
+Merged since last Friday, from canvases you own.
+
+3 pull requests from 2 canvases you own were merged.
+
+Have a good weekend.
+
+You get this on Fridays when a pull request from a canvas you own was merged.
+
+Stop Friday emails https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.recap.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

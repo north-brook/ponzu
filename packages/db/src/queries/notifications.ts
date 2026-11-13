@@ -1410,13 +1410,19 @@ export async function lastNotifiedAt(
   return new Map(rows.map((row) => [row.userId, new Date(row.at)]));
 }
 
-/** What a billing ping about a workspace needs: its name, its kind, its period and its members. */
+/**
+ * What a billing ping about a workspace needs: its name, its kind, its period, the GitHub account
+ * it is, and its members with their GitHub user ids, so that a personal workspace's person can be
+ * told apart from the collaborators who are members of it too.
+ */
 export interface NotifyWorkspaceFacts {
   id: string;
   name: string;
   kind: WorkspaceKind;
   billingPeriodAnchor: Date;
-  members: { userId: string; role: MemberRole }[];
+  /** `workspaces.github_account_id`: for a personal workspace, its person's GitHub user id. */
+  githubAccountId: number;
+  members: { userId: string; role: MemberRole; githubUserId: number }[];
 }
 
 /** A workspace's facts for a billing ping, or null when there is no such workspace. */
@@ -1431,6 +1437,7 @@ export async function notifyWorkspaceFacts(
         name: workspaces.name,
         kind: workspaces.kind,
         billingPeriodAnchor: workspaces.billingPeriodAnchor,
+        githubAccountId: workspaces.githubAccountId,
       })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId)),
@@ -1438,8 +1445,13 @@ export async function notifyWorkspaceFacts(
   if (!workspace) return null;
   const members = await run(
     db
-      .select({ userId: memberships.userId, role: memberships.role })
+      .select({
+        userId: memberships.userId,
+        role: memberships.role,
+        githubUserId: users.githubUserId,
+      })
       .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
       .where(eq(memberships.workspaceId, workspaceId))
       .orderBy(memberships.userId),
   );

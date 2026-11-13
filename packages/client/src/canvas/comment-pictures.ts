@@ -11,9 +11,9 @@ import type { LocalPicture } from "../model/thread-map.ts";
  * attached once the comment's op is committed. The comment goes as it always has; nothing about
  * sending it waits on its picture, or fails with it.
  *
- * Meanwhile, and after, this viewer's own pictures are shown from here: the document it is drawn
- * from while it is drawn (the Mac's rail draws the same scene live), then the files themselves,
- * so the thread has a comment's picture as soon as it has the comment. One that can't be drawn,
+ * Meanwhile, and after, this viewer's own pictures are shown from here: that one is being drawn
+ * (the Mac's rail keeps its place), then the files themselves, so the thread has a comment's
+ * picture as soon as it has the comment. One that can't be drawn,
  * kept or attached is let go of, and the comment reads as everyone else sees it.
  *
  * The Mac draws in its own window, as WebP Blobs (apps/studio/src/app/canvas.tsx). The iPhone

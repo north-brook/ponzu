@@ -37,7 +37,13 @@ try {
     format: "esm",
     external: ["hono", "hono/*"],
     sourcemap: "linked",
-    define: { __PONZU_RUNNER_BUNDLE__: JSON.stringify(bundle) },
+    define: {
+      __PONZU_RUNNER_BUNDLE__: JSON.stringify(bundle),
+      // React (inlined for @ponzu/email's templates) picks its production or development build
+      // from NODE_ENV when it loads. Fixed here so the function never depends on whether the
+      // environment sets it; scripts/ci/api-bundle.ts checks no development build is inside.
+      "process.env.NODE_ENV": '"production"',
+    },
   });
   if (!result.success) {
     for (const log of result.logs) console.error(log);
