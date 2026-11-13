@@ -45,7 +45,7 @@ Models: agent `claude-opus-5-5 (high), Claude Code via the Agent SDK`, agent on 
 
 ## Where each row comes from
 
-14 agent turn(s) behind these rows, at 398914845a6f, a36d65cec57d. The header's spend and turns are this run's alone.
+10 agent turn(s) behind these rows, at 398914845a6f, a36d65cec57d. The header's spend and turns are this run's alone.
 
 | Case | Ran on | Turn ran | At commit | Judged at commit |
 |---|---|---|---|---|
@@ -55,10 +55,6 @@ Models: agent `claude-opus-5-5 (high), Claude Code via the Agent SDK`, agent on 
 | A4 | a canvas's defaults | 2026-11-12T09:46:08.161Z | 398914845a6f | 398914845a6f |
 | A5 | a canvas's defaults | 2026-11-12T09:46:48.040Z | 398914845a6f | 398914845a6f |
 | A6 | a canvas's defaults | 2026-11-12T09:46:59.402Z | 398914845a6f | 398914845a6f |
-| A7 | a canvas's defaults | 2026-11-12T09:47:03.486Z | 398914845a6f | 398914845a6f |
-| A8 | a canvas's defaults | 2026-11-12T09:47:03.486Z | 398914845a6f | 398914845a6f |
-| A9 | a canvas's defaults | 2026-11-12T09:47:03.486Z | 398914845a6f | 398914845a6f |
-| A10 | a canvas's defaults | 2026-11-12T09:47:03.486Z | 398914845a6f | 398914845a6f |
 | A7 | dev-key/haiku/low | 2026-11-13T17:52:45.349Z | a36d65cec57d | a36d65cec57d |
 | A8 | dev-key/haiku/low | 2026-11-13T17:53:08.134Z | a36d65cec57d | a36d65cec57d |
 | A9 | dev-key/haiku/low | 2026-11-13T17:53:32.095Z | a36d65cec57d | a36d65cec57d |
