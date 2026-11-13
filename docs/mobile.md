@@ -871,19 +871,25 @@ centred over the canvas at most 560pt wide (`SHEET_MAX` in
 
 ## iPhone Duo and iPad
 
-Layouts follow the window's size, never the model (`lib/duo-layout.ts`), so
-iPhone Duo's displays, an iPad and an iPad window in Stage Manager or Split
-View all take the layout their space calls for. An iPhone keeps to portrait;
-an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
-`app.json`).
+Layouts follow the window's size, never the model (`lib/duo-layout.ts`,
+`lib/duo.ts`), so iPhone Duo's displays, an iPad and an iPad window in Stage
+Manager or Split View all take the layout their space calls for. An iPhone
+keeps to portrait; an iPad turns freely (`UISupportedInterfaceOrientations~ipad`
+in `app.json`).
 
-- **The canvas.** A window whose shorter side is under 600pt is a phone's:
-  the canvas's own bar and the comment field. Otherwise the system's bars hold
-  Back, the page and Comments. Comments are an inset panel beside the canvas
-  in a window 900 points wide or more.
-- **The sheet.** In any window 700pt or wider (an iPad), and on the inner
-  display sideways, a sheet floats centred, at most 560pt wide (`sheetMax`),
-  riding 8pt above the keyboard instead of docking into it.
+- **The canvas** keeps its own bar (Back, the name, the page) and its
+  floating stack in every window.
+- **Sheets.** In a window 700pt or wider (an iPad either way up), and on the
+  inner display sideways, the comment field and the thread, chat, pull
+  request and draft sheets float centred, at most 560pt wide (`sheetMax`),
+  riding 8pt above the keyboard instead of docking into it. Narrower, as in
+  a Split View third, they span the window as on an iPhone.
+- **The chat docks** beside the canvas in a window 900pt or wider, flat
+  (`chatPanel`: a 13-inch iPad either way up, an 11-inch one sideways, the
+  inner display sideways with its rail): a 344pt panel at the trailing edge,
+  under the canvas's bar. The canvas frames its boards in what it leaves, and
+  its stack stays in reach beside it; Chat there closes the panel, as far
+  as it was read. Partly folded, the chat stays a sheet.
 - **The tabs** are named on an iPad, where the tab bar is a row of names
   across the top that VoiceOver reads by name; on an iPhone they're marks,
   together in one bar. Search is a plain tab, not the system's search tab

@@ -115,6 +115,8 @@ export function ChatSheet({
   right,
   maxWidth,
   bottomBar,
+  panel,
+  closing = false,
 }: {
   canvasId: string;
   head: CanvasHeadRow | undefined;
@@ -153,6 +155,10 @@ export function ChatSheet({
   right?: number;
   maxWidth?: number;
   bottomBar?: number;
+  /** Docked beside the canvas this wide (components/sheet.tsx `panel`), in a window with room. */
+  panel?: number;
+  /** Asked to go (Chat pressed again while it's docked): it leaves as a swipe would. */
+  closing?: boolean;
 }) {
   const { color } = useTheme();
   const cloud = useCloud();
@@ -301,6 +307,12 @@ export function ChatSheet({
   // as it held. Stable, so the memoized lines don't redraw for them.
   const readSeq = useRef<number | null>(null);
   readSeq.current = readTo(thread.items);
+  // Closed from outside (the stack's Chat, the chat docked): read as far as it held, as a swipe.
+  const dismiss = useRef(onDismiss);
+  dismiss.current = onDismiss;
+  useEffect(() => {
+    if (closing) dismiss.current(readSeq.current);
+  }, [closing]);
   const leave = useRef({ onOpenComment, onOpenLink, onOpenPullRequest });
   leave.current = { onOpenComment, onOpenLink, onOpenPullRequest };
   const openComment = useCallback(
@@ -329,6 +341,7 @@ export function ChatSheet({
       right={right}
       maxWidth={maxWidth}
       bottomBar={bottomBar}
+      panel={panel}
     >
       <FlatList
         ref={list}
