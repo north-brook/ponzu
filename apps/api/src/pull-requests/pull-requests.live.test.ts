@@ -543,8 +543,11 @@ async function agentStory(rig: AgentRig): Promise<void> {
 
     // Open, as a draft, as the developer.
     const opened = await act("open", { turn: asked });
-    expect(opened.status).toBe(200);
     const pr = opened.body.pullRequest;
+    // GitHub leaves a pull request open when its branches are deleted: a run that fails closes
+    // it, so its close is registered before anything about it is asserted.
+    if (typeof pr?.number === "number") cleanup.push(() => github.close(pr.number));
+    expect(opened.status).toBe(200);
     expect(opened.body).toMatchObject({
       did: true,
       pushing: false,
@@ -554,9 +557,6 @@ async function agentStory(rig: AgentRig): Promise<void> {
       personTurn: true,
       notPersonTurn: null,
     });
-    // GitHub leaves a pull request open when its branches are deleted: a run that fails closes it.
-    cleanup.push(() => github.close(pr.number));
-
     // Read: where it stands, and who the agent acts as.
     const standing = await settled(asked);
     expect(standing).toMatchObject({
