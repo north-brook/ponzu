@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/north-brook/ponzu/compare/v2.2.0...v2.3.0) (2026-11-13)
+
+
+### Features
+
+* email on one send path, off until its key is set ([#602](https://github.com/north-brook/ponzu/issues/602)) ([3fcab6c](https://github.com/north-brook/ponzu/commit/3fcab6c606bd41bba5c2c699c126a51904f28993))
+
 ## [2.2.0](https://github.com/north-brook/ponzu/compare/v2.1.1...v2.2.0) (2026-11-13)
 
 
