@@ -64,11 +64,17 @@ export class CommentPictures {
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
   private off: () => void = () => {};
+  /**
+   * The comments being drawn, kept or shown from here, by message id, with their thread's id: a
+   * comment deleted meanwhile is let go of (`cancel`), and nothing more of it is drawn or kept.
+   */
+  private readonly pending = new Map<string, string>();
 
   constructor(private readonly opts: CommentPicturesOptions) {}
 
   start(): this {
     this.off = this.opts.source.onOp((op, origin, doc) => {
+      for (const gone of deletionsIn(op)) this.cancel(gone);
       if (origin.kind !== "user" || origin.id !== this.opts.meId) return;
       const now = (this.opts.now ?? Date.now)();
       for (const said of commentsIn(op)) {
@@ -94,16 +100,25 @@ export class CommentPictures {
     this.off();
     for (const picture of this.pictures.values()) this.releaseOf(picture);
     this.pictures.clear();
+    this.pending.clear();
     this.listeners.clear();
   }
 
   private take(doc: Doc, threadId: string, messageId: string): void {
+    this.pending.set(messageId, threadId);
     this.set(messageId, { state: "drawing", doc, threadId });
     this.queue = this.queue.then(() => this.make(doc, threadId, messageId));
   }
 
+  /** A comment, or a whole thread, deleted: its pictures are let go of, drawn or not. */
+  private cancel(gone: { threadId?: string; messageId?: string }): void {
+    for (const [messageId, threadId] of [...this.pending]) {
+      if (messageId === gone.messageId || threadId === gone.threadId) this.drop(messageId);
+    }
+  }
+
   private async make(doc: Doc, threadId: string, messageId: string): Promise<void> {
-    if (this.closed) return;
+    if (this.closed || !this.pending.has(messageId)) return;
     const { api, canvasId, source } = this.opts;
     let files: Record<Theme, Blob>;
     try {
@@ -114,12 +129,13 @@ export class CommentPictures {
       }
       return this.drop(messageId);
     }
-    if (this.closed) return;
+    if (this.closed || !this.pending.has(messageId)) return;
     const preview = this.opts.preview ?? ((blob: Blob) => URL.createObjectURL(blob));
     this.set(messageId, { state: "drawn", light: preview(files.light), dark: preview(files.dark) });
     // Everything from here is in the background: the next comment's picture is drawn meanwhile.
     void (async () => {
       try {
+        if (!this.pending.has(messageId)) return;
         const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
         const uploads = await api.uploadCommentPicture(canvasId, messageId, {
           light: await bytes(files.light),
@@ -127,6 +143,7 @@ export class CommentPictures {
         });
         await source.saved();
         await this.attach(messageId, uploads);
+        this.pending.delete(messageId);
       } catch (error) {
         console.warn("[ponzu] a comment's picture couldn't be kept:", error);
         this.drop(messageId);
@@ -138,7 +155,7 @@ export class CommentPictures {
   private async attach(messageId: string, uploads: string[]): Promise<void> {
     const wait = this.opts.wait ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
     for (let tried = 1; ; tried++) {
-      if (this.closed) return;
+      if (this.closed || !this.pending.has(messageId)) return;
       try {
         await this.opts.api.attachCommentPicture(this.opts.canvasId, messageId, uploads);
         return;
@@ -153,6 +170,7 @@ export class CommentPictures {
   }
 
   private drop(messageId: string): void {
+    this.pending.delete(messageId);
     const picture = this.pictures.get(messageId);
     if (!picture) return;
     this.pictures.delete(messageId);
@@ -179,6 +197,14 @@ export class CommentPictures {
     this.snapshot = new Map(this.pictures);
     for (const listener of this.listeners) listener();
   }
+}
+
+/** The threads and comments an op deletes. */
+export function deletionsIn(op: Op): { threadId?: string; messageId?: string }[] {
+  if (op.op === "batch") return op.ops.flatMap(deletionsIn);
+  if (op.op === "thread.delete") return [{ threadId: op.id }];
+  if (op.op === "thread.unmessage") return [{ messageId: op.messageId }];
+  return [];
 }
 
 /** The comments and replies an op says, as their thread, message and when they were written. */

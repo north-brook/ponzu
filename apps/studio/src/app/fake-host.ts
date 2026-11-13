@@ -5,6 +5,7 @@ import type { DeepLink, MacNotice, MenuCommand } from "@ponzu/desktop/bridge";
 import type { Beat } from "../cloud/create/landing.ts";
 import type { Host, HostNotifications } from "./host.ts";
 import { linksWithInstalls } from "./installs.ts";
+import type { PictureBridge } from "./picture-drawer.ts";
 
 /*
  * The studio in a plain browser, for development and the headless test: Ponzu Cloud in memory
@@ -94,6 +95,11 @@ export interface FakeMac {
 declare global {
   interface Window {
     ponzuFake?: FakeWorld;
+    /**
+     * The desktop's picture window, as a headless test plays it (another page, in picture mode),
+     * set before the studio loads. Without it, pictures are drawn in the window, as in a browser.
+     */
+    ponzuFakePictures?: PictureBridge;
   }
 }
 
@@ -315,6 +321,7 @@ export function fakeHost(): Host {
     docStorage: null,
     notifications: mac?.host ?? null,
     ...(landingBeat ? { landingBeat } : {}),
+    ...(window.ponzuFakePictures ? { pictures: window.ponzuFakePictures } : {}),
   };
 }
 

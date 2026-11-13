@@ -54,6 +54,45 @@ export function commentIn(doc: Doc, threadId: string, messageId: string) {
   return { thread, page, board: board ?? null, number };
 }
 
+/** The boards of a page a comment's picture can show: those within `REACH` of its pin. */
+function boardsNear(page: { artboards: Artboard[] }, origin: { x: number; y: number }): Artboard[] {
+  return page.artboards.filter((ab) => {
+    const { w, h } = declared(ab);
+    const across = ab.x < origin.x + REACH && ab.x + w > origin.x - REACH;
+    const down = ab.y < origin.y + REACH && (h === null || ab.y + h > origin.y - REACH);
+    return across && down;
+  });
+}
+
+/** Where a comment's pin was saved, in page px. */
+function pinOrigin(comment: NonNullable<ReturnType<typeof commentIn>>): { x: number; y: number } {
+  return {
+    x: Math.round((comment.board?.x ?? 0) + comment.thread.x),
+    y: Math.round((comment.board?.y ?? 0) + comment.thread.y),
+  };
+}
+
+/**
+ * A document cut down to what a comment's picture is drawn from: its thread, and its page with
+ * only the boards in reach of the pin. `CommentScene` draws the same picture from it as from the
+ * whole document; it is what goes to the desktop's picture window, a fraction of a big canvas.
+ * Null when the comment isn't in the document.
+ */
+export function pictureDoc(doc: Doc, threadId: string, messageId: string): Doc | null {
+  const comment = commentIn(doc, threadId, messageId);
+  if (!comment) return null;
+  const near = boardsNear(comment.page, pinOrigin(comment));
+  // The pin's own board, wherever its pin is: the scene finds it by id.
+  if (comment.board && !near.includes(comment.board)) near.push(comment.board);
+  return {
+    name: doc.name,
+    pages: [{ ...comment.page, artboards: near }],
+    tokens: doc.tokens,
+    threads: [comment.thread],
+    notes: {},
+  };
+}
+
 /**
  * Whether a comment can have a picture, before anything is drawn: one on a board always can; one
  * on the ground only with a board in reach (`OPEN_LIMIT`), taking a board that doesn't say
@@ -108,26 +147,8 @@ export function CommentScene({
   const [framed, setFramed] = useState<Framed | undefined>(undefined);
   const comment = useMemo(() => commentIn(doc, threadId, messageId), [doc, threadId, messageId]);
   // Measured from the pin's spot as it was saved, so the layer's px are page px less this.
-  const origin = useMemo(
-    () =>
-      comment
-        ? {
-            x: Math.round((comment.board?.x ?? 0) + comment.thread.x),
-            y: Math.round((comment.board?.y ?? 0) + comment.thread.y),
-          }
-        : { x: 0, y: 0 },
-    [comment],
-  );
-  const near = useMemo(
-    () =>
-      (comment?.page.artboards ?? []).filter((ab) => {
-        const { w, h } = declared(ab);
-        const across = ab.x < origin.x + REACH && ab.x + w > origin.x - REACH;
-        const down = ab.y < origin.y + REACH && (h === null || ab.y + h > origin.y - REACH);
-        return across && down;
-      }),
-    [comment, origin],
-  );
+  const origin = useMemo(() => (comment ? pinOrigin(comment) : { x: 0, y: 0 }), [comment]);
+  const near = useMemo(() => (comment ? boardsNear(comment.page, origin) : []), [comment, origin]);
 
   // Before the first paint: lay out, measure, frame.
   useLayoutEffect(() => {
@@ -282,19 +303,44 @@ export class NoPicture extends Error {
 const DRAW_MS = 15_000;
 
 /**
+ * How a picture shares its renderer. `now`: it has one to itself (the desktop's picture window),
+ * so it goes straight through. `idle`: it is drawn in the person's own window, so it starts when
+ * the window is idle and lets the window answer between each of its steps: what a step takes is
+ * still the window's, but a key or a click waits for one step, not the whole picture.
+ */
+export type Pace = "now" | "idle";
+
+/** Lets the window answer what is waiting, then goes on. */
+function yieldToWindow(pace: Pace): Promise<void> {
+  if (pace === "now") return Promise.resolve();
+  const scheduler = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  if (scheduler?.yield) return scheduler.yield();
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Waits until the window has nothing else to do, for a second at most. */
+function whenIdle(pace: Pace): Promise<void> {
+  if (pace === "now") return Promise.resolve();
+  if (typeof requestIdleCallback !== "function") return yieldToWindow(pace);
+  return new Promise((resolve) => requestIdleCallback(() => resolve(), { timeout: 1_000 }));
+}
+
+/**
  * The picture of where a comment was left, in both themes, as WebP at `COMMENT_PICTURE.scale`:
  * the scene drawn off screen, its fonts and images in, its animations at their ends, and then
  * turned into an image (`rasterise`: what of the DOM shows in the picture, with its computed
  * styles and the fonts and images it uses, into an SVG and onto a <canvas>). Rejects when it
- * can't be had.
+ * can't be had. In the person's own window, `pace: "idle"` (see `Pace`).
  */
 export async function drawCommentPicture(given: {
   doc: Doc;
   threadId: string;
   messageId: string;
   assetBase?: string | undefined;
+  pace?: Pace;
 }): Promise<Record<Theme, Blob>> {
-  if (!commentIn(given.doc, given.threadId, given.messageId)) {
+  const { pace = "now", ...comment } = given;
+  if (!commentIn(comment.doc, comment.threadId, comment.messageId)) {
     throw new Error("The comment isn't in the document.");
   }
   const host = document.createElement("div");
@@ -314,12 +360,13 @@ export async function drawCommentPicture(given: {
   try {
     const out: Partial<Record<Theme, Blob>> = {};
     for (const theme of ["light", "dark"] as const) {
+      await whenIdle(pace);
       const scene = await new Promise<HTMLElement>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("The picture took too long.")), DRAW_MS);
         root.render(
           <CommentScene
             key={theme}
-            {...given}
+            {...comment}
             theme={theme}
             onFramed={(el) => {
               clearTimeout(timer);
@@ -332,8 +379,9 @@ export async function drawCommentPicture(given: {
           />,
         );
       });
+      await yieldToWindow(pace);
       await settle(scene, deadline);
-      out[theme] = await rasterise(scene, deadline, given.assetBase);
+      out[theme] = await rasterise(scene, deadline, comment.assetBase, pace);
     }
     return out as Record<Theme, Blob>;
   } finally {
@@ -370,8 +418,15 @@ async function settle(scene: HTMLElement, deadline: number): Promise<void> {
       else animation.pause();
     }
   }
-  // A frame for what that changed to be laid out.
-  await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+  // A frame for what that changed to be laid out; or, in a window that draws no frames (the
+  // desktop's hidden picture window may not), a moment: what is read next is laid out anyway.
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 100);
+    requestAnimationFrame(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 /**
@@ -422,8 +477,14 @@ function paintReach(style: CSSStyleDeclaration): number {
  * is read with `decode()`, never a load handler: Chromium also keeps a long-running handler's
  * element, named by its src, in its long-animation-frame entries.
  */
-async function rasterise(scene: HTMLElement, deadline: number, assetBase?: string): Promise<Blob> {
+async function rasterise(
+  scene: HTMLElement,
+  deadline: number,
+  assetBase: string | undefined,
+  pace: Pace,
+): Promise<Blob> {
   const outside = outsideOf(scene);
+  await yieldToWindow(pace);
   const svg = await domToForeignObjectSvg(scene, {
     width: WIDTH,
     height: HEIGHT,
@@ -436,6 +497,7 @@ async function rasterise(scene: HTMLElement, deadline: number, assetBase?: strin
     },
     onCreateForeignObjectSvg: keepUsedFaces,
   });
+  await yieldToWindow(pace);
   const xml = new XMLSerializer()
     .serializeToString(svg)
     // Characters XML doesn't allow, which would leave the SVG unreadable (as modern-screenshot).
@@ -444,6 +506,7 @@ async function rasterise(scene: HTMLElement, deadline: number, assetBase?: strin
   try {
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
     await image.decode();
+    await yieldToWindow(pace);
     const canvas = document.createElement("canvas");
     canvas.width = WIDTH * SCALE;
     canvas.height = HEIGHT * SCALE;

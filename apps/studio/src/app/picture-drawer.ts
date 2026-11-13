@@ -1,0 +1,54 @@
+import type { Doc } from "@ponzu/core";
+import type { PictureAnswer, PictureRequest } from "@ponzu/desktop/bridge";
+import { drawCommentPicture, NoPicture, pictureDoc, type Theme } from "./comment-picture.tsx";
+
+/*
+ * Where a comment's picture is drawn (CommentPictures' `draw`). In the desktop app, out of the
+ * person's window: the shell's hidden picture window draws it in its own renderer
+ * (apps/desktop/src/pictures.ts), from the document cut down to what the picture shows, and
+ * hands back the two files. Drawing it takes nothing from this window's main thread and leaves
+ * nothing in it. Elsewhere (a browser, an older shell), or if the picture window can't, it is
+ * drawn here, at the window's idle pace (`Pace`).
+ */
+
+export type PictureBridge = { draw(request: PictureRequest): Promise<PictureAnswer> };
+
+export interface Comment {
+  doc: Doc;
+  threadId: string;
+  messageId: string;
+  assetBase?: string | undefined;
+}
+
+export function pictureDrawer(
+  bridge: PictureBridge | undefined,
+  drawHere: typeof drawCommentPicture = drawCommentPicture,
+): (comment: Comment) => Promise<Record<Theme, Blob>> {
+  const here = (comment: Comment) => drawHere({ ...comment, pace: "idle" });
+  if (!bridge) return here;
+  return async (comment) => {
+    const doc = pictureDoc(comment.doc, comment.threadId, comment.messageId);
+    if (!doc) throw new Error("The comment isn't in the document.");
+    let answer: PictureAnswer;
+    try {
+      answer = await bridge.draw({
+        doc,
+        threadId: comment.threadId,
+        messageId: comment.messageId,
+        ...(comment.assetBase ? { assetBase: comment.assetBase } : {}),
+      });
+    } catch (error) {
+      answer = { ok: false, reason: "failed", message: String(error) };
+    }
+    if (answer.ok) {
+      return {
+        light: new Blob([new Uint8Array(answer.light)], { type: "image/webp" }),
+        dark: new Blob([new Uint8Array(answer.dark)], { type: "image/webp" }),
+      };
+    }
+    if (answer.reason === "empty") throw new NoPicture();
+    // The picture window couldn't: drawn here, so the comment still has its picture.
+    console.warn("[ponzu] the picture window couldn't draw a comment's picture:", answer.message);
+    return here({ ...comment, doc });
+  };
+}

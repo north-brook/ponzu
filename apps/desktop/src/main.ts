@@ -60,6 +60,8 @@ import {
   type NotificationClass,
   type Notifier,
 } from "./notifications.ts";
+import { createPictureWindow } from "./picture-window.ts";
+import { Pictures, pictureAnswer, pictureRequest } from "./pictures.ts";
 import { clientPlatform, type MainSession, mainSession } from "./session.ts";
 import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
@@ -286,6 +288,30 @@ function computerName(): string {
 }
 
 let mainWindow: BrowserWindow | null = null;
+/** The hidden window comments' pictures are drawn in, while one is open (pictures.ts). */
+let pictureWindow: BrowserWindow | null = null;
+/** Tells `pictures` the open picture window's studio is listening. */
+let pictureReady: (() => void) | null = null;
+const pictures = new Pictures({
+  open: (events) => {
+    const made = createPictureWindow({
+      url: config.studioDevUrl ?? `${STUDIO_ORIGIN}/`,
+      preload: join(here, "picture-preload.cjs"),
+      studio: studioOrigins,
+      devTools: config.remoteDebugging,
+      events: {
+        ready: events.ready,
+        gone: () => {
+          if (pictureWindow === made.window) pictureWindow = null;
+          events.gone();
+        },
+      },
+    });
+    pictureWindow = made.window;
+    pictureReady = events.ready;
+    return made.handle;
+  },
+});
 /** Links that arrived before the studio listened for them. */
 const pendingLinks: DeepLink[] = [];
 /** The studio's listeners for links: none while signed out, when links wait here. */
@@ -352,6 +378,8 @@ function showWindow() {
     const win = mainWindow;
     win.on("closed", () => {
       if (mainWindow === win) mainWindow = null;
+      // Nothing is left to show a picture to; and a hidden window must not keep Ponzu running.
+      pictures.close();
     });
     // A reload or a crash starts the studio again; it asks for queued links when it listens.
     win.webContents.on("did-start-navigation", ({ isMainFrame, isSameDocument }) => {
@@ -435,6 +463,21 @@ function fromStudio(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   );
 }
 
+/** The picture window's studio, in its top frame. */
+function fromPictureHost(event: IpcMainEvent): boolean {
+  const frame = event.senderFrame;
+  const top = event.sender.mainFrame;
+  return (
+    !!pictureWindow &&
+    !pictureWindow.isDestroyed() &&
+    event.sender.id === pictureWindow.webContents.id &&
+    frame !== null &&
+    frame.processId === top.processId &&
+    frame.routingId === top.routingId &&
+    isStudio(frame.url, studioOrigins)
+  );
+}
+
 function handle(channel: string, answer: (...args: unknown[]) => unknown) {
   ipcMain.handle(channel, (event, ...args) => {
     if (!fromStudio(event)) {
@@ -485,6 +528,20 @@ function registerIpc(session: MainSession, updater: Updates) {
   listen(CHANNELS.notifyBadge, (count) => notifications().setBadge(count));
   handle(CHANNELS.welcome1x, () => welcome1x());
   handle(CHANNELS.usageSharing, (enabled) => setUsageSharing(enabled === true));
+  handle(CHANNELS.picturesDraw, (request) => {
+    const asked = pictureRequest(request);
+    return asked
+      ? pictures.draw(asked)
+      : { ok: false, reason: "failed", message: "That isn't a picture to draw." };
+  });
+  ipcMain.on(CHANNELS.pictureHostReady, (event) => {
+    if (fromPictureHost(event)) pictureReady?.();
+  });
+  ipcMain.on(CHANNELS.pictureHostAnswer, (event, id, answer) => {
+    if (fromPictureHost(event) && typeof id === "number") {
+      pictures.answered(id, pictureAnswer(answer));
+    }
+  });
 }
 
 /**
