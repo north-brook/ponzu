@@ -33,6 +33,11 @@ export interface EvalContext {
   parallel?: number;
   /** Calibrate only this judge, when given. */
   onlyJudge: string | null;
+  /**
+   * Where a suite's agent turns run (`--on`), when not at a canvas's defaults: `dev-key` is the
+   * builders' rules (the development key, Haiku at low). Only the agent suite takes it.
+   */
+  on?: string | null;
   /** The checkout's commit, for the record. */
   commit: string | null;
   log(line: string): void;
@@ -67,6 +72,11 @@ export interface SuiteReport {
   judges: Record<string, string>;
   /** Criterion to its pass rate over every sample it applied to. */
   rates: Record<string, { passed: number; of: number }>;
+  /**
+   * Rates of rows that ran elsewhere than at the defaults (`--on`), by where they ran. Kept apart:
+   * they never count in `rates`.
+   */
+  ratesByRun?: Record<string, Record<string, { passed: number; of: number }>>;
   /** What was not run, and why: a cap, a case left out. */
   notRun: string[];
   /** One summary line per notable failure. */
