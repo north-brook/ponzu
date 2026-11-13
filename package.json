@@ -11,7 +11,7 @@
     "dev": "bun run --filter @ponzu/studio dev",
     "build": "bun run --filter '*' build",
     "test": "bun test",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit && tsc -p packages/client/tsconfig.model.json --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
     "evals": "bun scripts/evals.ts"

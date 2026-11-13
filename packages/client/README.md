@@ -15,7 +15,8 @@ a browser and Hermes.
 | `@ponzu/client/model` | the product's rules, so the Mac and the phone show the same ones: the UI's model and the mapping of API rows onto it, row indicators and order, the filter, search highlighting, a pull request's next action, what keeps someone from steering and each wake gate's blocker words, the thread's rows, answering a question, setup's gates, billing's words and numbers |
 
 The model is pure: no React, no DOM, no Node, and it runs nothing from the rest of this package
-but `ApiError` (`bundle.test.ts` holds it to that). Each module is also its own entry,
+but `ApiError` (`bundle.test.ts` holds it to that, and `tsconfig.model.json`, which the
+typecheck runs, to no DOM). Each module is also its own entry,
 `@ponzu/client/model/<module>`, which the studio's old paths re-export one line each. Times
 take the moment they measure from as an argument, so each app decides where "now" comes from.
 

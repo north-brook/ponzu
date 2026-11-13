@@ -137,6 +137,8 @@ jobs:
           check typecheck-mobile bunx tsc -p apps/mobile/tsconfig.json --noEmit
           check typecheck-desktop bunx tsc -p apps/desktop/tsconfig.json --noEmit
           check typecheck-api bunx tsc -p apps/api/tsconfig.json --noEmit
+          # The shared rules the phone runs, against the language's library with no DOM.
+          check typecheck-model bunx tsc -p packages/client/tsconfig.model.json --noEmit
           check studio bun run --filter @ponzu/studio build
           check web bun run --filter @ponzu/web build
           # Builds the API the way Vercel does and loads the bundle in Node.
@@ -148,7 +150,7 @@ jobs:
           check migrations bun scripts/ci/migrations.ts
           wait
           failed=0
-          for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api runner migrations; do
+          for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api typecheck-model studio web api runner migrations; do
             echo "::group::$name"
             cat "$RUNNER_TEMP/$name.log"
             echo "::endgroup::"

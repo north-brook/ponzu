@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { dirname, resolve } from "node:path";
-import ts from "typescript";
 
 /*
  * The phone bundles this package with Metro for Hermes: no Node, no DOM in the core, and none
@@ -13,6 +12,9 @@ import ts from "typescript";
  * The phone also runs `CloudSource` (canvas/index.ts) on its React Native side, so nothing here
  * may reach the canvas's React code or the renderer: not in the bundle, and not as a type
  * either, since a type import drags those packages into the phone's typecheck.
+ *
+ * That the shared rules (model/) use nothing a browser alone has is a typecheck, not a test:
+ * ../tsconfig.model.json, which `bun run typecheck` and CI's typecheck job run.
  */
 
 const NODE = new RegExp(`^(node:|(${builtinModules.join("|")})(/|$))`);
@@ -99,33 +101,6 @@ test("the shared rules run on the phone as they are: no React, no DOM, and only 
   const code = await built.outputs[0]!.text();
   expect(code).not.toMatch(/\breact\b/i);
 });
-
-test("the shared rules typecheck with no DOM: nothing a browser alone has", () => {
-  // A list of DOM names would miss the next one (`matchMedia`, `location`), so the compiler
-  // checks the rules against the language's own library, with no DOM and no Bun or Node types.
-  // Only errors in the model count: the client's request types it reads (session.ts, rpc.ts)
-  // name `RequestInfo`, which React Native declares and the bare library does not.
-  const base = ts.readConfigFile(resolve(ROOT, "tsconfig.base.json"), ts.sys.readFile).config;
-  const { options } = ts.parseJsonConfigFileContent(
-    { compilerOptions: { ...base.compilerOptions, lib: ["ES2023"], types: [] } },
-    ts.sys,
-    ROOT,
-  );
-  const program = ts.createProgram([`${import.meta.dir}/model/index.ts`], options);
-  const model = `${import.meta.dir}/model/`;
-  const errors = ts
-    .getPreEmitDiagnostics(program)
-    .filter((d) => d.file?.fileName.startsWith(model))
-    .map((d) => {
-      const { line } = d.file!.getLineAndCharacterOfPosition(d.start ?? 0);
-      const text = ts.flattenDiagnosticMessageText(d.messageText, " ");
-      return `${d.file!.fileName.slice(model.length)}:${line + 1} ${text}`;
-    });
-  expect(errors).toEqual([]);
-  // The walk reached the rules themselves, so an empty list means something.
-  expect(program.getSourceFile(`${model}status.ts`)).toBeDefined();
-  // A whole program's typecheck: seconds, not milliseconds.
-}, 30_000);
 
 test("the import scan sees a type-only import of the canvas", () => {
   // The bundle drops type imports, so this scan is what catches one: prove it does.
