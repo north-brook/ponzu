@@ -217,4 +217,3 @@ test("the chat docks beside the canvas only where there is room for both, flat",
   expect(chatPanel(duoLayout(innerSideways, true, true))).toBe(false);
   expect(chatPanel(duoLayout(innerUpright, false, true))).toBe(false);
 });
-

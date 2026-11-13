@@ -68,9 +68,11 @@ import { dismissFor } from "../../lib/push/native";
 import { canvasOf } from "../../lib/push/payload";
 import { usePings } from "../../lib/push/pings";
 import { Juice } from "../../lib/slice";
+import { cloudStandbyPath, FOLLOW } from "../../lib/standby";
 import { useTheme } from "../../lib/theme";
 import { EASE_OUT } from "../../lib/tokens";
 import { useSeen } from "../../lib/use-seen";
+import { StandbyAwake, StillSensor, useFollow, useStandby } from "../../lib/use-standby";
 import { useWindowInsets } from "../../lib/window-insets";
 
 const ease = Easing.bezier(...EASE_OUT);
@@ -125,6 +127,7 @@ export default function CanvasScreen() {
     thread?: string;
     message?: string;
     ping?: string;
+    standby?: string;
   }>();
   const canvasId = params.id;
   const { color, scheme } = useTheme();
@@ -674,8 +677,29 @@ export default function CanvasScreen() {
     setMovingDraft(null);
   }, [writable]);
 
-  // Writing or reading a comment keeps the chrome, focused board or not.
-  const bare = Boolean(focusedBoard) && !moving && !pending && !thread && !holding;
+  // Standby (lib/standby.ts): iPhone Duo set down standing or as a tent while Ponzu works on
+  // this page. The page alone on black, the camera going from board to board as it works.
+  const pageBoards = useMemo(() => new Set(page?.artboards.map((a) => a.id)), [page]);
+  const standbyBoards = cloudStandbyPath(head, pageBoards);
+  const standbyKey = standbyBoards.join(",");
+  const following = useMemo(() => standbyBoards, [standbyKey]);
+  const nothingUp = !pending && !thread && !holding && !movingDraft && !chat && !pullRequest;
+  const {
+    standby: standingBy,
+    listen,
+    setStill,
+  } = useStandby(
+    following.length > 0 && nothingUp,
+    params.standby === "1" && backend.kind === "fake",
+  );
+  const standby = standingBy && nothingUp;
+  const follow = useFollow(following, standby, FOLLOW);
+  useEffect(() => {
+    if (follow) canvas.current?.post({ t: "follow", artboardId: follow, ms: FOLLOW.move });
+  }, [follow]);
+
+  // Writing or reading a comment keeps the chrome, focused board or not; standby has none.
+  const bare = standby || (Boolean(focusedBoard) && !moving && !pending && !thread && !holding);
   const navigation = useNavigation();
   useEffect(() => {
     navigation.setOptions({ autoHideHomeIndicator: bare });
@@ -746,6 +770,12 @@ export default function CanvasScreen() {
   const foot = Math.max(insets.bottom, 16) + 8;
   return (
     <View testID="canvas" style={{ flex: 1, backgroundColor: color.canvas }}>
+      {listen && <StillSensor onStill={setStill} />}
+      {standby && (
+        <View testID="standby" accessibilityLabel="Standby">
+          <StandbyAwake />
+        </View>
+      )}
       {bridge && assetsUrl && (
         <CanvasView
           ref={canvas}
@@ -761,6 +791,7 @@ export default function CanvasScreen() {
           thread={threadId}
           moving={movingDraft}
           page={shownPage}
+          standby={standby}
           onMessage={onMessage}
         />
       )}

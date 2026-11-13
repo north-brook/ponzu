@@ -72,6 +72,7 @@ const pricing = () =>
   [...backend.world.fake.canvases.values()].find(
     (c) => c.repoId === backend.world.acme.repos[0]!.id,
   )!;
+const agent = () => backend.world.fake.agent(pricing().id);
 const sent = (kind: ToCanvas["t"]) => mockPage.got.filter((m) => m.t === kind);
 
 async function openPricing(params: Record<string, string> = {}) {
@@ -146,5 +147,49 @@ describe("an iPhone's window", () => {
     expect(screen.queryByTestId("canvas-stack")).toBeNull();
     expect(lastInsets()?.right).toBe(0);
     await act(async () => {});
+  });
+});
+
+describe("standby", () => {
+  const boards = () => {
+    const docs = sent("doc") as { t: "doc"; doc: { pages: { artboards: { id: string }[] }[] } }[];
+    return docs[0]!.doc.pages[0]!.artboards.map((a) => a.id);
+  };
+  const lastStandby = () => {
+    const all = sent("standby") as { t: "standby"; on: boolean }[];
+    return all[all.length - 1]?.on;
+  };
+
+  test("while Ponzu works on this page: the page alone, the camera on the boards it works on", async () => {
+    Object.assign(mockWindow, { width: 402, height: 874 });
+    // The simulator has no hinge or motion: the fake backend's `standby=1` stands in for both.
+    await openPricing({ standby: "1" });
+    const [first, second] = boards();
+    // The stock canvas opens with Ponzu at work: let it rest first.
+    await act(async () => agent().idle());
+    await waitFor(() => expect(screen.queryByTestId("standby")).toBeNull());
+    await act(async () => agent().work([first!, second!], "Drawing the plans"));
+    await screen.findByTestId("standby");
+    expect(screen.getByTestId("chrome-hidden", { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByTestId("canvas-stack")).toBeNull();
+    await waitFor(() => expect(lastStandby()).toBe(true));
+    await waitFor(() =>
+      expect(sent("follow")).toContainEqual(expect.objectContaining({ artboardId: first })),
+    );
+    // Ponzu stops: standby goes, and the chrome comes back.
+    await act(async () => agent().idle());
+    await waitFor(() => expect(screen.queryByTestId("standby")).toBeNull());
+    expect(screen.getByTestId("chrome")).toBeTruthy();
+    expect(lastStandby()).toBe(false);
+  });
+
+  test("an iPhone in the hand never goes to standby, however Ponzu works", async () => {
+    Object.assign(mockWindow, { width: 402, height: 874 });
+    await openPricing();
+    const [first] = boards();
+    await act(async () => agent().work([first!], "Drawing the plans"));
+    await waitFor(() => expect(screen.getByTestId("stack-chat-working")).toBeTruthy());
+    expect(screen.queryByTestId("standby")).toBeNull();
+    expect(sent("follow")).toEqual([]);
   });
 });
