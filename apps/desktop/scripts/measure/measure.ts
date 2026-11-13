@@ -121,6 +121,16 @@ const INSTRUMENTS = `(() => {
       R.storageMs += ms; R.storageMaxMs = Math.max(R.storageMaxMs, ms);
     }
   };
+  R.bigJson = 0; R.bigJsonBytes = 0; R.bigJsonMs = 0;
+  const js = JSON.stringify;
+  JSON.stringify = function (...a) {
+    const t = performance.now();
+    const out = js.apply(this, a);
+    if (typeof out === "string" && out.length > 100000) {
+      R.bigJson++; R.bigJsonBytes += out.length; R.bigJsonMs += performance.now() - t;
+    }
+    return out;
+  };
   const sc = window.structuredClone.bind(window);
   window.structuredClone = (v, o) => {
     const t = performance.now();
@@ -228,6 +238,7 @@ try {
       .join(", ");
     console.log(`[${r.atS}s] ${label}: ${short}; dom ${JSON.stringify(r.dom)}`);
     readings.push(r);
+    save("readings.json", readings);
     return r;
   };
 
@@ -241,6 +252,7 @@ try {
           gpu: footprint(pidOf("gpu-process")).mb,
           main: footprint(mainPid).mb,
         });
+        if (timeline.length % 15 === 0) save("timeline.json", timeline);
       } catch {}
       await pause(2_000);
     }
@@ -439,21 +451,47 @@ try {
   }
   await page.screenshot({ path: join(OUT, "after-comments.png") });
 
-  // Pan and zoom over the boards.
+  // Pan and zoom over the boards: across, far in, far out and back, as a person looks around.
   const pane = (await page.locator(".pz-root").first().boundingBox())!;
   await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height / 2);
+  const gesture = { renderer: 0, gpu: 0, gpuSamples: [] as number[] };
+  let moving = true;
+  const gestureWatcher = (async () => {
+    while (moving) {
+      const gpu = footprint(pidOf("gpu-process")).mb;
+      gesture.gpu = Math.max(gesture.gpu, gpu);
+      gesture.gpuSamples.push(gpu);
+      gesture.renderer = Math.max(gesture.renderer, renderer().mb);
+      await pause(250);
+    }
+  })();
+  const before = await counts(page);
   for (let i = 0; i < 40; i++) {
     await page.mouse.wheel(i % 20 < 10 ? 60 : -60, 30);
     await pause(16);
   }
   await page.keyboard.down("Meta");
-  for (let i = 0; i < 20; i++) {
-    await page.mouse.wheel(0, i < 10 ? -40 : 40);
-    await pause(16);
+  for (const [steps, dy] of [
+    [25, -40],
+    [50, 40],
+    [25, -40],
+  ] as const) {
+    for (let i = 0; i < steps; i++) {
+      await page.mouse.wheel(0, dy);
+      await pause(16);
+    }
   }
   await page.keyboard.up("Meta");
   await pause(2_000);
-  await reading("after pan and zoom");
+  moving = false;
+  await gestureWatcher;
+  const panned = { ...gesture, did: minus(await counts(page), before) };
+  console.log(`pan and zoom: peak ${JSON.stringify({ ...panned, gpuSamples: undefined })}`);
+  await reading("after pan and zoom", true);
+  await pause(10_000);
+  await reading("12 s after pan and zoom", true);
+  await pause(20_000);
+  await reading("32 s after pan and zoom");
 
   await open(ids.b);
   await pause(6_000);
@@ -480,6 +518,7 @@ try {
   save("summary.json", {
     canvas: SMALL ? "small" : "founder",
     ids,
+    panned,
     openMs,
     readings,
     comments,
