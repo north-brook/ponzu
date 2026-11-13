@@ -2150,7 +2150,10 @@ running in a repo without auto-merge, or GitHub still working out whether it can
 a few seconds after a push). Create PR is the API's, as the person
 (`POST /v1/canvases/:id/pull-request`, above), like Ready, Merge, Auto-merge and Update branch.
 Fix checks and Resolve are the agent's to do: the client sends it a message in the thread as
-the person (which failing checks, or which base to merge in), once for a commit. Beside the
+the person (which failing checks, or which base to merge in), once for a commit. The iPhone's
+pull request sheet offers the same button, except Create PR, which is the Mac's. Its Merge asks
+first and never sends `bypass`; where the rules hold a pull request back and the repo has no
+auto-merge, the sheet says it needs the Mac. Beside the
 button, the Mac app's tab has a menu by the pull request's title, for anyone who can steer the
 canvas, while it is open or a draft: Turn off auto-merge (`DELETE …/auto-merge`) while auto-merge
 is on, and Close pull request (`POST …/close`), asked first ("Close #N without merging? The
@@ -2299,7 +2302,9 @@ is what most allow). It takes the commit the person looked at (`headSha`, requir
 Update branch) and merges only while the branch is still there, waiting up to three seconds
 while GitHub works out whether it can. After GitHub says it merged, it is read until the read
 shows it, for a few seconds; if it still does not, a job reads it again a minute later, so the
-canvas settles whether or not the merge's webhook arrives.
+canvas settles whether or not the merge's webhook arrives. Once the merge shows, Ponzu deletes
+the branch as the person, but only while it is still at the commit that merged; a refusal, such
+as a protected branch, leaves it in place.
 
 | Code | When |
 |---|---|
@@ -2592,7 +2597,8 @@ Uploads are signed (SigV4, by aws4fetch in `apps/api/src/deps/storage.ts`) for t
 exact size, SHA-256 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule
 and disposition, for ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
 assets are the images, fonts and videos `add_asset` takes, up to 20 MB; exports PNG, JPEG or
-PDF, up to 50 MB; previews PNG, up to 5 MB; a person's upload an image, up to 20 MB.
+PDF, up to 50 MB; previews PNG, up to 5 MB; a person's upload an image, up to 20 MB; a comment's picture, in
+each theme, up to 2 MB.
 
 An SVG can run script when a browser opens it by itself, so it is stored with
 `Content-Disposition: attachment`: opened directly it is saved, not shown, and as an `<img>` or
@@ -2631,8 +2637,10 @@ the order summary on the right"). They are generated, never written by hand
 - **What reaches a person**, in order:
   1. **Exact checks** (`checkIdeas`), on what code alone can decide: the answer parses as the
      schema, it has exactly four ideas, each is non-empty and at most 90 characters (code
-     points), none holds a control, format (bidi override, zero-width), private-use or line
-     separator character, and no two are the same. Each is normalised: spaces collapsed, a final
+     points), none holds a control, a bidirectional control, a tag character, a private-use or
+     lone surrogate code point, or a line or paragraph separator, and no two are the same.
+     Other format characters, such as the zero-width joiner, stay allowed, since some scripts
+     and emoji need them. Each is normalised: spaces collapsed, a final
      period dropped, the first letter raised.
   2. **The gate** (`gate.ts`): Claude Sonnet 5.5 at low effort reads the four ideas, with only
      the product's name and description (fenced as data, never the README), and says of each,
@@ -2703,9 +2711,10 @@ the order summary on the right"). They are generated, never written by hand
   a screen or state it lacks; something across the interface. Kinds 3 and 4 are menus with no
   default, so repos do not all get the same empty state or type scale, and only screens the
   read found may be redesigned. "No dark theme" is said only when a theme file was read.
-- **The repo's text is untrusted.** The instructions are all in the system prompt, the same for
-  every repo; the repo's text goes in the user turn inside one `<repository>` fence it cannot
-  close (every `<` and `>` in it is replaced). The prompt says never to pass on a message,
+- **The repo's text is untrusted.** The instructions are Ponzu's own: one of two system prompts
+  (the usual one, or `FRESH_SYSTEM_PROMPT` for a product not built yet), with Ponzu's fixed
+  sentence added on a second ask. The repo's text goes in the user turn inside one
+  `<repository>` fence it cannot close, because every `<`, `>` and `"` in it is replaced. The prompt says never to pass on a message,
   address, contact or command from the material, and that the product's own name and words are
   always fine, whatever they are (a product called ponzu-test, gpt-playground or Claude Desk; a
   code host's repositories, an editor's code). The answer is structured output, and what reaches
