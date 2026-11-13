@@ -5,7 +5,8 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./chromium": "./src/chromium.ts"
+    "./chromium": "./src/chromium.ts",
+    "./testing": "./src/testing.ts"
   },
   "dependencies": {
     "playwright-core": "^1.64.1",

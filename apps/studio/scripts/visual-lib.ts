@@ -5,8 +5,9 @@
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { launchChromium } from "@ponzu/render/testing";
 import type { Composition, Rect } from "../src/cloud/gallery/compositions.ts";
 import { prebuilt } from "./prebuilt.ts";
 
@@ -49,12 +50,9 @@ export const SITE_SCALE = 2;
 
 export const chromiumPath = findChromium();
 
-export async function launch(): Promise<Browser> {
-  if (!chromiumPath) throw new Error("No Chrome or Chromium found (set PONZU_CHROMIUM).");
-  const { chromium } = (await import(
-    Bun.resolveSync("playwright-core", dirname(Bun.resolveSync("@ponzu/render/chromium", STUDIO)))
-  )) as { chromium: { launch(o: object): Promise<Browser> } };
-  return chromium.launch({ executablePath: chromiumPath, headless: true });
+/** Headless Chromium whose close() kills it rather than waiting on Chrome to quit (@ponzu/render/testing). */
+export function launch(): Promise<Browser> {
+  return launchChromium(chromiumPath);
 }
 
 /**
