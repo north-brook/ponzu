@@ -220,25 +220,32 @@ describe("every reader, every repo", () => {
     expect(await repoNames(yan.headers, to.id)).toEqual([moved.fullName, to.repo.fullName].sort());
   });
 
-  test("a public repo is readable to every member, listed or opened, collaborator or not", async () => {
+  test("a public repo GitHub did not give a member is none to them, listed or opened", async () => {
     const ws = await workspaceWithRepo(t, { zed: "write", ada: "none" }, { private: false });
     const canvas = await canvasIn(t, ws, "zed", emptyDoc("Public"));
     const ada = ws.people.ada!;
     const open = () => call(t, ada.headers, "GET", `/v1/canvases/${canvas.id}`);
 
-    expect(await canvasIds(ada.headers, ws.id)).toEqual([canvas.id]);
-    expect((await open()).body.access).toBe("read");
+    expect(await canvasIds(ada.headers, ws.id)).toEqual([]);
+    expect((await open()).status).toBe(404);
     t.clock.advance(61_000);
-    expect((await open()).body.access).toBe("read");
-    expect(await canvasIds(ada.headers, ws.id)).toEqual([canvas.id]);
+    // GitHub's question as the App says `read` of anybody here; her own list settles it.
+    expect((await open()).status).toBe(404);
+    expect(await canvasIds(ada.headers, ws.id)).toEqual([]);
     t.clock.advance(61_000);
-    expect(await canvasIds(ada.headers, ws.id)).toEqual([canvas.id]);
-    expect((await open()).body.access).toBe("read");
+    expect(await canvasIds(ada.headers, ws.id)).toEqual([]);
+    expect((await open()).status).toBe(404);
     const profile = await call(t, ada.headers, "GET", `/v1/workspaces/${ws.id}`);
-    expect(profile.body.repos).toMatchObject([{ id: ws.repo.id, canPush: false }]);
+    expect(profile.body.repos).toEqual([]);
     expect(await getRepoAccess(t.db, { userId: ada.userId, repoId: ws.repo.id })).toMatchObject({
-      permission: "read",
+      permission: "none",
     });
+
+    // GitHub gives her the repo, read only: now she reads it, and cannot steer it.
+    ws.grant("ada", "read");
+    t.clock.advance(61_000);
+    expect(await canvasIds(ada.headers, ws.id)).toEqual([canvas.id]);
+    expect((await open()).body.access).toBe("read");
   });
 
   test("a suspended installation shuts its canvases at once, and no 502 follows", async () => {
@@ -279,6 +286,29 @@ describe("every reader, every repo", () => {
     });
     expect((await open()).body.access).toBe("write");
     expect(await canvasIds(headers, ws.id)).toEqual([canvas.id]);
+  });
+
+  test("a repo list GitHub cuts short keeps a read-only collaborator's private repo", async () => {
+    const ws = await workspaceWithRepo(t, { cy: "write", eve: "read" });
+    const canvas = await canvasIn(t, ws, "cy", emptyDoc("Cut short, private"));
+    const eve = ws.people.eve!;
+    await syncGithub(t.deps, eve.userId);
+    expect(await canvasIds(eve.headers, ws.id)).toEqual([canvas.id]);
+
+    const { github } = t.deps;
+    const listInstallationRepositories = github.listInstallationRepositories;
+    // Past the pages Ponzu reads: the repo is not in what was read, and GitHub still gave it her.
+    github.listInstallationRepositories = async () => ({ items: [], complete: false });
+    try {
+      t.clock.advance(61_000);
+      expect(await canvasIds(eve.headers, ws.id)).toEqual([canvas.id]);
+      t.clock.advance(61_000);
+      expect((await call(t, eve.headers, "GET", `/v1/canvases/${canvas.id}`)).body.access).toBe(
+        "read",
+      );
+    } finally {
+      github.listInstallationRepositories = listInstallationRepositories;
+    }
   });
 
   test("a repo list GitHub cuts short still loses a repo the person lost", async () => {

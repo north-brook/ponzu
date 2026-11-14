@@ -359,6 +359,7 @@ export {
 export { readableCanvases } from "./queries/readable.ts";
 export {
   getRepoAccess,
+  getRepoVisibility,
   listWorkspaceRepoAccess,
   markRepoAccessStale,
   READABLE_PERMISSIONS,

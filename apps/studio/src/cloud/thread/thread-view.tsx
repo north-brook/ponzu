@@ -1,6 +1,7 @@
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import {
   type CSSProperties,
+  memo,
   type ReactNode,
   useCallback,
   useEffect,
@@ -82,9 +83,10 @@ const metricsOf = (el: HTMLElement): ScrollMetrics => ({
  * takes them back. Only the newest rows are drawn: reading up reveals more, a page at a time,
  * without moving what is on screen, and asks for older items once every loaded one is drawn.
  * A line asked for (`reveal`) is drawn, scrolled to the middle and washed in pith a moment;
- * with reduced motion it is only scrolled to.
+ * with reduced motion it is only scrolled to. Memoized: typing in the composer under it changes
+ * none of its props, and drawing it again measures the thread (a layout, under each key).
  */
-export function ThreadView({
+export const ThreadView = memo(function ThreadView({
   items,
   older,
   onLoadOlder,
@@ -463,7 +465,7 @@ export function ThreadView({
       ) : null}
     </div>
   );
-}
+});
 
 /**
  * A line leaving the thread: drawn where it was, in exactly the room it held (the space above

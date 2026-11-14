@@ -156,7 +156,11 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
    answers at once with `recordReposReachedBy`; a list of repos or canvases (or a live query
    over one) joins the table, after `refreshWorkspaceRepoAccess` where it must be current.
    A webhook that cannot say whose access changed calls `markRepoAccessStale`. Never keep a
-   second copy of who can reach what. The one exception is for show:
+   second copy of who can reach what. A `read` in the table is one GitHub GAVE the person;
+   the read anyone has of a public repo never reaches it (the App's `read` is settled by the
+   person's own list), so a route that reads the table needs no rule of its own for public
+   repos. `auth/public-repo-read.test.ts` runs every canvas route as a stranger and fails for
+   a new route under `/v1/canvases/:id` until it is added there. The one exception is for show:
    `workspace_people.repo_permissions` (`github/people.ts`) is the App's snapshot of who
    GitHub lists in each repo, kept so the team can be shown before people open Ponzu. It is
    never consulted to grant anything, and for anyone with a `repo_access` answer that answer
@@ -351,19 +355,24 @@ The API is one Vercel project, `ponzu-api`, with two environments
   the released apps (Mac 2.0.0, iPhone 1.0.0) and is deployed only from `main`.
 - **Preview** is for throwaway builds of a branch.
 
-On a push to `main`, [deploy-api.yml](../../.github/workflows/deploy-api.yml)'s `dev` job
-applies the pending migrations to the Neon `dev` branch, deploys with
-`vercel deploy --environment dev`, and checks that `https://api-dev.ponzu.design/v1/health`
-answers `dev` with the commit, its image and every migration applied. Its `production` job,
-on the same push, under its own variable and the founder's approval, snapshots and migrates the Neon default branch, deploys with
-`--prod --skip-domain`, checks the new deployment, promotes it to `api.ponzu.design`, and checks
-that the minute's schedule is active (docs/production.md, "The production deploy, staged").
+On a push to `main`, [deploy-api.yml](../../.github/workflows/deploy-api.yml) runs the whole
+staged procedure, one run at a time, and deploys nothing when the merge changed nothing the API
+is made from (`scripts/ci/api-paths.ts`). Its `dev` job applies the pending migrations to the
+Neon `dev` branch, deploys with `vercel deploy --environment dev`, and checks that
+`https://api-dev.ponzu.design/v1/health` answers `dev` with the commit, its image and every
+migration applied, that the selfcheck passes, and (once its secrets exist) that a real turn
+works as the check account. Only after that, its `production` job records the deployment
+serving `api.ponzu.design`, snapshots and migrates the Neon default branch, deploys with
+`--prod --skip-domain`, checks the new deployment, promotes it, checks `api.ponzu.design` and
+that the minute's schedule is active, and promotes the recorded deployment back if a check after
+the promotion fails. A failed deploy opens an issue labelled `deploy-failed`
+(docs/production.md, "The production deploy, staged").
 Nobody deploys a branch or a checkout with `--prod`: the API the apps are built against would
 become whichever branch deployed last. And nobody applies a migration by hand: it reaches the
 shared database when it merges, so write it to work with the code that is already deployed.
 
-Each job is off until its own repository variable is `true`: `API_DEPLOY` for dev and
-`API_DEPLOY_PRODUCTION` for production. Neither is set today, so a push deploys nothing, and the
+The workflow is off until the repository variable `API_DEPLOY` is `true`, and production also
+needs `API_DEPLOY_PRODUCTION`. Neither is set today, so a push deploys nothing, and the
 orchestrator runs the steps by hand from `main`'s merged head. For dev: the migration
 (`bun apps/api/scripts/neon.ts dev --direct` into `db:migrate`, as the job does), then, at the
 repository root (`VERCEL_ORG_ID` is the team id, `VERCEL_PROJECT_ID` the `ponzu-api`
@@ -422,12 +431,13 @@ sensitive values:
 - The Production target holds production's own values and nobody else's (docs/production.md,
   "Env and secrets").
 
-On GitHub, the environment `dev` (only `main` may use it) is to hold dev's `VERCEL_TOKEN`, and
-the environment `production` (only `main`, with the founder's approval) holds
+On GitHub, the environment `dev` (only `main` may use it) is to hold dev's `VERCEL_TOKEN`, dev's
+`CRON_SECRET` and the canary's `CANARY_SESSION_WRITER`, and
+the environment `production` (only `main`, no reviewer) holds
 `VERCEL_TOKEN_PRODUCTION`, `VERCEL_AUTOMATION_BYPASS_SECRET` and `NEON_API_KEY`. Both jobs
 read the variables `VERCEL_TEAM_ID`, `VERCEL_API_PROJECT_ID` and `NEON_PROJECT_ID`; dev's
-migration reads the repository's `NEON_API_KEY`. Neither GitHub environment exists yet
-(docs/production.md, "Turning on the deploy workflow").
+migration reads the repository's `NEON_API_KEY`. Both GitHub environments exist; what each still
+lacks is in docs/production.md, "Turning on the deploy workflow".
 
 **Every deployment holds live secrets**, so only the two API domains are public. The project
 keeps Vercel Authentication on its deployments (the legacy Standard Protection,

@@ -88,13 +88,29 @@ export function ThreadRail(props: ThreadRailProps) {
     [],
   );
 
-  const send = () => {
-    const text = draft;
-    setDraft("");
-    Promise.resolve(props.onSend(text)).catch(() =>
-      setDraft(restoreDraft(text, readDraft(meId, canvasId))),
-    );
-  };
+  // The composer's handlers never change either, so a line streaming into the thread leaves the
+  // composer alone, and it draws again only for what it shows: the draft, the agent working.
+  const typed = useRef(draft);
+  typed.current = draft;
+  const does = useMemo(
+    () => ({
+      send: () => {
+        const { meId, canvasId, onSend } = latest.current;
+        const text = typed.current;
+        writeDraft(meId, canvasId, "");
+        Promise.resolve(onSend(text)).catch(() =>
+          writeDraft(meId, canvasId, restoreDraft(text, readDraft(meId, canvasId))),
+        );
+      },
+      attach: (files: File[]) => latest.current.onAttach(files),
+      removeAttachment: (id: string) => latest.current.onRemoveAttachment(id),
+      retryAttachment: (id: string) => latest.current.onRetryAttachment(id),
+      stop: () => latest.current.onStop(),
+      connectClaude: () => latest.current.onConnectClaude?.(),
+      takeOver: () => latest.current.onTakeOver?.(),
+    }),
+    [],
+  );
 
   // The keyboard was in the composer's slot when what fills it changed: it goes to what came.
   const carry = useRef(false);
@@ -142,13 +158,13 @@ export function ThreadRail(props: ThreadRailProps) {
             gate={gate}
             meId={meId}
             attachments={props.attachments}
-            onAttach={props.onAttach}
-            onRemoveAttachment={props.onRemoveAttachment}
-            onRetryAttachment={props.onRetryAttachment}
-            onSend={send}
-            onStop={props.onStop}
-            onConnectClaude={props.onConnectClaude}
-            onTakeOver={props.onTakeOver}
+            onAttach={does.attach}
+            onRemoveAttachment={does.removeAttachment}
+            onRetryAttachment={does.retryAttachment}
+            onSend={does.send}
+            onStop={does.stop}
+            onConnectClaude={props.onConnectClaude ? does.connectClaude : undefined}
+            onTakeOver={props.onTakeOver ? does.takeOver : undefined}
             takingOver={props.takingOver}
           />
         )}
