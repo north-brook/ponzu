@@ -200,7 +200,7 @@ type TellTarget = Pick<BranchCanvas, "id" | "status" | "repo" | "installationId"
 
 /** Whether GitHub says `author` can push to the repo of the pull request `canvas` hears about. */
 async function canPushTo(
-  deps: Pick<Deps, "db" | "github" | "clock">,
+  deps: Pick<Deps, "db" | "github" | "clock" | "vault" | "log">,
   canvas: TellTarget,
   author: GithubAuthor,
   userId: string | null,

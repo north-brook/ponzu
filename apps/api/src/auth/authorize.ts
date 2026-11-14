@@ -52,7 +52,9 @@ export interface CanvasGrant extends CanvasAccess {
   access: "read" | "write";
 }
 
-type CanvasContext = { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor: Actor } };
+type CanvasContext = {
+  var: { deps: Pick<Deps, "db" | "github" | "clock" | "vault" | "log">; actor: Actor };
+};
 
 /**
  * The canvas `canvasId` names, if the caller may `need` it. Opening a canvas takes read access
@@ -90,7 +92,7 @@ export async function requireCanvas(
  * `"write"` for something only someone who can push to it may do: 403 for a reader.
  */
 export async function requireRepo(
-  c: { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor: UserActor } },
+  c: { var: { deps: Pick<Deps, "db" | "github" | "clock" | "vault" | "log">; actor: UserActor } },
   repoId: string,
   need: "read" | "write" = "read",
 ): Promise<RepoIdeasAccess> {
@@ -116,7 +118,7 @@ export async function requireRepo(
  * GitHub lets them do in its repository. Null for nothing.
  */
 async function personAccess(
-  deps: Pick<Deps, "db" | "github" | "clock">,
+  deps: Pick<Deps, "db" | "github" | "clock" | "vault" | "log">,
   user: User,
   { canvas, repo, installationId, suspendedAt, known, member }: CanvasAccess,
 ): Promise<CanvasGrant["access"] | null> {

@@ -334,12 +334,28 @@ export function takeThaws<T extends { rank: number; cost: number }>(
   return queue.splice(0, n);
 }
 
+/** What a frame's thaw took: each board's rank and cost, in the order they go live. */
+export type ThawsTaken = readonly { rank: number; cost: number }[];
+
+/** Told what each frame's thaw takes, for tests; nobody in the app. */
+let thawWatcher: ((taken: ThawsTaken) => void) | null = null;
+
+/**
+ * For tests: hear what each frame's thaw takes, as the queue takes it. What a frame took shows in
+ * the page only once React commits it, which under load may be after the next frame's.
+ */
+export function watchThaws(watcher: ((taken: ThawsTaken) => void) | null): void {
+  thawWatcher = watcher;
+}
+
 function thawTick() {
   thawFrame = 0;
   // Ranked again now: a board queued on a cold open was queued before the page's camera fit, and
   // the camera may have moved since any was queued.
   for (const t of thawing) t.rank = t.rankOf();
-  for (const t of takeThaws(thawing, THAW_BUDGET)) t.go();
+  const taken = takeThaws(thawing, THAW_BUDGET);
+  thawWatcher?.(taken.map(({ rank, cost }) => ({ rank, cost })));
+  for (const t of taken) t.go();
   if (thawing.length) thawFrame = requestAnimationFrame(thawTick);
 }
 

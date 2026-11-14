@@ -1,5 +1,12 @@
 import { Cancel01Icon, PlusSignIcon, RefreshIcon } from "@hugeicons/core-free-icons";
-import { type ClipboardEvent, type DragEvent, type KeyboardEvent, useRef, useState } from "react";
+import {
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  memo,
+  useRef,
+  useState,
+} from "react";
 import { blockerWords, gateMessage } from "../gate.ts";
 import type { PendingAttachment, SteerGate } from "../model.ts";
 import { Button, IconButton, SendButton } from "../ui/button.tsx";
@@ -21,9 +28,10 @@ const images = (files: FileList | null | undefined) =>
  * and nothing sends; typing still keeps a draft. A plan at its limit is the one wait that still
  * takes a message: the strip says it goes in when the plan resets. Once its owner has left the
  * workspace nothing runs it until a teammate takes it over, so the strip is all there is, with
- * "Take over" for someone who can: no field to write in for nobody.
+ * "Take over" for someone who can: no field to write in for nobody. Memoized: the rail hands it
+ * the same handlers every time, so the thread moving on doesn't draw it again.
  */
-export function RailComposer({
+export const RailComposer = memo(function RailComposer({
   text,
   onTextChange,
   working,
@@ -206,7 +214,7 @@ export function RailComposer({
       </div>
     </div>
   );
-}
+});
 
 /** Ink, with a paper square: stops the run. */
 export function StopButton({ onStop }: { onStop: () => void }) {

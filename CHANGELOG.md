@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.5.1](https://github.com/north-brook/ponzu/compare/v2.5.0...v2.5.1) (2026-11-14)
+
+
+### Performance Improvements
+
+* **canvas:** a zoom restyles and repaints almost nothing, and each board contains its own work ([#646](https://github.com/north-brook/ponzu/issues/646)) ([dde2352](https://github.com/north-brook/ponzu/commit/dde2352abd2231cfb9df899666706005b7b471e6))
+
+## [2.5.0](https://github.com/north-brook/ponzu/compare/v2.4.2...v2.5.0) (2026-11-14)
+
+
+### Features
+
+* **canvas:** the canvas and the create page sit on a plain ground, without dots ([#647](https://github.com/north-brook/ponzu/issues/647)) ([20571be](https://github.com/north-brook/ponzu/commit/20571be634ffb1d5b1ecb3a7f22a85a7cc065cc9))
+
+## [2.4.2](https://github.com/north-brook/ponzu/compare/v2.4.1...v2.4.2) (2026-11-14)
+
+
+### Performance Improvements
+
+* opening and switching canvases, an agent's edit and the thread do less work ([#643](https://github.com/north-brook/ponzu/issues/643)) ([3e91304](https://github.com/north-brook/ponzu/commit/3e9130429bbf716bf8fada9f7577b701e3789b42))
+
+## [2.4.1](https://github.com/north-brook/ponzu/compare/v2.4.0...v2.4.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **canvas:** zooming and resizing the panes no longer restyle every board's elements each frame ([#641](https://github.com/north-brook/ponzu/issues/641)) ([c69598f](https://github.com/north-brook/ponzu/commit/c69598ff768fdcfe327428db7a3ac362f9ce4225))
+
 ## [2.4.0](https://github.com/north-brook/ponzu/compare/v2.3.4...v2.4.0) (2026-11-13)
 
 

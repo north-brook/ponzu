@@ -15,7 +15,7 @@
 import { type Browser, type BrowserContextOptions, chromium, type Page } from "playwright-core";
 import { findChromium } from "./chromium.ts";
 
-export type { Page };
+export type { Browser, Page };
 
 export interface TestChromium {
   /** The browser process's id, which leads its process group; null when Chrome didn't say. */
@@ -26,10 +26,16 @@ export interface TestChromium {
   close(): Promise<void>;
 }
 
-/** Headless Chromium at `executablePath`, or the one findChromium finds. Throws when there is none. */
-export async function launchChromium(executablePath = findChromium()): Promise<TestChromium> {
+/**
+ * Headless Chromium at `executablePath`, or the one findChromium finds, started with `args` as
+ * well as Playwright's own. Throws when there is none.
+ */
+export async function launchChromium(
+  executablePath = findChromium(),
+  args: string[] = [],
+): Promise<TestChromium> {
   if (!executablePath) throw new Error("No Chrome or Chromium found (set PONZU_CHROMIUM).");
-  const browser = await chromium.launch({ executablePath, headless: true });
+  const browser = await chromium.launch({ executablePath, headless: true, args });
   const pid = await browserPid(browser).catch(async (err) => {
     await browser.close();
     throw err;
@@ -43,6 +49,15 @@ export async function launchChromium(executablePath = findChromium()): Promise<T
       return closing;
     },
   };
+}
+
+/**
+ * A Chromium that is already running with a debugging port open (the desktop app's test or
+ * checkout build), attached over CDP at `endpoint`. Its close() only lets go of it: the browser,
+ * and every page in it, stay as they were.
+ */
+export function attachChromium(endpoint: string): Promise<Browser> {
+  return chromium.connectOverCDP(endpoint);
 }
 
 /** The browser process's id, as Chrome tells it over CDP (Playwright doesn't say). */

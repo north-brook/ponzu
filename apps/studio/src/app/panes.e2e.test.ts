@@ -190,9 +190,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect(await page.locator("[data-pane-drag]").count()).toBe(1);
     expect(await page.locator("[data-pane-motion]").count()).toBe(0);
     expect(await page.locator("#sidebar-pane-edge").getAttribute("data-separator")).toBe("active");
-    expect(await page.locator("#main-pane").evaluate((el) => getComputedStyle(el).cursor)).toBe(
-      "col-resize",
-    );
+    expect(await dragCursor(page, x + 84 + 200, GRIP_Y)).toBe("col-resize");
     await shootBoth("3-dragging", x + 84);
     // Past its limits it stops at them.
     await page.mouse.move(x + 600, GRIP_Y, { steps: 4 });
@@ -426,6 +424,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     }
     // Held like an edge: the cursor everywhere, nothing easing, and the pane's own limits.
     expect(await page.locator("[data-pane-drag]").count()).toBe(1);
+    expect(await dragCursor(page, left.x + 300, 300)).toBe("col-resize");
     expect(await page.locator("[data-pane-motion]").count()).toBe(0);
     await page.mouse.move(left.x + 600, 300, { steps: 4 });
     expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.max, 0);
@@ -625,6 +624,21 @@ async function atRest(page: Page) {
       ui.railWidth === PANES.rail.default
     );
   });
+}
+
+/**
+ * The cursor at a point while an edge is held: the window's sheet (cloud.css) is what's there,
+ * over the canvas and every control.
+ */
+function dragCursor(page: Page, x: number, y: number) {
+  return page.evaluate(
+    ([x, y]) => {
+      const at = document.elementFromPoint(x!, y!);
+      if (!at?.hasAttribute("data-pane-drag")) return `under ${at?.tagName}`;
+      return getComputedStyle(at, "::after").cursor;
+    },
+    [x, y],
+  );
 }
 
 async function box(page: Page, selector: string) {

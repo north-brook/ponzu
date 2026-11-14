@@ -76,7 +76,8 @@ window keeps it in `app/ui-state.ts`). The edge is the gutter between pane and c
 covers either. The toggles collapse and expand the same panels, easing while `data-pane-motion` is
 on the window; a drag never eases. Anything that lines up with a pane's edge (the chrome's blocks)
 reads its width from `--pane-sidebar` or `--pane-rail`, which a drag writes in the frame the panes
-move in, and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
+move in, on the elements marked `data-pane-widths` and never on anything that holds the canvas
+(a custom property changed there restyles every element of every board), and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
 `pane-motion` eases only while `data-pane-motion` is on, so nothing tagged with it trails a drag.
 Dragging one edge holds the other pane still (its panel disabled) and stops where the main pane
 reaches 400. Whenever the window lays the panes out itself (opening, a toggle, a window resize),
@@ -525,10 +526,8 @@ repaint something or say what isn't so. The usual swaps:
   the ideas are not tiles under the composer but take turns as its placeholder
   (`create/ideas.tsx`: each for `SUGGESTION_DWELL_MS`, the one before lifting away as the next
   rises in), put away by typing and taken into the field with Tab, to edit and send; and the
-  page sits on the canvas's dotted ground (`canvas-dots`, the same dots the canvas draws under
-  its boards with `--pz-dot`), since this is where a canvas starts. The dots are
-  `--c-canvas-dot`, 13% ink in light and 15% white in dark (the founder found 8% and 9% too
-  subtle), the same size and spacing, on every canvas. Nothing on the page moves when ideas
+  page sits on the canvas's plain ground (`--c-canvas`), since this is where a canvas starts.
+  Neither has dots: the founder had them taken off both. Nothing on the page moves when ideas
   arrive or don't.
 - The project selector is the statement's last words, not a chip under the composer (the
   founder's direction): the display face at 28 in ink with the owner and slash faint so the name
@@ -569,7 +568,7 @@ repaint something or say what isn't so. The usual swaps:
 - A send from the create page (the founder's direction; `create/flight.ts`, `create/landing.ts`).
   The moment it goes, before the API answers: the hero fades where it stood (the page keeps its
   width as the pane narrows), the new canvas's view comes (its chrome with the name it will have,
-  the main pane on the same dotted ground, and the thread's pane opening whatever it was left
+  the main pane on the same plain ground, and the thread's pane opening whatever it was left
   as, with the sent words as its first line and the agent waking), and the composer travels from
   the foot of the main pane to its home at the foot of the thread, changing size on the way.
   It is one card that moves: its surface, its + and its send button (which keep their corners

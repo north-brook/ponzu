@@ -236,8 +236,15 @@
     {
       "idx": 33,
       "version": "7",
-      "when": 1794605589040,
-      "tag": "0033_canvas_pull_requests",
+      "when": 1794591932848,
+      "tag": "0033_public_repo_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794634640254,
+      "tag": "0034_canvas_pull_requests",
       "breakpoints": true
     }
   ]

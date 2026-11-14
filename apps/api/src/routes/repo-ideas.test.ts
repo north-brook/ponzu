@@ -578,7 +578,8 @@ describe("GET /v1/repos/:id/ideas", () => {
         id: githubRepoId,
         fullName: `${owner}/plant-${i}`,
         private: false,
-        access: {},
+        // Public, and given her to read: a public repo nobody gave her is none to her.
+        access: { [ws.people.ines!.github.id]: "read" },
         ...STOREFRONT,
       });
     }

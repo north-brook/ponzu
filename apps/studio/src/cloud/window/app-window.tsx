@@ -115,8 +115,12 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  * same panels, easing (`data-pane-motion`); a drag never eases. Whenever the window lays the
  * panes out itself (when it opens, on a toggle, when it's resized) each open pane takes the
  * width it was left at, or, in a window too small for both, a fair share less (panes.ts,
- * fitPanes). The chrome's blocks over the panes read the widths from `--pane-sidebar` and
- * `--pane-rail` on the window, which a drag writes in the same frame as the panels move.
+ * fitPanes). The chrome's blocks over the panes and the panes' content read the widths from
+ * `--pane-sidebar` and `--pane-rail`: the window's, as React last rendered them, and their own
+ * (`data-pane-widths`), which every move of an edge writes in the same frame as the panels move.
+ * Never the window's while an edge moves: a custom property is inherited by everything under
+ * the element it's set on, and Chrome restyles all of it when it changes, so on the window each
+ * frame of a drag restyled every element of every board on the canvas (apps/studio/perf).
  */
 /**
  * The keyboard and the thread pane. Once the pane has opened (its toggle's easing has ended, or
@@ -400,14 +404,13 @@ export function AppWindow({
     return panel ? panel.getSize().inPixels + GUTTER[pane] : 0;
   };
 
-  // Every move of an edge, in the same frame as the panels: the chrome's blocks and the panes'
-  // content read these.
+  // Every move of an edge, in the same frame as the panels: on the elements that read them,
+  // none of which holds the canvas (see AppWindow).
   const onLayoutChange = useCallback(
     (layout: Layout) => {
-      const el = frame.current;
-      if (!el) return;
+      const readers = frame.current?.querySelectorAll<HTMLElement>("[data-pane-widths]") ?? [];
       for (const [pane, width] of Object.entries(widthsOf(layout)) as [Pane, number][]) {
-        el.style.setProperty(WIDTH_VAR[pane], `${width}px`);
+        for (const el of readers) el.style.setProperty(WIDTH_VAR[pane], `${width}px`);
       }
     },
     [widthsOf],
@@ -470,11 +473,15 @@ export function AppWindow({
         grip.setPointerCapture(event.pointerId);
         grip.addEventListener("pointermove", move);
         grip.setAttribute("data-held", "");
-        dragging(frame.current, () => {
-          grip.removeEventListener("pointermove", move);
-          grip.removeAttribute("data-held");
-          if (came !== from) onResize.current?.(pane, Math.round(came));
-        });
+        dragging(
+          frame.current,
+          () => {
+            grip.removeEventListener("pointermove", move);
+            grip.removeAttribute("data-held");
+            if (came !== from) onResize.current?.(pane, Math.round(came));
+          },
+          { x: event.clientX, y: event.clientY },
+        );
       },
       onDoubleClick: () => {
         held.current = pane;
@@ -510,15 +517,19 @@ export function AppWindow({
         // begins): an edge already focused from the keyboard keeps it.
         const from = focusedFrom.current;
         const moved = Math.abs(event.timeStamp - from.at) < 100;
-        dragging(frame.current, () => {
-          setStill(null);
-          if (!moved || document.activeElement !== separator) return;
-          if (from.el instanceof HTMLElement && from.el.isConnected) {
-            from.el.focus({ preventScroll: true });
-          } else {
-            separator.blur();
-          }
-        });
+        dragging(
+          frame.current,
+          () => {
+            setStill(null);
+            if (!moved || document.activeElement !== separator) return;
+            if (from.el instanceof HTMLElement && from.el.isConnected) {
+              from.el.focus({ preventScroll: true });
+            } else {
+              separator.blur();
+            }
+          },
+          { x: event.clientX, y: event.clientY },
+        );
       }}
       onDoubleClick={() => {
         if (!open) return;
@@ -566,6 +577,7 @@ export function AppWindow({
         <header
           // A click on its buttons and tabs leaves focus where it was (installFocusRule).
           data-toolbar
+          data-pane-widths
           className={cn(
             // 38 tall: its 28px controls with 5 above and below (CHROME in the shell's traffic-lights.ts).
             "app-drag flex h-[38px] shrink-0 items-center gap-1",
@@ -620,6 +632,7 @@ export function AppWindow({
             >
               <aside
                 id="sidebar"
+                data-pane-widths
                 aria-label="Canvases"
                 inert={!sidebar.open}
                 // Its width less the gutter past it (the edge), which is its right padding.
@@ -660,6 +673,7 @@ export function AppWindow({
             <aside
               ref={railBox}
               id="thread"
+              data-pane-widths
               aria-label="Thread"
               inert={!railOpen}
               // Held to the window's right edge, so it slides in and out from there; its width
@@ -675,17 +689,31 @@ export function AppWindow({
   );
 }
 
-/** Marks the window as dragging an edge until the pointer is let go (cloud.css), then `after`. */
-function dragging(frame: HTMLElement | null, after: () => void) {
+/** How far, in px, a pressed edge moves before the window's sheet goes over everything. */
+const DRAG_SLOP = 3;
+
+/**
+ * Marks the window as dragging an edge until the pointer is let go (cloud.css), then `after`.
+ * Once the pointer has moved off the press (`data-pane-drag="moving"`) a sheet covers the
+ * window; not before, so a click or a double click on the edge still lands on the edge.
+ */
+function dragging(frame: HTMLElement | null, after: () => void, from: { x: number; y: number }) {
   if (!frame) return;
   frame.setAttribute("data-pane-drag", "");
+  const move = (e: globalThis.PointerEvent) => {
+    if (Math.hypot(e.clientX - from.x, e.clientY - from.y) < DRAG_SLOP) return;
+    frame.setAttribute("data-pane-drag", "moving");
+    window.removeEventListener("pointermove", move, true);
+  };
   const done = () => {
     frame.removeAttribute("data-pane-drag");
+    window.removeEventListener("pointermove", move, true);
     window.removeEventListener("pointerup", done, true);
     window.removeEventListener("pointercancel", done, true);
     window.removeEventListener("blur", done);
     after();
   };
+  window.addEventListener("pointermove", move, true);
   window.addEventListener("pointerup", done, true);
   window.addEventListener("pointercancel", done, true);
   window.addEventListener("blur", done);
