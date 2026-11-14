@@ -444,19 +444,6 @@
   animation: suggestion-out var(--dur-pane) var(--ease-out) both;
 }
 
-/* The ground at rest: faint dots a step apart, as design tools draw one. The canvas
-   draws its own under the boards, moving with its camera (the canvas package, --pz-dot); this
-   is the same ground where a canvas starts, on the create page. */
-@utility canvas-dots {
-  background-image: radial-gradient(
-    circle at 1px 1px,
-    var(--c-canvas-dot) 0.9px,
-    transparent 1.15px
-  );
-  background-size: 24px 24px;
-  background-attachment: local;
-}
-
 /*
  * A line leaving the thread (a finished turn's asides, the working line): the room it held
  * closes and it fades, so what stays settles into place rather than jumping. Fully faded a
