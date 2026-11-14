@@ -1,9 +1,11 @@
 /**
  * The shape of the workflows that deploy, read from the YAML itself: which event runs which
- * job of deploy-api.yml, that neither job runs from any branch but `main` or for a pull request,
- * that production never runs from a dispatch, that dev deploys to its custom environment and only the production job uses `--prod`,
- * `promote` and production's own token, that both name the one Vercel project, and that only the
- * production job may reach the Neon default branch; that uptime.yml
+ * job of deploy-api.yml, that no job runs from any branch but `main` or for a pull request,
+ * that production never runs from a dispatch or before dev has passed, that the whole chain is
+ * one run at a time, that dev deploys to its custom environment and only the production job
+ * uses `--prod`, `promote` and production's own token, that both name the one Vercel project,
+ * that only the production job may reach the Neon default branch, and when production is put
+ * back; deploy-api.yml's own shell, run as it is written against fakes on PATH; that uptime.yml
  * checks only from main; and that release.yml's auto-merge step, run as it is written against a
  * fake gh, never auto-merges a release PR that scripts/release-hold.ts holds. actionlint (the
  * Workflows job in ci.yml) checks the rest of every file.
@@ -11,6 +13,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -43,6 +46,8 @@ async function spawn(cmd: string[], options: { cwd?: string; env?: Record<string
 
 interface Step {
   name?: string;
+  id?: string;
+  if?: string;
   uses?: string;
   run?: string;
   env?: Record<string, string>;
@@ -51,6 +56,8 @@ interface Step {
 interface Job {
   name: string;
   if?: string;
+  needs?: string | string[];
+  outputs?: Record<string, string>;
   environment?: string | { name: string };
   concurrency?: { group: string; "cancel-in-progress": boolean };
   permissions?: Record<string, string>;
@@ -74,16 +81,27 @@ function load(name: string): Workflow {
 interface Context {
   github: { event_name: string; ref: string };
   vars: Record<string, string>;
+  /** `needs.<job>.result` and `.outputs.<name>`, for a job's condition. */
+  needs?: Record<string, { result: string; outputs?: Record<string, string> }>;
+  /** `steps.<id>.outcome` and `.outputs.<name>`, for a step's condition. */
+  steps?: Record<string, { outcome: string; outputs?: Record<string, string> }>;
+  /** What `success()` and `failure()` answer: how the job (or its needs) stands so far. */
+  status?: "success" | "failure" | "cancelled";
 }
+
+const STATUS_FUNCTIONS = ["always", "success", "failure", "cancelled"];
 
 /**
  * Evaluates an Actions `if:` written with `==`, `!=`, `&&`, `||`, `!`, parentheses, string
- * literals and context paths, as GitHub does: an unset variable is null, which equals nothing.
- * Anything else in the expression throws, so a condition this can't read fails the test.
+ * literals, the four status functions and context paths, as GitHub does: an unset variable is
+ * null, which equals nothing, and a condition with no status function is read as
+ * `success() && (…)`. Anything else in the expression throws, so a condition this can't read
+ * fails the test.
  */
 function evaluate(expression: string, context: Context): boolean {
   const source = expression.trim().replace(/^\$\{\{([\s\S]*)\}\}$/, "$1");
   const tokens = source.match(/'(?:[^']|'')*'|==|!=|&&|\|\||!|\(|\)|[A-Za-z_][\w.-]*|\S/g) ?? [];
+  const status = context.status ?? "success";
   let at = 0;
   const peek = () => tokens[at];
   const next = () => tokens[at++];
@@ -100,6 +118,12 @@ function evaluate(expression: string, context: Context): boolean {
     if (token === "!") return !truthy(primary());
     if (token.startsWith("'")) return token.slice(1, -1).replaceAll("''", "'");
     if (token === "true" || token === "false") return token === "true";
+    if (STATUS_FUNCTIONS.includes(token) && peek() === "(") {
+      next();
+      if (next() !== ")") throw new Error(`A status function takes nothing: ${source}`);
+      if (token === "always") return true;
+      return status === token;
+    }
     const [root, ...path] = token.split(".");
     if (root === "github" && path.length === 1) {
       const value = context.github[path[0] as keyof Context["github"]];
@@ -107,6 +131,15 @@ function evaluate(expression: string, context: Context): boolean {
       return value;
     }
     if (root === "vars" && path.length === 1) return context.vars[path[0] as string] ?? null;
+    if ((root === "needs" || root === "steps") && path.length >= 2) {
+      const entry = (root === "needs" ? context.needs : context.steps)?.[path[0] as string];
+      if (!entry) throw new Error(`Unknown ${root}: ${token}`);
+      if (path[1] === "outputs" && path.length === 3) return entry.outputs?.[path[2]!] ?? "";
+      if (path.length === 2 && path[1] === (root === "needs" ? "result" : "outcome"))
+        return root === "needs"
+          ? (entry as { result: string }).result
+          : (entry as { outcome: string }).outcome;
+    }
     throw new Error(`Not readable here: ${token}`);
   };
   const comparison = (): Value => {
@@ -137,7 +170,8 @@ function evaluate(expression: string, context: Context): boolean {
   }
   const value = or();
   if (at !== tokens.length) throw new Error(`Left over in: ${source}`);
-  return truthy(value);
+  const explicit = tokens.some((t, i) => STATUS_FUNCTIONS.includes(t) && tokens[i + 1] === "(");
+  return truthy(value) && (explicit || status === "success");
 }
 
 const deploy = load("deploy-api.yml");
@@ -150,14 +184,48 @@ const VARS: Record<string, string>[] = [
   { API_DEPLOY: "true", API_DEPLOY_PRODUCTION: "true" },
   { API_DEPLOY: "false", API_DEPLOY_PRODUCTION: "yes" },
 ];
+const JOBS = ["plan", "dev", "production", "report"] as const;
+type JobId = (typeof JOBS)[number];
 
-/** Every context in which `job` runs, as "event ref vars". */
-function runsIn(job: Job): string[] {
+/**
+ * Which jobs of deploy-api.yml run, in order, as GitHub would decide them: each job's `if`, with
+ * `needs` holding what the jobs before it did. `plan` answers `deploy`; `failed` names jobs that
+ * fail when they run.
+ */
+function chain(
+  github: Context["github"],
+  vars: Record<string, string>,
+  { deploy = "true", failed = [] as JobId[] } = {},
+): Record<JobId, string> {
+  const results = {} as Record<JobId, string>;
+  const needs: NonNullable<Context["needs"]> = {};
+  for (const id of JOBS) {
+    const job = deploy_job(id);
+    const wanted = [job.needs ?? []].flat();
+    const mine = Object.fromEntries(wanted.map((n) => [n, needs[n]!]));
+    const status = wanted.every((n) => needs[n]?.result === "success")
+      ? "success"
+      : wanted.some((n) => needs[n]?.result === "cancelled")
+        ? "cancelled"
+        : "failure";
+    // A job whose needs did not all succeed is skipped unless its condition says otherwise.
+    const runs = evaluate(job.if ?? "true", { github, vars, needs: mine, status });
+    const result = runs ? (failed.includes(id) ? "failure" : "success") : "skipped";
+    results[id] = result;
+    needs[id] = { result, outputs: id === "plan" && runs ? { deploy } : {} };
+  }
+  return results;
+}
+const deploy_job = (id: string) => deploy.jobs[id] as Job;
+const productionSteps = deploy_job("production").steps;
+
+/** Every context in which `job` runs, as "event ref vars", when every job before it passed. */
+function runsIn(id: JobId): string[] {
   const out: string[] = [];
   for (const event_name of EVENTS)
     for (const ref of REFS)
       for (const vars of VARS)
-        if (evaluate(job.if ?? "true", { github: { event_name, ref }, vars }))
+        if (chain({ event_name, ref }, vars)[id] !== "skipped")
           out.push(`${event_name} ${ref} ${JSON.stringify(vars)}`);
   return out;
 }
@@ -176,6 +244,18 @@ describe("the expression reader", () => {
     expect(() => evaluate("startsWith(github.ref, 'x')", ctx)).toThrow();
     expect(() => evaluate("secrets.X == ''", ctx)).toThrow("Not readable here");
   });
+
+  test("reads the status functions, needs and steps, with success() implied", () => {
+    const failed: Context = { ...ctx, status: "failure", steps: { a: { outcome: "success" } } };
+    expect(evaluate("vars.A == 'true'", failed)).toBe(false);
+    expect(evaluate("failure() && steps.a.outcome == 'success'", failed)).toBe(true);
+    expect(evaluate("always()", failed)).toBe(true);
+    expect(evaluate("success()", failed)).toBe(false);
+    const needs: Context = { ...ctx, needs: { p: { result: "success", outputs: { d: "x" } } } };
+    expect(evaluate("needs.p.outputs.d == 'x' && needs.p.result == 'success'", needs)).toBe(true);
+    expect(evaluate("needs.p.outputs.missing == ''", needs)).toBe(true);
+    expect(() => evaluate("needs.q.result == 'success'", needs)).toThrow("Unknown needs");
+  });
 });
 
 describe("deploy-api.yml", () => {
@@ -185,66 +265,95 @@ describe("deploy-api.yml", () => {
     expect(deploy.on.push).toEqual({ branches: ["main"] });
     // A dispatch takes no inputs, so it cannot ask for a target.
     expect(deploy.on.workflow_dispatch).toBeNull();
-    expect(Object.keys(deploy.jobs).sort()).toEqual(["dev", "production"]);
+    expect(Object.keys(deploy.jobs)).toEqual([...JOBS]);
   });
 
-  test("production runs only on a push to main with API_DEPLOY_PRODUCTION on", () => {
-    expect(runsIn(deploy.jobs.production as Job)).toEqual([
-      'push refs/heads/main {"API_DEPLOY_PRODUCTION":"true"}',
-      'push refs/heads/main {"API_DEPLOY":"true","API_DEPLOY_PRODUCTION":"true"}',
-    ]);
+  test("the whole chain is one run at a time, never cancelled", () => {
+    // Workflow-wide: a second merge waits for the first run's dev, production, rollback and
+    // report, and GitHub keeps only the newest waiting run.
+    expect(deploy.concurrency).toEqual({ group: "deploy-api", "cancel-in-progress": false });
+    for (const job of Object.values(deploy.jobs)) expect(job.concurrency).toBeUndefined();
   });
 
-  test("dev runs only on main, by a push or a dispatch, with API_DEPLOY on", () => {
-    expect(runsIn(deploy.jobs.dev as Job)).toEqual([
+  test("the plan runs only on main, by a push or a dispatch, with API_DEPLOY on", () => {
+    expect(runsIn("plan")).toEqual([
       'push refs/heads/main {"API_DEPLOY":"true"}',
       'push refs/heads/main {"API_DEPLOY":"true","API_DEPLOY_PRODUCTION":"true"}',
       'workflow_dispatch refs/heads/main {"API_DEPLOY":"true"}',
       'workflow_dispatch refs/heads/main {"API_DEPLOY":"true","API_DEPLOY_PRODUCTION":"true"}',
     ]);
+    expect(runsIn("dev")).toEqual(runsIn("plan"));
   });
 
-  test("each job is switched on by its own variable alone", () => {
-    // API_DEPLOY never deploys production, and API_DEPLOY_PRODUCTION never deploys dev.
+  test("production runs only on a push to main with both variables on, after dev", () => {
+    expect(runsIn("production")).toEqual([
+      'push refs/heads/main {"API_DEPLOY":"true","API_DEPLOY_PRODUCTION":"true"}',
+    ]);
+  });
+
+  test("with today's variables (neither set) nothing runs, not even the plan", () => {
+    for (const event_name of EVENTS)
+      for (const ref of REFS)
+        expect(chain({ event_name, ref }, {})).toEqual({
+          plan: "skipped",
+          dev: "skipped",
+          production: "skipped",
+          report: "skipped",
+        });
+  });
+
+  test("a failure anywhere stops what follows it, and the report always runs", () => {
     const push = { event_name: "push", ref: "refs/heads/main" };
-    const dev = deploy.jobs.dev as Job;
-    const production = deploy.jobs.production as Job;
-    expect(evaluate(dev.if ?? "true", { github: push, vars: { API_DEPLOY: "true" } })).toBe(true);
-    expect(evaluate(production.if ?? "true", { github: push, vars: { API_DEPLOY: "true" } })).toBe(
-      false,
-    );
-    expect(
-      evaluate(dev.if ?? "true", { github: push, vars: { API_DEPLOY_PRODUCTION: "true" } }),
-    ).toBe(false);
-    expect(
-      evaluate(production.if ?? "true", { github: push, vars: { API_DEPLOY_PRODUCTION: "true" } }),
-    ).toBe(true);
+    const on = { API_DEPLOY: "true", API_DEPLOY_PRODUCTION: "true" };
+    expect(chain(push, on)).toEqual({
+      plan: "success",
+      dev: "success",
+      production: "success",
+      report: "success",
+    });
+    // Nothing the API is made from changed: nothing deploys, and the report says so.
+    expect(chain(push, on, { deploy: "false" })).toEqual({
+      plan: "success",
+      dev: "skipped",
+      production: "skipped",
+      report: "success",
+    });
+    // A dev failure of any kind (migration, deploy, health, selfcheck, canary) is the job's.
+    expect(chain(push, on, { failed: ["dev"] })).toEqual({
+      plan: "success",
+      dev: "failure",
+      production: "skipped",
+      report: "success",
+    });
+    expect(chain(push, on, { failed: ["plan"] })).toEqual({
+      plan: "failure",
+      dev: "skipped",
+      production: "skipped",
+      report: "success",
+    });
+    expect(chain(push, on, { failed: ["production"] }).report).toBe("success");
+    // A dispatch deploys dev and never production.
+    const dispatch = { event_name: "workflow_dispatch", ref: "refs/heads/main" };
+    expect(chain(dispatch, on).production).toBe("skipped");
   });
 
-  test("with today's variables (neither set) nothing deploys", () => {
-    for (const job of Object.values(deploy.jobs))
-      for (const event_name of EVENTS)
-        for (const ref of REFS)
-          expect(evaluate(job.if ?? "true", { github: { event_name, ref }, vars: {} })).toBe(false);
-  });
-
-  test("each job runs in its own GitHub environment, one run at a time, on the one project", () => {
+  test("each job runs in its own GitHub environment, on the one project", () => {
     const production = deploy.jobs.production as Job;
     expect(production.environment).toBe("production");
-    expect(production.concurrency).toEqual({
-      group: "deploy-api-production",
-      "cancel-in-progress": false,
-    });
     const dev = deploy.jobs.dev as Job;
     expect(dev.environment).toBe("dev");
-    expect(dev.concurrency).toEqual({ group: "deploy-api-dev", "cancel-in-progress": false });
     // One Vercel project: both jobs name the same one, and the team.
     for (const job of [dev, production])
       expect(job.env).toEqual({
         VERCEL_ORG_ID: expr("vars.VERCEL_TEAM_ID"),
         VERCEL_PROJECT_ID: expr("vars.VERCEL_API_PROJECT_ID"),
       });
-    expect(deploy.concurrency).toBeUndefined();
+    // The plan and the report touch neither environment, and hold no secret.
+    for (const id of ["plan", "report"]) {
+      const job = deploy.jobs[id] as Job;
+      expect(job.environment).toBeUndefined();
+      expect(JSON.stringify(job)).not.toContain("secrets.");
+    }
   });
 
   test("repo.json's environments are limited to their branch, and hold each job's secrets", () => {
@@ -252,11 +361,11 @@ describe("deploy-api.yml", () => {
     expect(repo.environments.dev).toEqual({
       branches: ["main"],
       requiredReviewers: false,
-      secrets: ["VERCEL_TOKEN"],
+      secrets: ["CANARY_SESSION_WRITER", "CRON_SECRET", "VERCEL_TOKEN"],
     });
     expect(repo.environments.production).toEqual({
       branches: ["main"],
-      requiredReviewers: true,
+      requiredReviewers: false,
       secrets: ["NEON_API_KEY", "VERCEL_AUTOMATION_BYPASS_SECRET", "VERCEL_TOKEN_PRODUCTION"],
     });
     // Only the production environment holds production's token and the bypass, never the
@@ -265,6 +374,11 @@ describe("deploy-api.yml", () => {
       expect(repo.secrets).not.toContain(name);
       expect(repo.environments.dev?.secrets).not.toContain(name);
     }
+    // The canary's session is a repository secret, so its writer needs no right over any
+    // environment; the writer lives in dev's environment alone.
+    expect(repo.secrets).toContain("CANARY_SESSION");
+    expect(repo.secrets).not.toContain("CANARY_SESSION_WRITER");
+    expect(repo.secrets).not.toContain("CRON_SECRET");
   });
 
   /** Every `run:` of a job, and every expression its steps' env reads, as text. */
@@ -285,6 +399,53 @@ describe("deploy-api.yml", () => {
     expect(dev).toContain(expr("secrets.VERCEL_TOKEN"));
     expect(dev).not.toContain("VERCEL_TOKEN_PRODUCTION");
     expect(dev).not.toContain("VERCEL_AUTOMATION_BYPASS_SECRET");
+    expect(dev).not.toContain("production.ts");
+  });
+
+  test("dev checks health, then the selfcheck, then the canary, after its deploy", () => {
+    const steps = (deploy.jobs.dev as Job).steps;
+    const at = (needle: string) => steps.findIndex((s) => s.run?.includes(needle));
+    const order = [
+      at('[ -n "$CRON_SECRET" ]'),
+      at('deploy-plan.ts --commit "$GITHUB_SHA" --guard dev'),
+      at("db:migrate"),
+      at("deploy --environment dev"),
+      at("health.ts --env dev"),
+      at("selfcheck.ts --env dev"),
+      at("canary.ts --session-file"),
+      at("gh secret set CANARY_SESSION"),
+    ];
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual(order.toSorted((a, b) => a - b));
+    const canary = steps.find((s) => s.id === "canary") as Step;
+    expect(canary.env).toEqual({
+      CANARY_SESSION: expr("secrets.CANARY_SESSION"),
+      CANARY_CAN_SAVE: expr("secrets.CANARY_SESSION_WRITER != ''"),
+      CRON_SECRET: expr("secrets.CRON_SECRET"),
+    });
+    // The canary never sees the writer, and never the Anthropic key: the check account holds it.
+    expect(JSON.stringify(steps)).not.toContain("ANTHROPIC");
+    const keep = steps.find((s) => s.run?.includes("gh secret set")) as Step;
+    expect(keep.env).toEqual({ GH_TOKEN: expr("secrets.CANARY_SESSION_WRITER") });
+    // Kept whether the canary passed or not, once it has run.
+    expect(keep.if).toBe(expr("always() && steps.canary.outputs.ran == 'true'"));
+    for (const outcome of ["success", "failure"] as const)
+      expect(
+        evaluate(keep.if as string, {
+          github: { event_name: "push", ref: "refs/heads/main" },
+          vars: {},
+          status: outcome,
+          steps: { canary: { outcome, outputs: { ran: "true" } } },
+        }),
+      ).toBe(true);
+    expect(
+      evaluate(keep.if as string, {
+        github: { event_name: "push", ref: "refs/heads/main" },
+        vars: {},
+        status: "success",
+        steps: { canary: { outcome: "success", outputs: { ran: "false" } } },
+      }),
+    ).toBe(false);
   });
 
   test("only the production job uses --prod and promote, with production's own token", () => {
@@ -305,13 +466,19 @@ describe("deploy-api.yml", () => {
           expect(run).not.toMatch(/\bvercel\b[^\n]*( curl\b| httpstat\b|--verify\b)/);
         }
     }
-    expect(uses).toEqual(["deploy-api.yml production prod", "deploy-api.yml production promote"]);
-    // Every step of production that runs the CLI holds VERCEL_TOKEN_PRODUCTION, never the
-    // repository-wide VERCEL_TOKEN (an environment secret only overrides one of the same name).
+    // The promotion, and the promotion back. Never `rollback`.
+    expect(uses).toEqual([
+      "deploy-api.yml production prod",
+      "deploy-api.yml production promote",
+      "deploy-api.yml production promote",
+    ]);
+    // Every step of production that runs the CLI or reads Vercel holds VERCEL_TOKEN_PRODUCTION,
+    // never the repository-wide VERCEL_TOKEN (an environment secret only overrides one of the
+    // same name).
     for (const step of (deploy.jobs.production as Job).steps) {
       if (step.env?.VERCEL_TOKEN !== undefined)
         expect(step.env.VERCEL_TOKEN).toBe(expr("secrets.VERCEL_TOKEN_PRODUCTION"));
-      if (/\bvercel@|schedules\.ts/.test(step.run ?? ""))
+      if (/\bvercel@|schedules\.ts|production\.ts serving/.test(step.run ?? ""))
         expect(step.env?.VERCEL_TOKEN).toBe(expr("secrets.VERCEL_TOKEN_PRODUCTION"));
     }
     expect(text("production")).not.toContain(expr("secrets.VERCEL_TOKEN"));
@@ -327,52 +494,160 @@ describe("deploy-api.yml", () => {
     }
   });
 
-  test("production checks its token first, then snapshots, migrates, stages, checks, promotes", () => {
-    const steps = (deploy.jobs.production as Job).steps;
-    const index = (match: (s: Step) => boolean, what: string) => {
-      const i = steps.findIndex(match);
-      if (i < 0) throw new Error(`No step: ${what}`);
-      return i;
-    };
-    const token = index((s) => !!s.run?.includes('[ -n "$VERCEL_TOKEN" ]'), "token");
-    const snapshot = index((s) => !!s.run?.includes("neon.ts --default --snapshot"), "snapshot");
-    const migrate = index((s) => !!s.run?.includes("bun run db:migrate"), "migrate");
-    const stage = index(
+  const indexOf = (match: (s: Step) => boolean, what: string) => {
+    const i = productionSteps.findIndex(match);
+    if (i < 0) throw new Error(`No step: ${what}`);
+    return i;
+  };
+
+  test("production checks its token, records the way back, snapshots, migrates, stages, checks, promotes", () => {
+    const steps = productionSteps;
+    const token = indexOf((s) => !!s.run?.includes('[ -n "$VERCEL_TOKEN" ]'), "token");
+    const guard = indexOf(
+      (s) => s.run === 'bun scripts/ci/deploy-plan.ts --commit "$GITHUB_SHA" --guard production',
+      "guard",
+    );
+    const serving = indexOf((s) => s.run === "bun scripts/ci/production.ts serving", "serving");
+    const snapshot = indexOf((s) => !!s.run?.includes("neon.ts --default --snapshot"), "snapshot");
+    const migrate = indexOf((s) => !!s.run?.includes("bun run db:migrate"), "migrate");
+    const stage = indexOf(
       (s) => !!s.run?.includes("bunx vercel@65.14.0 deploy --prod --skip-domain --yes"),
       "stage",
     );
-    const staged = index((s) => !!s.run?.includes('--url "$URL" --bypass'), "staged health");
-    const promote = index(
+    const staged = indexOf((s) => !!s.run?.includes('--url "$URL" --bypass'), "staged health");
+    const promote = indexOf(
       (s) => s.run === 'bunx vercel@65.14.0 promote "$URL" --json --timeout 5m',
       "promote",
     );
-    const health = index(
+    const health = indexOf(
       (s) => s.run === 'bun scripts/ci/health.ts --env production --commit "$GITHUB_SHA"',
       "health",
     );
-    const minute = index(
+    const minute = indexOf(
       (s) =>
         s.run ===
-        "bun scripts/ci/schedules.ts --environment production --name minute --path /v1/cron/minute",
+          "bun scripts/ci/schedules.ts --environment production --name minute --path /v1/cron/minute" &&
+        !s.if,
       "minute",
     );
-    const order = [token, snapshot, migrate, stage, staged, promote, health, minute];
+    const rollback = indexOf((s) => s.id === "rollback", "rollback");
+    const restored = indexOf((s) => s.id === "restored", "restored");
+    const rollbackMinute = indexOf((s) => s.id === "rollback_minute", "rollback minute");
+    const order = [
+      token,
+      guard,
+      serving,
+      snapshot,
+      migrate,
+      stage,
+      staged,
+      promote,
+      health,
+      minute,
+      rollback,
+      restored,
+      rollbackMinute,
+    ];
     expect(order).toEqual(order.toSorted((a, b) => a - b));
+    expect(steps[serving]?.id).toBe("serving");
+    expect(steps[promote]?.id).toBe("promote");
     expect(steps[migrate]?.run).toContain("neon.ts --default --direct");
     // The deploy never takes the domain itself: every --prod is staged.
     const prod = steps.filter((s) => /--prod\b/.test(s.run ?? ""));
     expect(prod.length).toBe(1);
     expect(prod[0]?.run).toContain("--skip-domain");
-    // Promote never confirms itself: with no --yes, it refuses a deployment that is not a
+    // Neither promotion confirms itself: with no --yes, it refuses a deployment that is not a
     // production build instead of rebuilding it with production's variables.
-    expect(steps[promote]?.run).not.toContain("--yes");
+    for (const step of steps)
+      if (step.run?.includes(" promote ")) expect(step.run).not.toContain("--yes");
     // The staged check and the promotion read the deployment the staged deploy printed.
     expect(steps[staged]?.env).toEqual({
       URL: expr("steps.deploy.outputs.url"),
       VERCEL_AUTOMATION_BYPASS_SECRET: expr("secrets.VERCEL_AUTOMATION_BYPASS_SECRET"),
     });
     expect(steps[promote]?.env?.URL).toBe(expr("steps.deploy.outputs.url"));
-    expect((steps[stage] as Step & { id?: string }).id).toBe("deploy");
+    expect(steps[stage]?.id).toBe("deploy");
+    // The way back promotes the URL recorded before anything changed, and checks its commit.
+    expect(steps[rollback]?.run).toContain(
+      'bunx vercel@65.14.0 promote "$PREVIOUS_URL" --json --timeout 5m',
+    );
+    expect(steps[rollback]?.env?.PREVIOUS_URL).toBe(expr("steps.serving.outputs.url"));
+    expect(steps[restored]?.run).toBe(
+      'bun scripts/ci/production.ts restored --commit "$PREVIOUS_COMMIT"',
+    );
+    expect(steps[restored]?.env?.PREVIOUS_COMMIT).toBe(expr("steps.serving.outputs.commit"));
+    expect(steps[rollbackMinute]?.run).toBe(steps[minute]?.run);
+    // The report hears how the way back went.
+    expect((deploy.jobs.production as Job).outputs).toEqual({
+      previous_commit: expr("steps.serving.outputs.commit"),
+      promote: expr("steps.promote.outcome"),
+      rollback: expr("steps.rollback.outcome"),
+      restored: expr("steps.restored.outcome"),
+      rollback_minute: expr("steps.rollback_minute.outcome"),
+    });
+  });
+
+  test("production is put back only when a step failed once the promotion had started", () => {
+    const rollback = productionSteps.find((s) => s.id === "rollback") as Step;
+    const restored = productionSteps.find((s) => s.id === "restored") as Step;
+    const github = { event_name: "push", ref: "refs/heads/main" };
+    // Which step failed, and what the steps before it did.
+    const ids = [
+      "serving",
+      "snapshot",
+      "migrate",
+      "deploy",
+      "staged",
+      "promote",
+      "health",
+      "minute",
+    ];
+    const putBack: string[] = [];
+    for (const [i, failed] of ids.entries()) {
+      const steps = Object.fromEntries(
+        ids.map((id, j) => [
+          id,
+          { outcome: j < i ? "success" : j === i ? "failure" : "skipped", outputs: {} },
+        ]),
+      );
+      if (evaluate(rollback.if as string, { github, vars: {}, status: "failure", steps }))
+        putBack.push(failed);
+    }
+    // A failure before the promotion leaves the domain where it was: nothing to put back.
+    expect(putBack).toEqual(["promote", "health", "minute"]);
+    // Cancelled, or out of time, while a step ran: put back once the promotion had started.
+    const cancelledAt: string[] = [];
+    for (const [i, stopped] of ids.entries()) {
+      const steps = Object.fromEntries(
+        ids.map((id, j) => [
+          id,
+          { outcome: j < i ? "success" : j === i ? "cancelled" : "skipped", outputs: {} },
+        ]),
+      );
+      if (evaluate(rollback.if as string, { github, vars: {}, status: "cancelled", steps }))
+        cancelledAt.push(stopped);
+    }
+    expect(cancelledAt).toEqual(["promote", "health", "minute"]);
+    // Nothing is put back when every step passed.
+    const passed = Object.fromEntries(ids.map((id) => [id, { outcome: "success" }]));
+    expect(
+      evaluate(rollback.if as string, { github, vars: {}, status: "success", steps: passed }),
+    ).toBe(false);
+    // The check after it runs only when the promotion back went through.
+    for (const status of ["failure", "cancelled"] as const)
+      for (const [outcome, runs] of [
+        ["success", true],
+        ["failure", false],
+        ["skipped", false],
+      ] as const)
+        expect(
+          evaluate(restored.if as string, {
+            github,
+            vars: {},
+            status,
+            steps: { rollback: { outcome } },
+          }),
+        ).toBe(runs);
   });
 
   test("one project, one registry: no image copy, no registry login, no OIDC token", () => {
@@ -385,6 +660,21 @@ describe("deploy-api.yml", () => {
       }
     }
     expect(JSON.stringify(deploy)).not.toContain("id-token");
+  });
+
+  test("only the report writes anything to GitHub, and only issues", () => {
+    expect((deploy as Workflow & { permissions?: unknown }).permissions).toEqual({
+      contents: "read",
+    });
+    for (const id of ["plan", "dev", "production"])
+      expect((deploy.jobs[id] as Job).permissions).toBeUndefined();
+    expect((deploy.jobs.report as Job).permissions).toEqual({
+      contents: "read",
+      issues: "write",
+      actions: "read",
+      "pull-requests": "read",
+    });
+    expect(deploy.jobs.report?.if).toBe(expr("always() && needs.plan.result != 'skipped'"));
   });
 
   test("VERCEL_API_PROD_PROJECT_ID appears nowhere", async () => {
@@ -449,6 +739,150 @@ describe("deploy-api.yml", () => {
         for (const m of (step.run ?? "").matchAll(/\bvercel@([\d.]+)/g))
           versions.add(m[1] as string);
     expect([...versions]).toEqual([VERCEL_CLI.split("@")[1] as string]);
+  });
+});
+
+/**
+ * Runs one step's own shell under bash -e, as Actions does, with fake commands on PATH that
+ * record how they were called (one line of arguments each, and what they read on stdin).
+ */
+async function runStepShell(
+  step: Step,
+  opts: {
+    env?: Record<string, string>;
+    /** Each fake command's script body, run with bash. */
+    fakes: Record<string, string>;
+  },
+) {
+  const dir = mkdtempSync(join(tmpdir(), "deploy-step-"));
+  try {
+    mkdirSync(join(dir, "bin"));
+    for (const [name, body] of Object.entries(opts.fakes)) {
+      const path = join(dir, "bin", name);
+      writeFileSync(path, `#!/bin/bash\nprintf '%s %s\\n' "${name}" "$*" >>"$FAKE_LOG"\n${body}\n`);
+      chmodSync(path, 0o755);
+    }
+    const log = join(dir, "calls.log");
+    const output = join(dir, "output");
+    writeFileSync(log, "");
+    writeFileSync(output, "");
+    const result = await spawn(["bash", "-e", "-c", step.run as string], {
+      cwd: dir,
+      env: {
+        PATH: `${join(dir, "bin")}:/usr/bin:/bin`,
+        FAKE_LOG: log,
+        RUNNER_TEMP: dir,
+        GITHUB_OUTPUT: output,
+        GITHUB_SHA: "a".repeat(40),
+        GITHUB_REPOSITORY: "o/r",
+        ...opts.env,
+      },
+    });
+    return {
+      ...result,
+      calls: readFileSync(log, "utf8").trim().split("\n").filter(Boolean),
+      output: readFileSync(output, "utf8"),
+      dir,
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe("deploy-api.yml's shell, against fakes", () => {
+  const planStep = (deploy.jobs.plan as Job).steps.find((s) => s.id === "plan") as Step;
+
+  test("the plan compares with production only for a push with production on, and forces a dispatch", async () => {
+    const cases: [string, string, string][] = [
+      ["false", "false", `--commit ${"a".repeat(40)}`],
+      ["true", "false", `--commit ${"a".repeat(40)} --production`],
+      ["false", "true", `--commit ${"a".repeat(40)} --always`],
+    ];
+    for (const [production, dispatch, args] of cases) {
+      const run = await runStepShell(planStep, {
+        env: { PRODUCTION_ON: production, DISPATCH: dispatch },
+        fakes: { bun: "" },
+      });
+      expect(run.code).toBe(0);
+      expect(run.calls).toEqual([`bun scripts/ci/deploy-plan.ts ${args}`]);
+    }
+    expect(planStep.env).toEqual({
+      PRODUCTION_ON: expr("vars.API_DEPLOY_PRODUCTION == 'true' && github.event_name == 'push'"),
+      DISPATCH: expr("github.event_name == 'workflow_dispatch'"),
+    });
+  });
+
+  test("the staged deploy hands on the URL the CLI printed, and fails on anything else", async () => {
+    const stage = productionSteps.find((s) => s.id === "deploy") as Step;
+    const ok = await runStepShell(stage, {
+      fakes: { bunx: "echo 'Vercel CLI 65.14.0' >&2; echo https://ponzu-api-abc123.vercel.app" },
+    });
+    expect(ok.code).toBe(0);
+    expect(ok.output).toBe("url=https://ponzu-api-abc123.vercel.app\n");
+    expect(ok.calls).toEqual([
+      `bunx vercel@65.14.0 deploy --prod --skip-domain --yes --env VERCEL_GIT_COMMIT_SHA=${"a".repeat(40)}`,
+    ]);
+    for (const printed of ["", "Error: something", "https://api.ponzu.design"]) {
+      const bad = await runStepShell(stage, { fakes: { bunx: `echo '${printed}'` } });
+      expect(bad.code).not.toBe(0);
+      expect(bad.output).toBe("");
+    }
+  });
+
+  test("the way back promotes the recorded URL, says so loudly, and fails when the CLI does", async () => {
+    const rollback = productionSteps.find((s) => s.id === "rollback") as Step;
+    const env = { PREVIOUS_URL: "https://ponzu-api-old.vercel.app" };
+    const ok = await runStepShell(rollback, { env, fakes: { bunx: "" } });
+    expect(ok.code).toBe(0);
+    expect(ok.stdout).toContain("::error title=Rolling production back::");
+    expect(ok.calls).toEqual([
+      "bunx vercel@65.14.0 promote https://ponzu-api-old.vercel.app --json --timeout 5m",
+    ]);
+    const refused = await runStepShell(rollback, { env, fakes: { bunx: "exit 1" } });
+    expect(refused.code).not.toBe(0);
+  });
+
+  test("the canary's rotated session is stored back from its file, which is then removed", async () => {
+    const keep = (deploy.jobs.dev as Job).steps.find((s) =>
+      s.run?.includes("gh secret set"),
+    ) as Step;
+    const dir = mkdtempSync(join(tmpdir(), "deploy-keep-"));
+    try {
+      const file = join(dir, "canary-session.json");
+      writeFileSync(file, '{"refresh_token":"rotated"}');
+      const run = await runStepShell(keep, {
+        env: { RUNNER_TEMP: dir },
+        fakes: { gh: 'cat >>"$FAKE_LOG"; echo >>"$FAKE_LOG"' },
+      });
+      expect(run.code).toBe(0);
+      expect(run.calls).toEqual([
+        "gh secret set CANARY_SESSION --repo o/r",
+        '{"refresh_token":"rotated"}',
+      ]);
+      expect(existsSync(file)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("dev and production stop before the database when a secret is missing", async () => {
+    const devGuard = (deploy.jobs.dev as Job).steps.find((s) =>
+      s.run?.includes('[ -n "$CRON_SECRET" ]'),
+    ) as Step;
+    expect((await runStepShell(devGuard, { env: { CRON_SECRET: "" }, fakes: {} })).code).toBe(1);
+    expect((await runStepShell(devGuard, { env: { CRON_SECRET: "x" }, fakes: {} })).code).toBe(0);
+    const prodGuard = productionSteps.find((s) =>
+      s.run?.includes('[ -n "$VERCEL_TOKEN" ]'),
+    ) as Step;
+    for (const [token, bypass, code] of [
+      ["", "b", 1],
+      ["t", "", 1],
+      ["t", "b", 0],
+    ] as const)
+      expect(
+        (await runStepShell(prodGuard, { env: { VERCEL_TOKEN: token, BYPASS: bypass }, fakes: {} }))
+          .code,
+      ).toBe(code);
   });
 });
 
