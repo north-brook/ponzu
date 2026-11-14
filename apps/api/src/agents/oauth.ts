@@ -40,6 +40,9 @@ import type { Deps } from "../deps/index.ts";
  * signed-in Ponzu app instead: the authorize endpoint answers a handoff page that opens the
  * app (`<scheme>://agents/connect?request=<id>`), the app asks the person, and the API gives
  * the app the agent's redirect with its code, which the app opens in the browser.
+ *
+ * Only the desktop app allows an agent, on the computer the agent runs on: its redirect is
+ * usually a port there, which the phone couldn't reach. A phone's browser is told so.
  */
 
 /** The MCP, relative to the API's origin. */
@@ -162,6 +165,11 @@ export function oauthProvider(deps: Pick<Deps, "db" | "config">): OAuthServerPro
      */
     async authorize(client, params: AuthorizationParams, res) {
       const c = res as unknown as Context;
+      const name = clean(client.client_name);
+      if (fromPhone(c.req.header("user-agent"))) {
+        c.res = handoffResponse(await phoneRefusal(name));
+        return;
+      }
       const id = await createAgentAuthorization(deps.db, {
         clientId: client.client_id,
         redirectUri: params.redirectUri,
@@ -170,17 +178,7 @@ export function oauthProvider(deps: Pick<Deps, "db" | "config">): OAuthServerPro
         scope: params.scopes?.join(" ") || null,
         resource: params.resource?.href ?? null,
       });
-      const scheme = appScheme(deps);
-      const { html, csp } = await consentHandoff(scheme, id, clean(client.client_name));
-      c.res = new Response(html, {
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-          "content-security-policy": csp,
-          "referrer-policy": "no-referrer",
-          "cache-control": "no-store",
-          "x-content-type-options": "nosniff",
-        },
-      });
+      c.res = handoffResponse(await consentHandoff(appScheme(deps), id, name));
     },
 
     async challengeForAuthorizationCode(client, code) {
@@ -222,6 +220,37 @@ export function oauthProvider(deps: Pick<Deps, "db" | "config">): OAuthServerPro
   };
 }
 
+function handoffResponse({ html, csp }: { html: string; csp: string }): Response {
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": csp,
+      "referrer-policy": "no-referrer",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
+/** An iPhone's, iPad's or Android's browser (an iPad asking for the desktop site reads as a Mac). */
+export function fromPhone(userAgent: string | undefined): boolean {
+  return /iPhone|iPod|iPad|Android/i.test(userAgent ?? "");
+}
+
+/** The page a phone's browser gets instead: the agent connects from the desktop app. */
+export function phoneRefusal(clientName: string | null) {
+  const title = `Connect ${clientName ?? "your agent"} from your computer`;
+  return renderHandoff({
+    documentTitle: title,
+    problem: true,
+    view: {
+      title,
+      body: "You allow an agent in Ponzu's desktop app, on the computer the agent runs on. Start connecting it there.",
+    },
+    link: null,
+  });
+}
+
 /** The page the agent's authorize request lands on: it opens the app to ask the person. */
 export function consentHandoff(scheme: AppScheme, requestId: string, clientName: string | null) {
   const app = APP_NAMES[scheme];
@@ -239,7 +268,7 @@ export function consentHandoff(scheme: AppScheme, requestId: string, clientName:
       opened: { title, body: `${who} is waiting for you in ${app}. Allow it there.` },
       missed: {
         title,
-        body: `Open ${app} and sign in to allow ${who}. You have 15 minutes.`,
+        body: `Open ${app} on this computer and sign in to allow ${who}. You have 15 minutes. No Ponzu here? Get it at ponzu.design/download.`,
       },
     },
   });
