@@ -4,6 +4,7 @@ import {
   type AgentBlocker,
   type AgentState,
   authStates,
+  type BillingGateValue,
   type CanvasStatus,
   type ClaudeAccountKind,
   type ClaudeAccountStatus,
@@ -21,7 +22,8 @@ import { run } from "./run.ts";
  * to the states it moves from, and to the job holding a `waking` or `stopping` row, so of two
  * function instances racing on one sandbox only one moves it. Leaving `awake` meters the stretch
  * it was awake for, in the statement that moves it, so awake time is never lost and never
- * counted twice.
+ * counted twice. While billing is on, the meter also cuts a long stretch into pieces as it goes
+ * (`cutAwake`), each piece metered the same way.
  */
 
 export type SandboxRow = typeof sandboxes.$inferSelect;
@@ -133,7 +135,24 @@ export async function claimSandbox(
   return claimFrom(await move(db, { canvasId, from, to: "waking", now, by, limits }));
 }
 
-type MoveResult = { row: Record<string, unknown> | null; full: boolean };
+type MoveResult = {
+  row: Record<string, unknown> | null;
+  full: boolean;
+  /** The row's `awake_since` as the move read it (a move statement's own answer only). */
+  seen?: string | null;
+};
+
+/** Whether the row's `awake_since` is no longer `seen`, the value a failed move read. */
+async function awakeSinceMoved(db: Db, canvasId: string, seen: string | null): Promise<boolean> {
+  const [row] = await run(
+    db
+      .select({ awakeSince: sandboxes.awakeSince })
+      .from(sandboxes)
+      .where(eq(sandboxes.canvasId, canvasId)),
+  );
+  const now = row?.awakeSince?.getTime() ?? null;
+  return now !== (seen === null ? null : new Date(seen).getTime());
+}
 
 function claimFrom(result: MoveResult | null): SandboxClaim {
   if (result?.row) return { sandbox: toSandbox(result.row) };
@@ -207,6 +226,17 @@ export async function moveSandbox(db: Db, request: Move): Promise<SandboxRow | n
   return result?.row ? toSandbox(result.row) : null;
 }
 
+/**
+ * Attempts of a move out of `awake`. It holds to the stretch it read (see `moveOnce`), so a
+ * meter's cut, or a wake, that landed while it waited on the row makes it do nothing; it then
+ * goes again from what is there now, and either moves the row and meters what is left of the
+ * stretch, or finds what a lost race always finds. The meter cuts one sandbox at most three times
+ * in a run, one after another, so a move can lose to each of them in turn and still move on its
+ * fourth. A move that failed for any other reason (another state, a lease, fresh activity) finds
+ * `awake_since` where it read it, and is not tried again.
+ */
+const MOVE_ATTEMPTS = 4;
+
 const CHANGE_COLUMNS = {
   sessionId: "session_id",
   address: "address",
@@ -217,7 +247,21 @@ const CHANGE_COLUMNS = {
 } as const;
 const TIME_COLUMNS = { sessionStartedAt: "session_started_at", expiresAt: "expires_at" } as const;
 
+/** `moveOnce`, again while it moved nothing out of `awake` (see `MOVE_ATTEMPTS`). */
 async function move(
+  db: Db,
+  request: Move & { limits?: SandboxLimits },
+): Promise<MoveResult | null> {
+  let result = await moveOnce(db, request);
+  if (!request.from.includes("awake")) return result;
+  for (let attempt = 1; attempt < MOVE_ATTEMPTS && !result?.row && !result?.full; attempt++) {
+    if (!(await awakeSinceMoved(db, request.canvasId, result?.seen ?? null))) break;
+    result = await moveOnce(db, request);
+  }
+  return result;
+}
+
+async function moveOnce(
   db: Db,
   {
     canvasId,
@@ -272,6 +316,13 @@ async function move(
       from.map((state) => sql`${state}`),
       sql`, `,
     )})`,
+    // An awake row moves only from the stretch it read, which is the one it meters. A cut
+    // (`cutAwake`) that commits while this waits on the row moves `awake_since` on, and metering
+    // from the old start would collide with the cut's event and lose what came after it; a wake
+    // that commits meanwhile starts a stretch this read as not awake, and would go unmetered. So
+    // it moves nothing then, and `move` tries again. A row in any other state is as before.
+    sql`(s.state <> 'awake'
+         or s.awake_since is not distinct from (select b.awake_since from before b))`,
   ];
   if (by !== undefined) {
     const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
@@ -330,10 +381,97 @@ async function move(
       )
       select json_build_object(
         'row', (select row_to_json(moved) from moved),
-        'full', ${limits ? sql`not ${roomFor(sql`${canvasId}`, limits)}` : sql`false`}
+        'full', ${limits ? sql`not ${roomFor(sql`${canvasId}`, limits)}` : sql`false`},
+        'seen', (select b.awake_since from before b)
       ) as result
     `,
   );
+}
+
+/**
+ * Meter the stretch an awake sandbox has been awake for up to `at`, and go on metering from
+ * `at`, in one statement (docs/cloud.md, "Billing"): the usage event for [`observedSince`, `at`)
+ * under the same id, attribution and rate card a sleep would have given it, and `awake_since`
+ * moved to `at`. Only while the row is awake on the stretch that began at `observedSince`, and
+ * `at` is after it: of two cuts, or a cut and a sleep, racing on one stretch, one wins and the
+ * other does nothing. The sandbox's state and `state_at` (when it woke) are left as they are.
+ * Answers whether it cut.
+ */
+export async function cutAwake(
+  db: Db,
+  { canvasId, at, observedSince }: { canvasId: string; at: Date; observedSince: Date },
+): Promise<boolean> {
+  const cutAt = sql`${timeParam(at)}::timestamptz`;
+  const since = sql`${timeParam(observedSince)}::timestamptz`;
+  const result = await queryJson<{ cut: boolean }>(
+    db,
+    sql`
+      with cut as (
+        update sandboxes s
+           set awake_since = ${cutAt}
+         where s.canvas_id = ${canvasId} and s.state = 'awake'
+           and s.awake_since = ${since} and ${cutAt} > ${since}
+        returning s.canvas_id, s.awake_user_id
+      ),
+      metered as (
+        insert into usage_events (id, workspace_id, canvas_id, user_id, kind, seconds, payer,
+                                  rate_card_version, occurred_at)
+        select c.canvas_id || '/' || floor(extract(epoch from ${since}) * 1000)::bigint,
+               d.workspace_id, d.id, c.awake_user_id, 'sandbox',
+               greatest(0, round(extract(epoch from (${cutAt} - ${since}))))::int,
+               'ponzu',
+               coalesce(
+                 (select max(version) from rate_cards where effective_from <= ${since}),
+                 (select min(version) from rate_cards)
+               ),
+               ${since}
+          from cut c
+          join canvases d on d.id = c.canvas_id
+        on conflict (id) do nothing
+      )
+      select json_build_object('cut', exists (select 1 from cut)) as result
+    `,
+  );
+  return result?.cut ?? false;
+}
+
+/** An awake sandbox, as the meter weighs where to cut it. */
+export interface AwakeToMeter {
+  canvasId: string;
+  awakeSince: Date;
+  /** Its workspace's billing period anchor (`billing_period_anchor`). */
+  periodAnchor: Date;
+}
+
+/**
+ * Every awake sandbox, with what the meter needs to cut it; given `workspaceId`, only that
+ * workspace's (the period close cuts its own).
+ */
+export async function listAwakeToMeter(
+  db: Db,
+  { workspaceId }: { workspaceId?: string } = {},
+): Promise<AwakeToMeter[]> {
+  const result = await queryJson<{
+    rows: { canvas_id: string; awake_since: string; anchor: string }[];
+  }>(
+    db,
+    sql`
+      select json_build_object('rows', coalesce(json_agg(json_build_object(
+        'canvas_id', s.canvas_id, 'awake_since', s.awake_since,
+        'anchor', w.billing_period_anchor
+      )), '[]'::json)) as result
+        from sandboxes s
+        join canvases d on d.id = s.canvas_id
+        join workspaces w on w.id = d.workspace_id
+       where s.state = 'awake'
+         ${workspaceId === undefined ? sql`` : sql`and w.id = ${workspaceId}`}
+    `,
+  );
+  return (result?.rows ?? []).map((row) => ({
+    canvasId: row.canvas_id,
+    awakeSince: new Date(row.awake_since),
+    periodAnchor: new Date(row.anchor),
+  }));
 }
 
 /**
@@ -539,6 +677,14 @@ export interface WakeContext {
   /** What the canvas's head says its agent waits on now, and until when. */
   agentBlocker: AgentBlocker | null;
   agentBlockedUntil: Date | null;
+  /** Its workspace's cached billing gate (`workspaces.billing_gate`; `ok` while billing is off). */
+  billingGate: BillingGateValue;
+  /**
+   * Whether its feed holds a `push` not yet handed out (Create PR waits on it). The billing gate
+   * lets such a wake through whatever wake job carries it, since a waiting wake for a comment or a
+   * check takes in a push asked for after it.
+   */
+  pushWaiting: boolean;
 }
 
 /** Whether the canvas `d`'s owner is still a member of its workspace. */
@@ -560,6 +706,8 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
       agent_blocker: AgentBlocker | null;
       agent_blocked_until: string | null;
     };
+    billing_gate: BillingGateValue;
+    push_waiting: boolean;
     claude: {
       id: string;
       user_id: string;
@@ -585,7 +733,11 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
                        or (d.claude_account_id is null and a.user_id = d.owner_id)
                     order by (a.id = d.claude_account_id) desc limit 1),
         'sandbox', (select row_to_json(s) from sandboxes s where s.canvas_id = d.id),
-        'owner_member', ${ownerMember}
+        'owner_member', ${ownerMember},
+        'billing_gate', (select w.billing_gate from workspaces w where w.id = d.workspace_id),
+        'push_waiting', exists (select 1 from events e
+                                 where e.canvas_id = d.id and e.kind = 'push'
+                                   and e.delivered_at is null)
       ) as result
         from canvases d
        where d.id = ${canvasId}
@@ -612,6 +764,8 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
     ownerMember: result.owner_member,
     agentBlocker: canvas.agent_blocker,
     agentBlockedUntil: canvas.agent_blocked_until ? new Date(canvas.agent_blocked_until) : null,
+    billingGate: result.billing_gate ?? "ok",
+    pushWaiting: result.push_waiting === true,
   };
 }
 

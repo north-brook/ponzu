@@ -35,6 +35,7 @@ export type ClaudeDeps = Pick<
   | "mail"
   | "workos"
   | "posthogAdmin"
+  | "payments"
   | "features"
 >;
 

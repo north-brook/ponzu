@@ -8,7 +8,9 @@
  *   used credits    awake seconds × the card's credits per awake hour ÷ 3,600, plus what model
  *                   turns cost, added up exactly and then rounded down to a whole credit, so a
  *                   partial credit (under 12 minutes awake at 5 an hour) is never charged
- *   free credits    the card's free credits per member × the people counted for the period
+ *   free credits    the card's free credits per member × the people counted for the period,
+ *                   plus the period's adjustments (support's credits, or a correction that takes
+ *                   some away), never below zero
  *   billed credits  used − free, never below zero: free credits are spent first
  *   billed cents    billed credits × what a credit sells for, rounded down to the cent
  *   a cap           whole dollars; it may not be set below what the period has billed, rounded
@@ -85,9 +87,12 @@ export function apportionMap<K extends string | null>(
   return new Map(keys.map((key, i) => [key, credits[i]!]));
 }
 
-/** The free credits of a period: each counted person's allowance, pooled. */
-export function freeCredits(people: number, perMember: number): number {
-  return people * Math.floor(perMember);
+/**
+ * The free credits of a period: each counted person's allowance, pooled, with the period's
+ * adjustments in whole credits added (a negative one takes some away), never below zero.
+ */
+export function freeCredits(people: number, perMember: number, adjusted = 0): number {
+  return Math.max(0, people * Math.floor(perMember) + Math.trunc(adjusted));
 }
 
 /** What is billed of what was used: free credits are spent first. */

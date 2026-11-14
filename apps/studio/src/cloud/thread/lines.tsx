@@ -14,6 +14,7 @@ import type {
   ThreadNotice,
 } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
+import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { useColorScheme } from "../ui/color-scheme.ts";
 import { Icon } from "../ui/icon.tsx";
@@ -529,6 +530,38 @@ export function SandboxLine({ text, failed }: { text: string; failed: boolean })
         <Slice size={13} className="mt-[1px] text-dry" />
       )}
       <span>{text}</span>
+    </div>
+  );
+}
+
+/** What the thread's foot says while the canvas waits on its workspace's billing. */
+export interface BillingWait {
+  /** The Mac's two sentences (billing §11). */
+  text: string;
+  /** "Add a card", "Raise cap" or "Pay invoice", for someone who can; else none. */
+  action: string | null;
+  onAction?: () => void;
+}
+
+/**
+ * The canvas waits on its workspace's billing: free credits used up with no card, the cap
+ * reached, or a payment past its grace. The line says so, with what lifts it for whoever can.
+ * Nothing the person sends is lost: the API resumes the canvas once the limit lifts.
+ */
+export function BillingLine({ text, action, onAction }: BillingWait) {
+  return (
+    <div
+      role="status"
+      data-billing-line
+      className="flex min-w-0 items-start gap-2 px-[2px] text-12 text-faint leading-[1.4]"
+    >
+      <Slice size={13} className="mt-[1px] shrink-0 text-dry" />
+      <span className="min-w-0 flex-1">{text}</span>
+      {action && onAction ? (
+        <Button variant="quiet" onClick={onAction} className="-my-1 shrink-0 px-2 text-ink">
+          {action}
+        </Button>
+      ) : null}
     </div>
   );
 }

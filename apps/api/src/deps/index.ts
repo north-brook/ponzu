@@ -19,6 +19,7 @@ import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
 import { createResendMail, type Mail, noMail } from "./mail.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
+import { type Payments, selectPayments } from "./payments.ts";
 import { createPoke, type Poke } from "./poke.ts";
 import { createExpoPush, noPush, type Push } from "./push.ts";
 import { type RateLimit, selectRateLimit } from "./rate-limit.ts";
@@ -93,6 +94,11 @@ export interface Deps {
    * Off, as `noRateLimit`, unless PONZU_RATE_LIMITS is `vercel` on Vercel; fails open.
    */
   rateLimit: RateLimit;
+  /**
+   * Stripe (deps/payments.ts): customers, cards through Checkout, period invoices and webhooks.
+   * Off, as `noPayments`, unless PONZU_BILLING is on: off and observe never reach Stripe.
+   */
+  payments: Payments;
   /** Which features are switched on (features.ts), read from the environment once, in env.ts. */
   features: Features;
   config: Config;
@@ -207,6 +213,7 @@ export function createDeps(env: Env): Deps {
       { mode: env.features.rateLimits, onVercel: env.onVercel },
       { clock, log },
     ),
+    payments: selectPayments(env.features.billing, env.stripe, { scope: env.sandbox.scope, clock }),
     features: env.features,
     config: {
       build: { version: VERSION, commit: env.commit, environment: env.environment },

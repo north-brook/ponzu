@@ -124,6 +124,15 @@ Every event about a workspace also carries `workspace_id`.
 | `ideas skipped` | `repo_id`, `reason` (`rate_limited`, `rejected`, `unsafe`, `failed`) | `unsafe`: the gate found an idea asking the reader for something other than work on the canvas, so none were kept (what it said goes to the logs only, never here). `rate_limited` is said by every read of a due repo while its workspace is over the hourly limit, under one id per repo and hour, so PostHog keeps one; about no one. |
 | `file uploaded` | `canvas_id`, `content_type`, `bytes` | A person's image reached a canvas. |
 | `monthly cap set` | `cap_usd` | |
+| `billing wall hit` | `reason` (`free_used`, `cap_reached`, `payment_failed`), `surface` (`create`, `message`), `can_manage`, `enforced` | A person's message, or create with one, met a workspace at a billing limit. Only while `PONZU_BILLING` is not off; `enforced` is false in observe, where it went through. |
+| `canvas waiting on billing` | `canvas_id`, `reason` | A canvas's wake began waiting on its workspace's billing limit (billing on), once each time it starts waiting. About no one. |
+| `billing notice` | `kind` (`free_used`, `cap_warning`, `cap_reached`, `payment_failed`) | A workspace's admins were pinged about billing, once a period for each kind (billing on). `payment_failed` is said on the first failed attempt of a period's invoice. About no one. |
+| `period closed` | `status` (`unbilled`, `waived`, `invoiced`, `paid`, `payment_failed`), `used_credits`, `free_credits`, `billed_credits`, `charged_cents`, `people` | A workspace's billing period was closed and settled, once (billing observed or on): charged nothing, or invoiced at Stripe. About no one. |
+| `invoice paid` | `charged_cents`, `attempts` | A period's invoice was paid, once (billing on). About no one. |
+| `invoice payment failed` | `attempt`, `reason` (`failed`, `needs_confirmation`) | A payment of a period's invoice failed, or waits on the payer's bank to confirm it, once an attempt (billing on). About no one. |
+| `card setup started` | `source` (`wall`, `settings`) | An admin opened Stripe's Checkout page to add the workspace's card (billing on). |
+| `card added` | `brand`, `source`, `seconds_to_add` | A card setup ended with the card stored, once, about whoever started it. The brand only, never the card's digits or Stripe's ids. |
+| `card setup ended` | `outcome` (`cancelled`, `expired`, `failed`) | A card setup ended without a card, once, about whoever started it. |
 | `repo secret changed` | `repo_id`, `action` (`added`, `replaced`, `removed`) | Never the secret's name or value. |
 | `search answered` | `q_length`, `terms`, `results`, `groups`, `ms` | A search of a workspace was answered (`POST /v1/workspaces/:id/search`). `q_length` is the query's length after trimming, `terms` how many terms it made, `results` the hits in all, `groups` the names of the groups with a hit, `ms` the time from the route's start to its answer. Never the words searched for. |
 
@@ -238,6 +247,9 @@ a canvas is its `canvas_id`.
 | `notice shown` | `notice` | a calm state, by what it is, never its words (`NoticeName`) |
 | `notification shown` | `kind`, `surface`: `mac` | the Mac showed a banner from the person's inbox; never its title or body |
 | `notification opened` | `kind`, `surface`: `mac`, `age_ms` | a banner was clicked; `age_ms` is how long after the notification was made |
+| `billing dialog shown` | `reason`: `free_used`, `cap_reached`, `payment_failed`, `add_card` | a send met the billing wall (the API's 402 `billing_required`), or an admin chose Add a card in Plan and usage or on a canvas's line; only while billing is on; never an amount or a workspace's name |
+| `billing dialog dismissed` | `reason` | it was closed without the card, cap or payment it asked for; the held send is dropped and its words stay where they were |
+| `billing portal opened` | | an admin opened Stripe's portal from Plan and usage |
 | `$pageview` | `canvas_id` while a canvas is open | the view changes |
 | `$exception` | | an uncaught error or rejection in the studio, an error React can't render past, and the main process's uncaught exceptions and rejections |
 

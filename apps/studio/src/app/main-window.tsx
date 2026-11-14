@@ -31,6 +31,7 @@ import { CanvasChrome } from "../cloud/window/canvas-chrome.tsx";
 import type { NoticeName, OpenedVia } from "./analytics/events.ts";
 import { useAnalytics, useView } from "./analytics/provider.tsx";
 import { useUsageSharing } from "./analytics/sharing.ts";
+import { BillingWallProvider, useBillingWallFor } from "./billing/wall.tsx";
 import { type FreshCanvas, useOpenCanvas } from "./canvas.tsx";
 import { useCanvasPanes } from "./canvas-panes.tsx";
 import { DeleteCanvasDialog } from "./confirm-dialogs.tsx";
@@ -247,7 +248,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
           }
           return;
         }
-        // A card setup's link has its own listener, once billing adds it.
+        // A card setup's link is heard by the billing wall waiting on it (billing/card-setups.ts).
         if (link.kind === "canvas") openCanvas(link);
       }),
     [host, sync, update, tell, openCanvas, notificationOpened],
@@ -418,7 +419,9 @@ function WorkspaceWindow({
   const openId = ui.canvases[id] ?? null;
   // The canvas the create page just made, as its answer said, for it to open on.
   const [fresh, setFresh] = useState<FreshCanvas | null>(null);
-  const open = useOpenCanvas(host, me, openId, say, fresh);
+  // A send turned away at a billing limit is held here until it is lifted (only while billing is on).
+  const wall = useBillingWallFor(host);
+  const open = useOpenCanvas(host, me, openId, say, fresh, wall);
   // Share's list: everyone GitHub gives access to the open canvas's repo.
   const sharePeople = useQuery({
     ...queries.canvasPeople(openId ?? ""),
@@ -725,6 +728,17 @@ function WorkspaceWindow({
     setLaunch(null);
     update((now) => ({ ...now, railOpen: false }));
   }, [sent, openId, update]);
+  // Kept the same while it says the same, as the panes' other inputs are (see useCanvasPanes).
+  const workspaceName = toWorkspace(workspace).name;
+  const billingWorkspace = useMemo(
+    () => ({
+      id,
+      name: workspaceName,
+      personal: workspace.kind === "personal",
+      canManage: workspace.canManageBilling ?? false,
+    }),
+    [id, workspaceName, workspace.kind, workspace.canManageBilling],
+  );
   const panes = useCanvasPanes({
     host,
     me,
@@ -744,6 +758,7 @@ function WorkspaceWindow({
     say,
     onClose: closeCanvas,
     onConnectClaude: connectClaude,
+    billingWorkspace,
   });
 
   // The canvas made: its own view takes the launch's place. What was typed into the launch's
@@ -922,76 +937,85 @@ function WorkspaceWindow({
     onConfirm: confirmDelete,
   });
   return (
-    <AppWindow
-      lights={host.lights}
-      badge={badge}
-      sidebar={
-        firstCanvas
-          ? null
-          : {
-              open: sidebarOpen,
-              onToggle: toggleSidebar,
-              content: sidebarContent,
+    <BillingWallProvider wall={wall}>
+      <AppWindow
+        lights={host.lights}
+        badge={badge}
+        sidebar={
+          firstCanvas
+            ? null
+            : {
+                open: sidebarOpen,
+                onToggle: toggleSidebar,
+                content: sidebarContent,
+              }
+        }
+        chrome={panes?.chrome ?? launchView?.chrome}
+        rail={panes?.rail ?? launchView?.rail ?? null}
+        panes={{
+          sidebar: ui.sidebarWidth,
+          rail: ui.railWidth,
+          onResize: (pane, width) =>
+            update((now) => ({
+              ...now,
+              [pane === "sidebar" ? "sidebarWidth" : "railWidth"]: width,
+            })),
+        }}
+      >
+        {lost ? (
+          <PaneMessage
+            title={`You're no longer in ${toWorkspace(workspace).name}`}
+            body="GitHub says you can't reach it any more. Ask one of its owners if that's a mistake."
+            action={{ label: "Go to another workspace", onClick: onLostAccess }}
+          />
+        ) : panes ? (
+          panes.pane
+        ) : openId ? null : (
+          <CreateView
+            host={host}
+            workspaceId={id}
+            workspaceName={toWorkspace(workspace).name}
+            repos={repos}
+            elsewhere={elsewhere}
+            handoff={handoff}
+            onHandoffTaken={onHandoffTaken}
+            onSwitchWorkspace={onSwitchWithCreate}
+            showIdeas={
+              summaries !== null &&
+              summaries.filter((d) => d.owner?.id === me.id).length < IDEAS_UNTIL
             }
-      }
-      chrome={panes?.chrome ?? launchView?.chrome}
-      rail={panes?.rail ?? launchView?.rail ?? null}
-      panes={{
-        sidebar: ui.sidebarWidth,
-        rail: ui.railWidth,
-        onResize: (pane, width) =>
-          update((now) => ({ ...now, [pane === "sidebar" ? "sidebarWidth" : "railWidth"]: width })),
-      }}
-    >
-      {lost ? (
-        <PaneMessage
-          title={`You're no longer in ${toWorkspace(workspace).name}`}
-          body="GitHub says you can't reach it any more. Ask one of its owners if that's a mistake."
-          action={{ label: "Go to another workspace", onClick: onLostAccess }}
-        />
-      ) : panes ? (
-        panes.pane
-      ) : openId ? null : (
-        <CreateView
-          host={host}
-          workspaceId={id}
-          workspaceName={toWorkspace(workspace).name}
-          repos={repos}
-          elsewhere={elsewhere}
-          handoff={handoff}
-          onHandoffTaken={onHandoffTaken}
-          onSwitchWorkspace={onSwitchWithCreate}
-          showIdeas={
-            summaries !== null &&
-            summaries.filter((d) => d.owner?.id === me.id).length < IDEAS_UNTIL
-          }
-          onAllowMore={addWorkspace}
-          onLaunch={(next) => {
-            sentFor.current = null;
-            setLaunch(next);
-            setSent({ key: next.key, origin: next.origin });
-          }}
-          onLaunchFailed={() => {
-            setLaunch(null);
-            setSent(null);
-          }}
-          onCreated={(canvas, messageFailed) => {
-            sentFor.current = canvas.id;
-            setFresh(canvas);
-            openCanvas(canvas.id, "created");
-            if (messageFailed) {
+            onAllowMore={addWorkspace}
+            onLaunch={(next) => {
+              sentFor.current = null;
+              setLaunch(next);
+              setSent({ key: next.key, origin: next.origin });
+            }}
+            onLaunchFailed={() => {
+              setLaunch(null);
+              setSent(null);
+            }}
+            onCreated={(canvas, messageFailed) => {
+              sentFor.current = canvas.id;
+              setFresh(canvas);
+              openCanvas(canvas.id, "created");
+              if (messageFailed) {
+                analytics.capture("notice shown", { notice: "first_message_not_sent" });
+                say("The canvas is made, but your message didn't reach Claude. Send it again.");
+              }
+            }}
+            onFirstMessageDropped={() => {
               analytics.capture("notice shown", { notice: "first_message_not_sent" });
               say("The canvas is made, but your message didn't reach Claude. Send it again.");
-            }
-          }}
-        />
-      )}
-      {settingsView}
-      {iphoneDialog}
-      {claudeDialog}
-      {notice ? <Banner>{notice}</Banner> : null}
-      {deleteDialog}
-    </AppWindow>
+            }}
+          />
+        )}
+        {settingsView}
+        {iphoneDialog}
+        {claudeDialog}
+        {notice ? <Banner>{notice}</Banner> : null}
+        {deleteDialog}
+      </AppWindow>
+    </BillingWallProvider>
   );
 }
 

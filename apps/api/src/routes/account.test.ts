@@ -6,10 +6,10 @@ import {
   getCanvas,
   getCanvasAssetKey,
   getSandbox,
-  recordUsage,
   upsertMembership,
   upsertRepos,
   upsertWorkspace,
+  usageEvents,
 } from "@ponzu/db";
 import { canvasSandboxName } from "@ponzu/sandbox";
 import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
@@ -244,7 +244,7 @@ describe("deleting Rae", () => {
     // A teammate's canvas, which is not hers to delete.
     solsCanvas = (await canvasIn(t, ws, "sol", sampleDoc())).id;
 
-    await recordUsage(t.db, {
+    await t.db.insert(usageEvents).values({
       id: "rae-usage",
       workspaceId: ws.id,
       canvasId: teamCanvas,
@@ -256,7 +256,6 @@ describe("deleting Rae", () => {
       payer: "ponzu",
       rateCardVersion: 1,
       occurredAt: new Date(t.clock.now()),
-      periodStart: new Date(t.clock.now()),
     });
 
     // Her canvases' files: 2,500 under her Scratch canvas, a few under the others, and the

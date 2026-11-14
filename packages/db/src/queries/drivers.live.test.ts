@@ -78,7 +78,7 @@ import {
   getUploads,
   listAssets,
 } from "./uploads.ts";
-import { addLedgerEntry, ledgerBalance, recordTurnUsage, recordUsage } from "./usage.ts";
+import { addLedgerEntry, adjustCredits, recordTurnUsage } from "./usage.ts";
 import { takeWebhookDelivery } from "./webhooks.ts";
 
 describeLive("queries on a real Postgres", ({ db, close }) => {
@@ -369,34 +369,24 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     expect(await verifyRunnerToken(db, token)).toMatchObject({ canvasId: canvas.id });
 
     const periodStart = new Date(Date.UTC(2020, 0, 1) + Math.floor(Math.random() * 1e9) * 1000);
-    await addLedgerEntry(db, {
-      workspaceId: workspace.id,
-      delta: 100,
-      reason: "grant",
-      periodStart,
-      userId: user.id,
-    });
-    const usage = {
-      id: `use_live_${canvas.id}`,
-      workspaceId: workspace.id,
-      canvasId: canvas.id,
-      userId: user.id,
-      kind: "sandbox" as const,
-      seconds: 1800,
-      credits: 2.5,
-      costMicrousd: 9000,
-      payer: "ponzu" as const,
-      rateCardVersion: 1,
-      occurredAt: new Date(),
-      periodStart,
-    };
-    expect(await recordUsage(db, usage)).toBe(true);
-    expect(await recordUsage(db, usage)).toBe(false);
-    expect(await ledgerBalance(db, { workspaceId: workspace.id, periodStart })).toEqual({
-      granted: 100,
-      used: 2.5,
-      balance: 97.5,
-    });
+    const grant = () =>
+      addLedgerEntry(db, {
+        workspaceId: workspace.id,
+        delta: 100,
+        reason: "grant",
+        periodStart,
+        userId: user.id,
+      });
+    expect(await grant()).toBe(true);
+    expect(await grant()).toBe(false);
+    expect(
+      await adjustCredits(db, {
+        workspaceId: workspace.id,
+        periodStart,
+        credits: -3,
+        note: "live",
+      }),
+    ).toStartWith("led_");
     const turn = {
       id: crypto.randomUUID(),
       at: new Date(),

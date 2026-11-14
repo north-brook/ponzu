@@ -12,10 +12,17 @@ import type { NotificationRow } from "../live/rows.ts";
 
 export type SettingsApi = Pick<
   Api,
-  "notifications" | "devices" | "environments" | "usage" | "privacy" | "account"
+  "notifications" | "devices" | "environments" | "usage" | "billing" | "privacy" | "account"
 >;
 
 type Prefs = Awaited<ReturnType<Api["notifications"]["get"]>>["prefs"];
+
+/** What every card and portal call answers while billing is off. */
+function notSetUp(): never {
+  throw new ApiError(409, "billing_not_set_up", "Billing isn't set up here.");
+}
+
+export type FakeBillingGate = "ok" | "free_used" | "cap_reached" | "payment_failed";
 type Device = Awaited<ReturnType<Api["notifications"]["get"]>>["devices"][number];
 type Environment = Awaited<ReturnType<Api["environments"]["get"]>>["environment"];
 type Base = Environment["base"];
@@ -66,6 +73,8 @@ export interface SettingsWorld {
    * can) whether the "people joined" email could reach them.
    */
   email(userId: string): { address: string | null; available: boolean; teamAvailable?: boolean };
+  /** PONZU_BILLING where the fake runs: off unless a test says otherwise. */
+  billingMode(): "off" | "observe" | "on";
   /** Something a live query shows changed. */
   changed(): void;
   /** The person's own row changed: the live `me` row says so. */
@@ -85,6 +94,28 @@ export class FakeSettings {
   /** Credits used this period, by workspace and person. */
   readonly used = new Map<string, Map<string, number>>();
   readonly caps = new Map<string, number>();
+  /** The card Stripe holds for each workspace, once one is added (billing on). */
+  readonly cards = new Map<string, { brand: string; last4: string | null }>();
+  /** A workspace's unpaid invoice; `graceOver` once its seven days have passed. */
+  readonly pastDue = new Map<
+    string,
+    {
+      since: string;
+      reason: "failed" | "needs_confirmation";
+      invoiceUrl: string | null;
+      graceOver: boolean;
+    }
+  >();
+  /** Card setups begun, by id: Stripe's page for each, until it comes back. */
+  readonly cardSetups = new Map<
+    string,
+    {
+      workspaceId: string;
+      userId: string;
+      capUsd: number;
+      status: "waiting" | "added" | "cancelled" | "expired";
+    }
+  >();
   /** What Ponzu told each person, oldest first: the rows `me.notifications` selects from. */
   readonly inbox = new Map<string, FakeNotification[]>();
   /** The IANA time zone each person's app reported. */
@@ -180,6 +211,40 @@ export class FakeSettings {
     this.bases.set(repoId, { ...this.base(repoId), ...base });
   }
 
+  /**
+   * The workspace's billing gate, by the API's rule (apps/api/src/billing/gate.ts): a payment
+   * past its grace, then free credits used with no card, then the cap reached with one.
+   */
+  gateOf(workspace: { id: string; members: Map<string, unknown> }): FakeBillingGate {
+    const used = [...(this.used.get(workspace.id)?.values() ?? [])].reduce((a, n) => a + n, 0);
+    const free = workspace.members.size * FREE_PER_MEMBER;
+    const card = this.cards.has(workspace.id);
+    const billedCents = Math.max(0, used - free) * CREDIT_CENTS;
+    const capCents = (this.caps.get(workspace.id) ?? DEFAULT_CAP_USD) * 100;
+    if (this.pastDue.get(workspace.id)?.graceOver) return "payment_failed";
+    if (!card && used >= free) return "free_used";
+    if (card && billedCents >= capCents) return "cap_reached";
+    return "ok";
+  }
+
+  /** Stripe's Checkout page finished: the card is the workspace's, and the setup's cap is set. */
+  completeCardSetup(
+    setupId: string,
+    card: { brand: string; last4: string | null } = { brand: "visa", last4: "4242" },
+  ): void {
+    const setup = this.cardSetups.get(setupId);
+    if (!setup || setup.status !== "waiting") return;
+    setup.status = "added";
+    this.cards.set(setup.workspaceId, card);
+    this.caps.set(setup.workspaceId, setup.capUsd);
+  }
+
+  /** The person left Stripe's page (Cancel), or it ran out. */
+  endCardSetup(setupId: string, status: "cancelled" | "expired"): void {
+    const setup = this.cardSetups.get(setupId);
+    if (setup?.status === "waiting") setup.status = status;
+  }
+
   /** Credits a person used in a workspace this period. */
   use(workspaceId: string, userId: string, credits: number): void {
     const byPerson = this.used.get(workspaceId) ?? new Map<string, number>();
@@ -232,6 +297,43 @@ export class FakeSettings {
       }
       return this.secrets.get(repo.id) ?? [];
     };
+    /** `billing` as the API's mode says it (apps/api/src/routes/usage.ts, `billingView`). */
+    const billingView = (
+      workspace: { id: string; members: Map<string, "admin" | "member"> },
+      admin: boolean,
+      billedCents: number,
+    ): Usage["billing"] => {
+      const off = { status: "not_set_up" as const, card: null, invoices: "not_set_up" as const };
+      const mode = world.billingMode();
+      if (mode === "off") return off;
+      const card = this.cards.get(workspace.id) ?? null;
+      const capCents = (this.caps.get(workspace.id) ?? DEFAULT_CAP_USD) * 100;
+      const extra = {
+        gate: this.gateOf(workspace),
+        capWarning: card !== null && billedCents >= capCents * 0.8,
+      };
+      if (mode === "observe") return { ...off, ...extra, pastDue: null };
+      const owed = this.pastDue.get(workspace.id);
+      return {
+        status: "on",
+        card: admin ? card : null,
+        invoices: "not_set_up",
+        ...extra,
+        pastDue:
+          admin && owed
+            ? { since: owed.since, reason: owed.reason, invoiceUrl: owed.invoiceUrl }
+            : null,
+      } as Usage["billing"];
+    };
+    /** Cards and the portal: only while billing is on, and only for an admin. */
+    const billingAdmin = (workspaceId: string) => {
+      if (world.billingMode() !== "on") notSetUp();
+      const { workspace, role } = world.member(workspaceId);
+      if (role !== "admin") {
+        throw new ApiError(403, "forbidden", "Only an admin of this workspace can do this.");
+      }
+      return workspace;
+    };
     const usage = (workspaceId: string): Usage => {
       const { workspace, role } = world.member(workspaceId);
       const used = this.used.get(workspace.id) ?? new Map<string, number>();
@@ -268,7 +370,7 @@ export class FakeSettings {
           isDefault: !this.caps.has(workspace.id),
           lowestUsd: Math.max(1, Math.ceil(billedCents / 100)),
         },
-        billing: { status: "not_set_up", card: null, invoices: "not_set_up" },
+        billing: billingView(workspace, admin, billedCents),
         canManage: admin,
         mine: row(userId),
         byPerson: admin
@@ -453,6 +555,46 @@ export class FakeSettings {
             }
             this.caps.set(workspaceId, capUsd);
             return usage(workspaceId);
+          }),
+      },
+      // While billing is off or observing (as in production until the founder turns it on) there
+      // is no card to add and no portal, as the API answers while PONZU_BILLING isn't `on`. On,
+      // a setup waits until a test finishes Stripe's page (`completeCardSetup`, `endCardSetup`).
+      billing: {
+        startCardSetup: (workspaceId, { capUsd }) =>
+          call(() => {
+            const workspace = billingAdmin(workspaceId);
+            const lowest = usage(workspaceId).cap.lowestUsd;
+            if (capUsd < lowest) {
+              throw new ApiError(400, "cap_too_low", `The cap can't be below $${lowest}.`, {
+                lowestUsd: lowest,
+              });
+            }
+            const id = `ast_${++this.ids}`;
+            this.cardSetups.set(id, {
+              workspaceId: workspace.id,
+              userId,
+              capUsd,
+              status: "waiting",
+            });
+            return { id, url: `https://checkout.stripe.com/c/pay/cs_test_${id}` };
+          }),
+        cardSetup: (id) =>
+          call(() => {
+            if (world.billingMode() !== "on") notSetUp();
+            const setup = this.cardSetups.get(id);
+            if (!setup || setup.userId !== userId) {
+              throw new ApiError(404, "not_found", "There is no such card setup.");
+            }
+            return { status: setup.status, workspaceId: setup.workspaceId };
+          }),
+        portal: (workspaceId) =>
+          call(() => {
+            const workspace = billingAdmin(workspaceId);
+            if (!this.cards.has(workspace.id)) {
+              throw new ApiError(409, "no_card", "This workspace has no card yet.");
+            }
+            return { url: `https://billing.stripe.com/p/session/test_${workspace.id}` };
           }),
       },
       privacy: {

@@ -84,6 +84,11 @@ export class ThreadStore {
       /** The viewer, whose messages the bubbles are. */
       meId: string;
       now?: () => number;
+      /**
+       * A send the API turned down, after its bubble says it didn't arrive: the billing wall
+       * holds it (`retry` sends it again, once its limit lifts) when it is the wall's 402.
+       */
+      onRefused?: (error: unknown, retry: () => void) => void;
     },
   ) {}
 
@@ -237,10 +242,13 @@ export class ThreadStore {
       if (!this.live?.rows?.some((row) => row.id === item.id)) this.sent.set(item.id, item);
       this.pending = this.pending.filter((m) => m.id !== message.id);
       this.sentAfter.delete(message.id);
-    } catch {
+    } catch (error) {
       this.pending = this.pending.map((m) =>
         m.id === message.id ? { ...m, status: "failed" } : m,
       );
+      this.emit();
+      this.opts.onRefused?.(error, () => this.retry(message.id));
+      return;
     }
     this.emit();
   }

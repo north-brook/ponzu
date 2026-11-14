@@ -696,15 +696,18 @@ name a window that is over well before then.
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
   event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
   nothing that owes nothing. `maintenance` refuses with `paused`, to be tried again in two
-  minutes, while wakes are paused ("Security", the maintenance switch); `billing` lets
-  everything through until its feature fills it; `claudeLimit` is "Claude plan limits". The
-  runner's claim hands out only the kinds `claimableKinds` allows (every kind, except that only
-  a stop, an edit and a push go out while the plan the canvas runs on is at its limit; billing
-  will narrow it too); the rest stay in the feed,
-  neither claimed nor delivered. A person's message, answer or create asks the request gates
+  minutes, while wakes are paused ("Security", the maintenance switch); `billing` refuses with
+  `credits_used_up`, `cap_reached` or `payment_failed` while `PONZU_BILLING` is `on` and the
+  workspace's cached gate is not `ok`, except for a wake for `push` ("Billing", the gate);
+  `claudeLimit` is "Claude plan limits". The runner's claim hands out only the kinds
+  `claimableKinds` allows (every kind, except that only a stop, an edit and a push go out while
+  the plan the canvas runs on is at its limit, and only a stop, an answer, an edit and a push
+  while billing holds the workspace back; with both, only what both allow); the rest stay in the
+  feed, neither claimed nor delivered. A person's message, answer or create asks the request gates
   (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
   be allowed and before anything is written; `maintenance` refuses with 503 `maintenance` while
-  Ponzu is read-only, and `billing` lets everything through until its feature fills it.
+  Ponzu is read-only, and `billing` refuses a message, or a create with a first message, with
+  402 `billing_required` while billing is on and the workspace's gate is not `ok`.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
@@ -730,9 +733,10 @@ name a window that is over well before then.
   from it after its `up()` (a retire, a repair) stops the session it started unless the row's
   holder now runs on it, and removes the sandbox when the canvas is settled or gone, since a
   retire that finished in between could not see what this wake made after it.
-- **Limits.** Until billing exists, the claim also counts the sandboxes waking or awake in the
+- **Limits.** Whatever billing says, the claim also counts the sandboxes waking or awake in the
   canvas's workspace (`PONZU_SANDBOX_MAX_PER_WORKSPACE`, 5) and for its owner
-  (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement; a wake past either waits as
+  (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement, as a bound on abuse rather than a
+  plan's limit; a wake past either waits as
   `sandbox_busy` and is tried again. The count is the statement's view, so claims for different
   canvases landing in the same instant can pass it by a few; it bounds the bill, it is not a quota.
 - **The environment** is made new at every start (`environment.ts`): `PONZU_API_URL`,
@@ -2834,27 +2838,281 @@ free credits are used up. A workspace has a monthly cap.
   from `awake` to whatever it moved to, in the statement that moved it, put down to the
   workspace and to the person behind the newest event of the canvas's feed when it was woken
   or last kept awake.
-- `credit_ledger` holds grants, use and adjustments. Balance and cap are checked
-  before every wake. A running turn is never cut off.
-- Stripe receives the billed part as metered usage.
+- `usage_events` is the one record of use. `credit_ledger` holds what is not use: each
+  member's free grant, support's adjustments and, later, top-ups. Nothing writes a `use` row.
+  With billing on, the workspace's gate is checked before every wake and every message. A
+  running turn is never cut off.
+- Ponzu rates its own usage. At each period's close it sends Stripe one invoice with one line,
+  the period's charged credits at the credit price, charged to the card; Stripe's metered
+  billing is not used.
 - The iPhone shows usage and sells nothing.
 
-What is built so far is the reading of it: Plan and usage, worked out from `usage_events` and
-the rate card. There is no Stripe, no ledger write and no cap enforcement yet; the cap is stored
-for when there is.
+What is built so far: Plan and usage, worked out from `usage_events` and the rate card, the
+meter's cuts, the gate (worked out, cached, observed and enforced, below), payments through
+Stripe, adding a card through Stripe's Checkout with Stripe's webhook, the period close
+with its invoice and the payment's state, and the Mac's walls, card and past due (below). While
+`PONZU_BILLING` is unset, as in production, nothing is held back, no card can be added, no
+period is closed, nothing is charged and the Mac shows what it did before billing.
+
+**The gate.** Whether a workspace may start new work, from its numbers (`billing/gate.ts`):
+`payment_failed` once an invoice has been past due for 7 days, else `free_used` with no card and
+the free credits used up, else `cap_reached` with a card and the billed part at the cap, else
+`ok`. `refreshBillingGate` (`billing/refresh.ts`) works it out by Plan and usage's arithmetic
+(granting first the allowances of members not yet granted, as Plan and usage does) and stores it
+on the workspace (`billing_gate`, `billing_gate_at`). It runs in the minute's sweep, after the
+sandboxes' own steps, for every workspace with a sandbox waking or awake or moved in the last
+two minutes, and every workspace whose gate is not `ok`, at most 50 a run, those worked out
+longest ago first; and at once after the cap is changed. Free credits only shrink while
+something is awake, so the stored gate is at most about a minute behind. The routes, the wake and
+the claim read the stored gate, never Stripe (`billing/enforce.ts`):
+
+- A person's `POST /v1/canvases` with a first message, and `POST /v1/canvases/:id/messages`,
+  answer 402 `billing_required` with nothing written. The message is the sentence to show
+  ("<Workspace> has used this month's free credits.", "<Workspace> has reached this month's
+  $<cap> cap.", "<Workspace>'s last payment didn't go through.", and "You've" or "Your" for a
+  personal workspace's own person), and `details` carries `reason`, `workspaceId`,
+  `workspaceName`, `canManage`, `capUsd`, `billedCents`, `periodEnd` and `invoiceUrl` (null for
+  anyone but an admin). A create without a message is made, and an answer is never refused:
+  the turn that asked waits on it.
+- A wake waits on `credits_used_up`, `cap_reached` or `payment_failed`, except a wake for
+  `push`, or any wake while a push waits in the feed (a waiting wake for a check takes in a push
+  asked for after it), so finished work can always be pushed. A comment is committed as ever;
+  only its wake waits.
+- The runner's claim hands out only a stop, an answer, an edit and a push, so a running turn
+  finishes and no new one starts. What it holds back stays in the feed, not owed, so nothing
+  lapses.
+- When the gate turns `ok` again, `resumeBillingBlocked` lifts those three blockers in the
+  workspace and wakes the canvases with something owed (`resumeBlocked`); an awake runner takes
+  up what its claim held back at its next claim. A canvas whose claim held something back with
+  no blocker on its head (or whose blocker a push's wake lifted), and whose sandbox has slept
+  since, has its wake queued for the minute's cron.
+- With billing on, the workspace's admins (its person, for a personal one) are pinged through
+  `notify` with billing's words, once a period for each of free credits used, 80% of the cap
+  (with a card) and the cap reached.
+
+`PONZU_BILLING` decides how much of this happens. `off` (unset): none of it, nothing is read or
+written for it, and every route answers as before billing. `observe`: the gate is worked out and
+stored and nothing is refused; what would have been is logged as `billing_gate_would_refuse`, a
+person's refused steer is captured as `billing wall hit` with `enforced: false`, and nobody is
+pinged. `on`: all of it.
+
+Each workspace in `GET /v1/me` carries `billingGate` (its stored gate when billing is on, `ok` in
+observe) and `canManageBilling` (an admin), so a composer can open the wall before it commits a
+comment; neither is there while billing is off.
+
+**Payments.** Stripe is reached only through `apps/api/src/deps/payments.ts`, on Stripe's own
+Node SDK (`stripe`, pinned at 23.1.0, at the API version that release pins, `2026-10-28.endive`),
+which no other file imports. It is `noPayments`, refusing every call as `billing_not_set_up`,
+unless `PONZU_BILLING` is `on`: with billing off or observing, nothing reaches Stripe whatever
+keys are set. `on` refuses to start without `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
+`STRIPE_CREDIT_PRICE_ID`; `STRIPE_PORTAL_CONFIGURATION_ID` is optional and `PONZU_STRIPE_TAX=1`
+turns on Stripe Tax. A live key (`sk_live_`, `rk_live_`) starts only where `PONZU_ENVIRONMENT` is
+`production`. Every object the seam makes at Stripe carries `ponzu_workspace_id` and
+`ponzu_scope` (the deployment's sandbox scope) in its metadata, and every create carries an
+idempotency key made from the deployment's scope and our own ids, so a retry never makes a
+second customer, Checkout page or invoice. A period is charged as one invoice with one line of
+credits at the credit price, and the invoice's id is stored before its line is added, so a close
+that crashes anywhere and runs again finds it. The invoice is made without automatic collection
+and given it only when it is finalized with its line, so Stripe never finalizes an empty one by
+itself while a crashed close waits to run again; an invoice found finalized without the period's
+line is refused, never taken as the charge. Webhooks are checked with Stripe's own
+`constructEvent` against the raw body and the API's clock; one from the other mode than the
+key's, or about an object carrying another deployment's scope, is acknowledged and ignored.
+`bun apps/api/scripts/stripe-setup.ts`, with `STRIPE_SECRET_KEY` in its environment, makes the
+product "Ponzu credits", its one-time price at the rate card's cents (lookup key
+`ponzu_credit_v1`, tax exclusive) and the customer portal's configuration, or finds them from a
+run before, and prints only their ids; it refuses a live key without `--live`, and refuses a
+price under the key that is not the rate card's rather than change it. The seam is proven
+against Stripe's official mock server (`payments.stripe-mock.test.ts`, run in CI against
+`stripe/stripe-mock` pinned by digest), which checks each request's parameters.
+
+**Cards.** An admin adds the workspace's card on Stripe's own Checkout page, in setup mode, in
+their browser, never in the app (`billing/cards.ts`). `POST /v1/workspaces/:id/billing/card-setups`
+with the cap to set once the card is added makes the workspace's Stripe customer the first time
+(named for the workspace, with the admin's email, and the request's IP for Stripe Tax until an
+address is known), opens a setup in place of any the workspace had open, and answers Stripe's
+page to open and the setup's id. The app polls `GET /v1/billing/card-setups/:id` every two
+seconds. A setup is settled by whichever comes first, and every later one finds it settled: the
+poll (a setup still waiting after five seconds is read from Stripe), the page Checkout returns to
+(`GET /v1/billing/return`), or Stripe's `checkout.session.*` webhook. Each reads the Checkout
+session from Stripe as it is now: a card Stripe collected is made the customer's default for
+invoices, stored, the setup's cap is set, and the gate is worked out again, which wakes what it
+held back; then the setup is marked `added`. The card is applied before the setup is marked, so a
+crash between leaves it to be applied again, and a card Stripe has is applied, with the setup's
+cap, even if the setup was meanwhile marked cancelled or expired, which then becomes `added`. If
+Stripe fails while the card is being made the default, the setup stays waiting and is asked again.
+A page left with Cancel marks the setup `cancelled`
+(unless Stripe says it finished); a page Stripe expired, or a setup older than 35 minutes, marks
+it `expired`; and a setup whose page Stripe could not make is `failed`, with 503
+`upstream_unavailable` ("Couldn't reach Stripe. Try again."). The cap may not be below what the
+month has billed (400 `cap_too_low`). The return page is the handoff page (`@ponzu/core/handoff`):
+"Card added" opens `<scheme>://billing/card?setup=<id>&result=added`, "No card added" opens it
+with `result=cancelled`, where the scheme is the one the app named when it started the setup,
+kept on the row (a browser's address only picks the row); for a build that takes no links it
+says Ponzu has it and closes. `POST /v1/workspaces/:id/billing/portal` answers a link into
+Stripe's customer portal, where an admin changes the card or reads invoices (409 `no_card` with no
+customer yet); it comes back to the return page's "Back to Ponzu". Each of these answers 409
+`billing_not_set_up` (the return page 404) unless `PONZU_BILLING` is `on`, before it reads
+anything.
+
+**Webhooks.** `POST /v1/stripe/webhook` is checked against the raw body and
+`STRIPE_WEBHOOK_SECRET` before anything else is read (400 `signature_invalid`), and is 404 unless
+billing is on. An event of the other mode, of another deployment's scope, or of a kind not acted
+on is answered 200 and dropped. One acted on is taken with its delivery in one statement
+(`takeWebhookDelivery`, source `stripe`, keyed by the event's id) as a `stripe_webhook` job, so a
+redelivery is answered and dropped, and is answered 200 before its job runs. A delivery is a
+signal, not a record: the job reads from Stripe what the event is about, as it is now, so events
+late or out of order cannot move a workspace backwards. `checkout.session.completed` and
+`.expired` settle the setup the session names. `customer.updated`, `payment_method.attached` and
+`payment_method.detached` read the customer's default card and store it, or forget the stored one
+when there is none (a card removed in the portal), then work the gate out again; the workspace is
+found by the customer, or by the stored card, and an event about neither is dropped.
+`invoice.finalized`, `.paid`, `.payment_failed`, `.payment_action_required`,
+`.marked_uncollectible` and `.voided` read the invoice and store what it says (below); an invoice
+that names no workspace of ours (one made by hand at Stripe) is logged `stripe_invoice_foreign`
+and left alone. `charge.dispute.created` and `charge.refunded` are logged (`billing_dispute`,
+`billing_refund`) and change nothing: the founder works them in Stripe's dashboard.
+
+**The period close.** While `PONZU_BILLING` is `observe` or `on`, the minute's cron step
+`close_periods` (`billing/close.ts`) first works out when each workspace that has none yet next
+closes (`billing_next_close_at`): the end of the period running now, so the first period billed
+is the one billing was turned on in. Ten minutes or more after a workspace's period ends, it
+records a `billing_close` job for the period (keyed by workspace and period start, 20 a run),
+unless the period had nothing in it (no usage event, nothing awake, no card), which is moved past
+with no row written. A close already under way, or one that failed for good in the last day,
+does not hold up the others. The job cuts the workspace's awake stretches at the period's end,
+reads the period's usage counting the members who joined before its end, and freezes the numbers
+in `billing_periods` once: used, free, billed, and charged, which is the billed credits but never
+more than the cap in effect at the close pays for (what a running turn used past the cap is
+Ponzu's). Then it settles the period: `unbilled` while billing is not `on`, or when the period
+is first closed more than two days after it ended (billing was off meanwhile; a period closed
+while billing was off is never billed later); `waived` when the charge is under $1, or the
+workspace has no card on file; otherwise one invoice at Stripe with one line, `<charged>`
+credits at the credit price, described as "<Workspace> · <used> credits used, <free> free" and
+"Ponzu usage, <Mon D> – <Mon D, YYYY> · <charged> credits", finalized so Stripe charges the
+card. Before charging, the close reads the credit price at Stripe and refuses
+(`billing_price_mismatch`, logged, the job tried again) when it is not the rate card's. The job
+then moves the next close to the next period's end and works the gate out again, which wakes
+what the old period's limits held back. Every step is safe to run again after a crash anywhere:
+the numbers are frozen once, the invoice's id is stored as soon as Stripe makes it, and its line
+is added only when it has none, so a close crashed after any Stripe call and run again (even
+after Stripe has forgotten its idempotency keys) leaves one invoice with one line. The one case
+it cannot cover is a crash after Stripe made the invoice and before its id was stored, run again
+after Stripe forgot the key: a second invoice is made, and the first stays an empty draft that is
+never finalized or charged. A failing close is tried 8 times over about two hours, then again a
+day later. With billing off, the step is not run and the minute answers as before billing; a
+close job left over does nothing.
+
+**Failed payments.** Stripe collects the invoice and retries a failed payment (Smart Retries, a
+dashboard setting). Each invoice event's job, and the close itself, read the invoice and store
+its state on the period (`applyInvoiceState`): `invoiced` (not yet tried), `payment_failed` (a
+payment failed, or waits on the payer's bank to confirm it), `paid`, `uncollectible` or `void`,
+with the number of attempts, the next one, the invoice's number, its page and its totals. A
+status never goes back (`paid` and `void` are final, `uncollectible` moves only to `paid` or
+`void`), so events out of order end where Stripe is now. A failed payment marks the workspace past
+due (`past_due_at`, kept from the first failure; `past_due_reason` `failed` or
+`needs_confirmation`; `past_due_invoice_url`, the invoice's page) and pings its admins once for
+the period ("<Workspace>'s payment of $<total> didn't go through."). After seven days past due the
+gate is `payment_failed` (the minute's sweep looks at every workspace past due for that long). An
+uncollectible invoice stays past due, since its page can still take a payment. A paid or voided
+invoice clears past due once no other period's invoice has failed or is uncollectible (until
+then the page shown is the oldest unpaid one's), and the gate is worked out again, which wakes
+what it held back. Receipts are Stripe's, with the invoice's page. Ponzu's own emails to admins
+about billing (free credits used, the cap near and reached, a failed payment) have templates in
+`packages/email` but nothing sends them yet; billing is not switched on until they send. Stripe
+Tax is added to the invoice when `PONZU_STRIPE_TAX=1`.
+
+**On the Mac.** The studio shows nothing of this unless `me.features.billing` is `on`: while
+billing is off or observing, Plan and usage shows credits and that Ponzu is free, the Card row
+offers nothing, and nothing a person sends meets a wall, exactly as before billing was built.
+With billing on (`apps/studio/src/app/billing/`):
+
+- A create or message answered 402 `billing_required` is held, not lost, and the dialog its
+  `reason` calls for opens: free credits used up (the cap, $100 to start, and "Add card and
+  continue"), the cap reached ("Raise cap and continue", offering twice the cap), or a payment
+  past its grace ("Pay invoice", which opens the invoice's page). A member is told to ask an
+  admin. While any of these dialogs is open, the workspace's gate is asked every five seconds, so
+  a limit lifted elsewhere (an admin's card or cap, which is the only way a member's send goes)
+  also lets it go. Once the card is added, the cap raised, the gate back to `ok`, or, for a
+  payment, no longer `payment_failed`, the held send goes again, once: a create with
+  the same create key, so it makes one canvas; a message by its bubble's own retry. Dismissed,
+  it is dropped: the create page keeps the prompt, and the message's bubble keeps its words
+  with Retry; a canvas's first message sent after its pictures, which has left the create page,
+  is said not to have reached Claude, as any failed first message is. A comment is not checked
+  first: it commits, and its canvas's line says why it waits.
+- The card goes in on Stripe's Checkout page in the browser, not in fields in the app (Stripe's
+  card fields refuse a page that isn't https in live mode, and the studio is served from
+  `ponzu-studio://app`). The dialog opens it, says "Finish adding your card in your browser"
+  with "Waiting for your card" and Cancel, and asks the API every two seconds how the setup
+  stands (`app/billing/card-setups.ts`), for at most 32 minutes. The return page's
+  `ponzu://billing/card` link only makes it ask at once: the API's answer is the outcome, never
+  the link's. Added, the window comes forward and the held send goes; cancelled or failed, the
+  dialog says "The card wasn't added." (with "Your prompt is still here." when one is held);
+  expired, "That took too long. Try again."
+- Plan and usage, for an admin: "Add a card" with no card (the same dialog, titled "Add a card",
+  with nothing held), "Manage in Stripe" with one (Stripe's portal), and while a payment is past
+  due the Card row says "Payment failed" or "Payment needs your confirmation" with "Pay invoice"
+  in place of the portal's button. With no card the cap row is left out and the bar spans the
+  free credits alone. A member sees neither card nor past due, and keeps the cap, read-only,
+  since the API never tells a member whether there is a card. An invoice with no page of its
+  own is paid through Stripe's portal, which lists it.
+- A canvas waiting on `credits_used_up`, `cap_reached` or `payment_failed` says so at its
+  thread's foot in billing's words, with "Add a card", "Raise cap" or "Pay invoice" for someone
+  who can manage billing and no button for anyone else. Once the limit lifts the API resumes the
+  canvas by itself.
+
+**What billing stores.** On `workspaces`: the cached gate (`billing_gate`, `ok` until worked out,
+and `billing_gate_at`), when the running period is next to close (`billing_next_close_at`), the
+card Stripe charges (`stripe_payment_method_id`, with `card_brand`, `card_last4`,
+`card_added_at` and `card_added_by_user_id`), and why and where an invoice is past due
+(`past_due_reason`, `past_due_invoice_url`, beside `past_due_at`). A card being added is an
+`auth_states` row of kind `card_setup` whose payload names the workspace, the cap chosen with the
+card, the app scheme the return page opens, the Checkout session and how it ended; a workspace
+has one open at a time (`auth_states_open_card_setup_key`), and a new one takes the old one's
+place. `billing_periods` holds one row per closed period: its numbers frozen at the close
+(credits used, free, billed and charged, cents charged, the cap, the people counted and the rate
+card), its status (`closing`, `unbilled`, `waived`, `invoiced`, `paid`, `payment_failed`,
+`uncollectible` or `void`) and its one Stripe invoice. What is charged is never more than the
+billed credits, and never more than the cap. A workspace with a closed period cannot be deleted,
+as one with usage cannot. With billing off nothing writes any of these, and they keep their
+defaults.
+
+**The meter's cuts.** While `PONZU_BILLING` is `observe` or `on`, the minute's sweep first cuts
+every awake stretch that is due (`billing/meter.ts`), before any sandbox's own step: at the end
+of the billing period the stretch began in, once that has passed, and otherwise once it has run
+an hour, at its last whole second. A cut (`cutAwake`) meters the piece so far exactly as a sleep
+would, under the same id rule (`<canvas>/<epoch ms of where the piece began>`), attribution and
+rate card, and moves `awake_since` on to the cut; `state_at` still says when it woke, and is what
+the sweep's dead-runner check and the `sandbox slept` event's `awake_ms` read. A cut holds to the
+stretch it saw, and a move out of `awake` (a sleep, a stop, a retire or a restart in place)
+holds to the `awake_since` it read and goes again, up to four times in all, while a cut keeps
+landing meanwhile, so a cut racing a sleep or another cut never meters a second twice or loses
+one, and the sleep still happens. Each sandbox is cut at most three times a run. While `PONZU_BILLING` is unset or `off`
+nothing is cut, and a stretch is metered whole when it ends, as before.
+
+**Adjustments.** `apps/api/scripts/credit.ts <workspace> <credits> "<note>"` writes one
+`adjustment` row for the period running now: a whole number of credits, not zero, with a note.
+The period's adjustments add to its free credits (a negative one takes some away), and the free
+credits never go below zero.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
 | GET | `/v1/workspaces/:id/usage` | none | `WorkspaceUsage` |
 | PATCH | `/v1/workspaces/:id/billing` | `{ capUsd }` | `WorkspaceUsage` |
+| POST | `/v1/workspaces/:id/billing/card-setups` | `{ capUsd, scheme?, source? }` (admin) | 201 `{ id, url }` |
+| GET | `/v1/billing/card-setups/:id` | none (its starter) | `{ status: waiting \| added \| cancelled \| expired \| failed, workspaceId }` |
+| GET | `/v1/billing/return` | `?setup=` with `&session_id=` or `&cancelled=1`, or `?kind=portal` | a handoff page |
+| POST | `/v1/workspaces/:id/billing/portal` | none (admin) | `{ url }` |
+| POST | `/v1/stripe/webhook` | Stripe's raw body, `Stripe-Signature` | 200 `{ received: true }` |
 
 **The period.** A workspace's anchor is the day it was made (`billing_period_anchor`). Its
 period starts at midnight UTC on that day of every month, or on the month's last day when the
 month is shorter (a workspace made on the 31st starts on February 28), and ends where the next
 starts (`billing/period.ts`). `period.end` is the day Plan and usage "bills" or "resets" on; an
 app formats it in UTC, or a person west of Greenwich reads the day before. A stretch of awake
-time counts in the period it began in, as its usage event is dated, and the stretch awake right
-now counts up to the moment of asking, under the card in effect.
+time counts in the period it began in, as its usage event is dated (the meter's cuts start a new
+piece at each period's end), and the stretch awake right now counts up to the moment of asking,
+or to the period's end for a period read after it ended, under the card in effect.
 
 **The arithmetic** is one module, `billing/credits.ts`, and every number it answers is an
 integer:
@@ -2863,7 +3121,8 @@ integer:
   by the card that was in effect when it began), plus what model turns cost (zero while every
   canvas runs on its owner's own plan), added up exactly and rounded down to a whole credit. A
   partial credit, under twelve minutes awake at 5 an hour, is never charged.
-- Free credits: the card's free credits per member × the people counted, pooled. The people
+- Free credits: the card's free credits per member × the people counted, pooled, plus the
+  period's adjustments, never below zero. The people
   counted are everyone who has been a member at any point in the period, plus anyone else whose
   use is in it. A member's allowance is granted once a period and never taken back: it is a
   `grant` row in `credit_ledger` for the period's start (`credit_ledger_grant_key` keeps it to
@@ -2894,9 +3153,13 @@ cap, and their own use (`mine`). An admin also sees `byPerson` (everyone counted
 first), `unattributedCredits` and `byCanvas`: canvases named only where they may read the repo
 (or their own Scratch, `kind: "canvas"`), then canvases since deleted in one entry with no canvas
 (`kind: "deleted"`), then the canvases they may not know of in another (`kind: "hidden"`). An admin who reaches the workspace only through repos shared with them sees no other
-member here either. Only an admin sets the cap (403 `forbidden`). `billing` answers
-`{ status: "not_set_up", card: null, invoices: "not_set_up" }`, so the apps show the no-card
-state.
+member here either. Only an admin sets the cap (403 `forbidden`). While billing is off,
+`billing` answers `{ status: "not_set_up", card: null, invoices: "not_set_up" }`, so the apps
+show the no-card state. In observe it says the same, so an app that predates billing shows
+nothing as billed, and adds `gate`, `capWarning` and `pastDue: null`. When billing is on,
+`status` is `on`, and an admin also sees `card` (`{ brand, last4 }`) and `pastDue`
+(`{ since, reason, invoiceUrl }`); anyone else sees both as null. `invoices` stays `not_set_up`:
+invoices live in Stripe's portal.
 
 ## Notifications
 
@@ -2904,7 +3167,7 @@ Settings › Notifications chooses what pings a person and where. What Ponzu tel
 a row in their inbox (`notifications`), which the Mac watches live; a push to an iPhone is a
 delivery of that row (`notification_deliveries`), sent through Expo's push service. Every
 event in "What is worth a ping" below writes those rows and sends its pushes (see "Sending");
-billing's trigger is built and waits for billing to call it. Pushes stay off until
+billing's trigger is called by the billing gate, only while `PONZU_BILLING` is `on`. Pushes stay off until
 `EXPO_ACCESS_TOKEN` is set: without it every planned push is cancelled as `push_off`, and the
 inbox, the Mac's banners and the badge work regardless.
 

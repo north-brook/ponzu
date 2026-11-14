@@ -8,6 +8,7 @@ import { ThreadSkeleton } from "../cloud/thread/thread-view.tsx";
 import { useNow } from "../cloud/time.ts";
 import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { type CanvasPlaces, CanvasPlacesProvider } from "../cloud/ui/place-link.tsx";
+import { type BillingWorkspace, useBillingLine } from "./billing/line.ts";
 import { docShape, type OpenCanvas, useAccess, useSourceSelect } from "./canvas.tsx";
 import type { Host } from "./host.ts";
 import { usePonzu } from "./ponzu-query.tsx";
@@ -54,6 +55,7 @@ export const CanvasRail = memo(function CanvasRail({
   reveal = null,
   onRevealed,
   say,
+  billingWorkspace = null,
 }: {
   host: Host;
   open: OpenCanvas;
@@ -84,6 +86,8 @@ export const CanvasRail = memo(function CanvasRail({
   onRevealed?: (at: number) => void;
   /** Says over the window what didn't happen. */
   say: (notice: string) => void;
+  /** The canvas's workspace, for the line a billing blocker shows; none outside a window. */
+  billingWorkspace?: BillingWorkspace | null;
 }) {
   const canvasId = open.id;
   const { queries, mutations } = usePonzu();
@@ -110,6 +114,7 @@ export const CanvasRail = memo(function CanvasRail({
   const pictures = useSnapshot(open.pictures);
   const head = useLiveQuery("canvas.head", { canvasId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
+  const billing = useBillingLine(host, billingWorkspace, head?.agentBlocker);
   const now = useNow();
   // The file address moves when the canvas's file links are reset, with no op at all: the source
   // says so by publishing its state again, so it is followed here, not read once.
@@ -247,6 +252,7 @@ export const CanvasRail = memo(function CanvasRail({
         reveal={shownLine}
         {...(onRevealed ? { onRevealed } : {})}
         agent={agentActivity(head ?? open.fresh?.head)}
+        billing={billing}
         asks={asks}
         gate={gate}
         attachments={attachments}

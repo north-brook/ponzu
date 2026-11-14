@@ -28,6 +28,7 @@ import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { CanvasChrome } from "../cloud/window/canvas-chrome.tsx";
 import { useAnalytics } from "./analytics/provider.tsx";
 import { AskStore } from "./ask-store.ts";
+import type { BillingWall } from "./billing/wall.ts";
 import { hasPictureArea } from "./comment-picture.tsx";
 import { CommentPictures } from "./comment-pictures.ts";
 import type { Host } from "./host.ts";
@@ -90,6 +91,8 @@ export function useOpenCanvas(
   canvasId: string | null,
   say: (notice: string) => void,
   fresh: FreshCanvas | null = null,
+  /** The window's billing wall: a message it turns away at a limit is held there. */
+  wall: BillingWall | null = null,
 ): OpenCanvas | null {
   const [open, setOpen] = useState<OpenCanvas | null>(null);
   const { queryClient, queries, mutations } = usePonzu();
@@ -136,10 +139,11 @@ export function useOpenCanvas(
       focused: focusedNow.current,
       known,
       saying,
+      wall,
     });
     setOpen(canvas);
     return close;
-  }, [host, ponzu, actor, cache, canvasId]);
+  }, [host, ponzu, actor, cache, canvasId, wall]);
   // The source alone, not `open`: a closure here that read `open` would put it in this render's
   // scope, which the closures of the canvas opened next would then keep (see `openCanvas`).
   const openSource = open?.source;
@@ -167,6 +171,7 @@ function openCanvas({
   focused,
   known,
   saying,
+  wall,
 }: {
   host: Host;
   ponzu: ConstructorParameters<typeof ThreadStore>[0]["ponzu"];
@@ -176,6 +181,7 @@ function openCanvas({
   focused: boolean;
   known: FreshCanvas | null;
   saying: { readonly current: (notice: string) => void };
+  wall: BillingWall | null;
 }): { canvas: OpenCanvas; close: () => void } {
   const { api, live } = host;
   const source = new CloudSource({
@@ -186,7 +192,18 @@ function openCanvas({
     focused,
     ...(cache ? { cache } : {}),
   });
-  const thread = new ThreadStore({ ponzu, live, canvasId, meId: actor.id }).start();
+  const thread = new ThreadStore({
+    ponzu,
+    live,
+    canvasId,
+    meId: actor.id,
+    ...(wall
+      ? {
+          onRefused: (error: unknown, retry: () => void) =>
+            wall.refused(error, { kind: "message", run: retry }),
+        }
+      : {}),
+  }).start();
   if (known?.message) thread.seed(known.message, known.attachments);
   const asks = new AskStore({ ponzu, live, canvasId, onError: (m) => saying.current(m) });
   asks.start();

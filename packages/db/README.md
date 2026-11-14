@@ -209,7 +209,7 @@ People and access
 | `users` | A person: their WorkOS and GitHub identity, agent defaults, ping settings, onboarding steps. The GitHub account is who they are. | live |
 | `sessions` | The WorkOS sessions the sign-in exchange let in. A token is honored only for one of these; signing out deletes the row. | |
 | `github_user_tokens` | A person's GitHub token, encrypted. Used to ask GitHub what they can reach. `refresh_claimed_until` is the lock that lets one function instance at a time refresh it. | |
-| `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer, cap, period anchor. Keyed by the account; the installation id changes on a reinstall. `reconciled_at` is when the installation was last read as the App. | live |
+| `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer and card, cap, period anchor, the cached billing gate, the next close, past due. Keyed by the account; the installation id changes on a reinstall. `reconciled_at` is when the installation was last read as the App. | live |
 | `uninstalled_installations` | Installation ids GitHub said are gone. GitHub never reuses one, so a read that began before the uninstall cannot bring it back. | |
 | `memberships` | Who can reach a workspace, as GitHub last said, how (`github_access`: owner, member of its organization, or collaborator on some repos), and their role (admin or member). An owner is always an admin. | live |
 | `repos` | A repo the App can see: default branch, the base snapshot new canvases start from, its stack, ideas. | live |
@@ -217,7 +217,7 @@ People and access
 | `repo_secrets` | A repo's environment variables, encrypted. | |
 | `claude_accounts` | A person's own Claude: subscription or API key (encrypted, destroyed on disconnect while the row stays `revoked`), status, expiry, last known limits. | live |
 | `devices` | A phone or Mac to push to. | |
-| `auth_states` | Short-lived: a GitHub install in progress, or a Claude sign-in waiting for its code. A person has one Claude sign-in open at a time and starts so many an hour (`openClaudeSignIn`). | |
+| `auth_states` | Short-lived: a GitHub install in progress, a Claude sign-in waiting for its code, or a card being added on Stripe's Checkout page (`card_setup`). A person has one Claude sign-in open at a time and starts so many an hour (`openClaudeSignIn`); a workspace has one card setup open at a time (`beginCardSetup`), settled once (`settleCardSetup`). | |
 
 Canvases
 
@@ -249,8 +249,9 @@ Money
 | Table | What it is for | |
 |---|---|---|
 | `rate_cards` | The numbers of the credit model, by version. A price change is a new row. | |
-| `usage_events` | One metered thing: a stretch of awake sandbox time, or one model turn and its tokens. | |
-| `credit_ledger` | Every change to a workspace's credits: grants, use, top-ups, refunds. The balance is the sum. | |
+| `usage_events` | One metered thing: a stretch of awake sandbox time (or a piece of one, cut at a period end or hourly while billing is on, `cutAwake`), or one model turn and its tokens. The one record of use. | |
+| `credit_ledger` | What changes a workspace's free credits other than use: grants, adjustments (`adjustCredits`), later top-ups and refunds. No `use` row is written; use is `usage_events`. | |
+| `billing_periods` | One closed billing period of a workspace: its numbers frozen once (`beginPeriodClose`), its status, and its one Stripe invoice, stored as soon as Stripe makes it (`setPeriodInvoice`). Written only while billing is observe or on. | |
 
 Plumbing
 

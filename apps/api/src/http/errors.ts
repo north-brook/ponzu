@@ -192,6 +192,20 @@ export type ErrorCode =
    * Reads still work; send it again in a few minutes.
    */
   | "maintenance"
+  /**
+   * The workspace is at a billing limit (PONZU_BILLING on): its free credits are used up with no
+   * card, it reached its monthly cap, or a payment has failed for a week. Nothing was written.
+   * `details` has `reason`, `workspaceId`, `workspaceName`, `canManage`, `capUsd`, `billedCents`,
+   * `periodEnd` and `invoiceUrl`; the message is the sentence to show.
+   */
+  | "billing_required"
+  /**
+   * Billing is not on here (PONZU_BILLING is not `on`): there is no card to add and no portal
+   * to open. Nothing was written and Stripe was not asked.
+   */
+  | "billing_not_set_up"
+  /** The workspace has no Stripe customer yet, so there is no portal: add a card first. */
+  | "no_card"
   | "internal";
 
 /**

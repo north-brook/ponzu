@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { beginSandbox, moveSandbox, recordUsage } from "@ponzu/db";
+import { beginSandbox, moveSandbox, usageEvents } from "@ponzu/db";
+import { adjustWorkspaceCredits } from "../billing/adjust.ts";
 import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
 
@@ -32,7 +33,7 @@ afterAll(() => t.close());
 const as = async (login: string) => (await t.signInAs({ login })).headers;
 
 async function awake(login: string, canvasId: string, hours: number, at: string) {
-  await recordUsage(t.db, {
+  await t.db.insert(usageEvents).values({
     id: `test-${n++}`,
     workspaceId: ws.id,
     canvasId,
@@ -44,7 +45,6 @@ async function awake(login: string, canvasId: string, hours: number, at: string)
     payer: "ponzu",
     rateCardVersion: 1,
     occurredAt: new Date(at),
-    periodStart: new Date("2025-12-09T00:00:00Z"),
   });
 }
 
@@ -205,5 +205,25 @@ describe("the free allowance", () => {
       `select delta from credit_ledger where workspace_id = '${team.id}' and reason = 'grant'`,
     )) as unknown as { rows: { delta: number }[] };
     expect(grants.rows.map((row) => Number(row.delta))).toEqual([100, 100]);
+  });
+
+  test("grows by support's credit, shrinks by a correction, and answers as before without one", async () => {
+    const team = await workspaceWithRepo(t, { ivy: "admin", jon: "write" });
+    const before = await usage("ivy", team.id);
+    expect(before).toMatchObject({ freeCredits: 200, people: 2 });
+    const now = new Date(t.clock.now());
+    const credit = (credits: number) =>
+      adjustWorkspaceCredits(t.db, { workspaceId: team.id, credits, note: "Outage", now });
+
+    const { period } = await credit(50);
+    expect(period.start.toISOString()).toBe(before.period.start);
+    expect(await usage("ivy", team.id)).toMatchObject({ freeCredits: 250 });
+    await credit(-80);
+    // The answer has no new field: only the free credits move.
+    expect(await usage("ivy", team.id)).toEqual({ ...before, freeCredits: 170 });
+    await expect(credit(0)).rejects.toThrow("whole number");
+    await expect(
+      adjustWorkspaceCredits(t.db, { workspaceId: "ws_none", credits: 5, note: "x", now }),
+    ).rejects.toThrow("no workspace");
   });
 });

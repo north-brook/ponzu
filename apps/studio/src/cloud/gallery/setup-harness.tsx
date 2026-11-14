@@ -317,6 +317,7 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
         onManageCard={ignore}
         // Cards can't be added while billing is off, as plan-view.tsx leaves it out.
         onAddCard={data.billingOn === false ? undefined : ignore}
+        {...(data.usage.pastDue ? { onPayInvoice: ignore } : {})}
       />
     ),
     github: () => (

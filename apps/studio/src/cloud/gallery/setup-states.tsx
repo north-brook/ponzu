@@ -1,5 +1,6 @@
 /* Settings' sections in the states the boards don't draw, each in place at the modal's size. */
 import type { ReactNode } from "react";
+import type { PastDue } from "../settings/billing.ts";
 import type { SettingsSection } from "../settings/settings-modal.tsx";
 import * as f from "./fixtures.ts";
 import * as s from "./setup-fixtures.ts";
@@ -11,7 +12,10 @@ import {
 } from "./setup-harness.tsx";
 
 const team = (patch: Partial<SettingsData>): SettingsData => ({ ...TEAM_SETTINGS, ...patch });
-const failedPayment = { ...s.soloUsage.card!, failed: true };
+const failedPayment: PastDue = {
+  reason: "failed",
+  invoiceUrl: "https://invoice.stripe.com/i/acct_1/test_1",
+};
 
 const STATES: [string, SettingsSection, SettingsData][] = [
   [
@@ -121,7 +125,25 @@ const STATES: [string, SettingsSection, SettingsData][] = [
   [
     "Plan and usage · payment failed",
     "plan",
-    { ...SOLO_SETTINGS, usage: { ...s.soloUsage, card: failedPayment } },
+    { ...SOLO_SETTINGS, usage: { ...s.soloUsage, pastDue: failedPayment } },
+  ],
+  [
+    "Plan and usage · a payment needs confirming",
+    "plan",
+    {
+      ...SOLO_SETTINGS,
+      usage: { ...s.soloUsage, pastDue: { ...failedPayment, reason: "needs_confirmation" } },
+    },
+  ],
+  [
+    "Plan and usage · a payment failed, then the card was removed",
+    "plan",
+    { ...SOLO_SETTINGS, usage: { ...s.freeUsage, pastDue: failedPayment } },
+  ],
+  [
+    "Plan and usage · a wallet's card, with no digits",
+    "plan",
+    { ...SOLO_SETTINGS, usage: { ...s.soloUsage, card: { brand: "other", last4: null } } },
   ],
   ["Plan and usage · a team's member", "plan", team({ meId: f.maya.id, byPerson: null })],
   [

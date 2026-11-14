@@ -57,6 +57,8 @@ export const SECRET_ENV = [
   "PONZU_POSTHOG_PERSONAL_API_KEY",
   "EXPO_ACCESS_TOKEN",
   "RESEND_API_KEY",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
 ] as const;
 
 // --- desired ------------------------------------------------------------------------------------

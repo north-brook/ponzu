@@ -4,6 +4,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { CanvasMember, CanvasSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
+import type { BillingWorkspace } from "./billing/line.ts";
 import { BoardsView, CanvasChromeSlot, type OpenCanvas } from "./canvas.tsx";
 import type { Host } from "./host.ts";
 import { PullRequestConfirmations, PullRequestPane } from "./pull-request-pane.tsx";
@@ -48,6 +49,7 @@ export function useCanvasPanes({
   onClose,
   onConnectClaude,
   viewerIsAdmin = false,
+  billingWorkspace = null,
 }: {
   host: Host;
   me: Person;
@@ -86,6 +88,8 @@ export function useCanvasPanes({
   onClose: () => void;
   /** Its sign-in ran out (`expired`), or it isn't connected. */
   onConnectClaude?: (expired: boolean) => void;
+  /** The window's workspace, for the thread's line when a canvas waits on its billing. */
+  billingWorkspace?: BillingWorkspace | null;
 }): CanvasPanes | null {
   // Each is the open canvas's own: another canvas opens on its boards, where its own link or
   // the person left it, never on the last one's tab or board.
@@ -247,6 +251,7 @@ export function useCanvasPanes({
         onRevealed={setRevealed}
         say={say}
         {...(onConnectClaude ? { onConnectClaude } : {})}
+        billingWorkspace={billingWorkspace}
       />
     ) : null,
     pane: (

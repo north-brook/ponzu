@@ -598,6 +598,14 @@ export class FakeBackend {
       role,
       installed: workspace.installed,
       suspended: workspace.suspended,
+      // As the API: left out while billing is off, `ok` in observe (nothing is refused).
+      ...(this.features.billing === "off"
+        ? {}
+        : {
+            billingGate:
+              this.features.billing === "on" ? this.settings.gateOf(workspace) : ("ok" as const),
+            canManageBilling: role === "admin",
+          }),
     });
     /** The workspaces the person is in: those the App is or was on. */
     const mine = () =>
@@ -889,6 +897,8 @@ export class FakeBackend {
                 body.effort,
               );
             }
+            // Only a create that starts work (with its first message) meets the wall.
+            if (body.message) this.refuseAtLimit(workspace, person.id);
             const name = body.name ?? "Untitled";
             const doc: Doc = {
               ...emptyDoc(name),
@@ -1120,6 +1130,7 @@ export class FakeBackend {
                 `${missing} is not one of this canvas's files.`,
               );
             }
+            this.refuseAtLimit(this.workspaces.get(canvas.workspaceId)!, person.id);
             const attachments = refs.map((ref) => ({ ref, contentType: canvas.assets.get(ref)! }));
             const item = this.append(
               canvas,
@@ -1391,9 +1402,53 @@ export class FakeBackend {
           ),
         }),
       }),
+      billingMode: () => this.features.billing,
       changed: () => this.changed(),
       meChanged: () => this.changed(),
     };
+  }
+
+  /**
+   * The API's billing wall on a person's send (apps/api/src/billing/enforce.ts): only while
+   * billing is on, a workspace past a limit answers 402 `billing_required` and nothing is made.
+   */
+  private refuseAtLimit(workspace: FakeWorkspace, userId: string): void {
+    if (this.features.billing !== "on") return;
+    const gate = this.settings.gateOf(workspace);
+    if (gate === "ok") return;
+    const canManage = workspace.members.get(userId) === "admin";
+    const you = workspace.kind === "personal" && canManage;
+    const capUsd = this.settings.caps.get(workspace.id) ?? 100;
+    const message =
+      gate === "free_used"
+        ? you
+          ? "You've used this month's free credits."
+          : `${workspace.name} has used this month's free credits.`
+        : gate === "cap_reached"
+          ? you
+            ? `You've reached this month's $${capUsd} cap.`
+            : `${workspace.name} has reached this month's $${capUsd} cap.`
+          : you
+            ? "Your last payment didn't go through."
+            : `${workspace.name}'s last payment didn't go through.`;
+    const used = [...(this.settings.used.get(workspace.id)?.values() ?? [])].reduce(
+      (a, n) => a + n,
+      0,
+    );
+    const end = new Date(this.clock.now());
+    end.setUTCDate(1);
+    end.setUTCHours(0, 0, 0, 0);
+    end.setUTCMonth(end.getUTCMonth() + 1);
+    throw new ApiError(402, "billing_required", message, {
+      reason: gate,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      canManage,
+      capUsd,
+      billedCents: Math.max(0, used - workspace.members.size * 100) * 10,
+      periodEnd: end.toISOString(),
+      invoiceUrl: canManage ? (this.settings.pastDue.get(workspace.id)?.invoiceUrl ?? null) : null,
+    });
   }
 
   /**

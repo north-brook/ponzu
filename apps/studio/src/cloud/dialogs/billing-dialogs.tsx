@@ -1,14 +1,17 @@
 /*
- * The two billing walls a send can meet, each the next step and never a lock: the month's free
- * credits are used up and there is no card, or the month's cap is reached. Someone who can't pay
- * (a team's member) is told who can, and their prompt is kept.
+ * The billing walls a send can meet, each the next step and never a lock: the month's free
+ * credits are used up and there is no card, the month's cap is reached, or the last payment
+ * didn't go through. Someone who can't pay (a team's member) is told who can, and their prompt is
+ * kept. Settings' "Add a card" is the first wall's form with no prompt held.
+ *
+ * The card goes in on Stripe's Checkout page in the browser, not in fields here: Stripe's card
+ * fields refuse a page that isn't https, and the studio is served from ponzu-studio://app (the
+ * billing plan's departure from the mockup's inline fields). The dialog keeps the cap and its
+ * one button, and waits while the browser is open.
  */
-import { CreditCardIcon } from "@hugeicons/core-free-icons";
 import { type ReactNode, useId, useState } from "react";
 import { longDate, nextCap, parseCap } from "../settings/billing.ts";
-import { cn } from "../ui/cn.ts";
 import { TextField } from "../ui/field.tsx";
-import { Icon } from "../ui/icon.tsx";
 import {
   BlockingDialog,
   DialogActions,
@@ -17,8 +20,14 @@ import {
   DialogLabel,
 } from "./blocking-dialog.tsx";
 
-/** Sending the held prompt after the card or the cap is saved. */
+/** Sending the held prompt after the cap is saved. */
 export type WallStatus = "idle" | "submitting";
+
+/**
+ * Adding a card: the button, Stripe's page being asked for, or the browser open on it until the
+ * card comes back.
+ */
+export type CardStatus = "idle" | "opening" | "waiting";
 
 export interface FreeCreditsDialogProps {
   open: boolean;
@@ -27,17 +36,15 @@ export interface FreeCreditsDialogProps {
   workspaceName: string;
   /** A team's admin, or the person in their own workspace. */
   canAddCard: boolean;
-  /** Stripe's card fields, mounted in CardFields' frames. */
-  card: ReactNode;
-  /** Stripe says the card fields are filled in. */
-  cardComplete: boolean;
   /** What the cap starts at: $100. */
   defaultCapUsd: number;
-  status: WallStatus;
-  /** Stripe's message for a declined or invalid card. */
+  status: CardStatus;
+  /** Why the last try came to nothing: the card wasn't added, or Stripe couldn't be reached. */
   error: string | null;
-  /** Save the card and the cap, then send the held prompt. */
+  /** Open Stripe's page with the cap; the prompt sends once the card is added. */
   onSubmit: (capUsd: number) => void;
+  /** Stop waiting on the browser; the prompt stays held. */
+  onCancel: () => void;
 }
 
 /**
@@ -61,19 +68,55 @@ export function FreeCreditsDialog(props: FreeCreditsDialogProps) {
       open={open}
       onDismiss={onDismiss}
       title="You've used this month's free credits"
-      body="Add a card to keep going. You only pay for what you use."
+      body={
+        props.status === "waiting"
+          ? "Finish adding your card in your browser. Your prompt sends once it's added."
+          : "Add a card to keep going. You only pay for what you use."
+      }
     >
-      <CapForm
-        initialCap={props.defaultCapUsd}
-        billed={0}
+      <CardForm
+        defaultCapUsd={props.defaultCapUsd}
         status={props.status}
         error={props.error}
-        ready={props.cardComplete}
         submitLabel="Add card and continue"
         onSubmit={props.onSubmit}
-      >
-        {props.card}
-      </CapForm>
+        onCancel={props.onCancel}
+      />
+    </BlockingDialog>
+  );
+}
+
+export interface AddCardDialogProps {
+  open: boolean;
+  onDismiss: () => void;
+  defaultCapUsd: number;
+  status: CardStatus;
+  error: string | null;
+  onSubmit: (capUsd: number) => void;
+  onCancel: () => void;
+}
+
+/** Settings' "Add a card", and a canvas's line: the card and the cap, with nothing held. */
+export function AddCardDialog(props: AddCardDialogProps) {
+  return (
+    <BlockingDialog
+      open={props.open}
+      onDismiss={props.onDismiss}
+      title="Add a card"
+      body={
+        props.status === "waiting"
+          ? "Finish adding your card in your browser."
+          : "Ponzu bills this workspace each month for what passes its free credits."
+      }
+    >
+      <CardForm
+        defaultCapUsd={props.defaultCapUsd}
+        status={props.status}
+        error={props.error}
+        submitLabel="Add card"
+        onSubmit={props.onSubmit}
+        onCancel={props.onCancel}
+      />
     </BlockingDialog>
   );
 }
@@ -117,9 +160,8 @@ export function CapReachedDialog(props: CapReachedDialogProps) {
       <CapForm
         initialCap={nextCap(props.capUsd)}
         billed={props.billedUsd}
-        status={props.status}
+        busy={props.status === "submitting"}
         error={props.error}
-        ready
         submitLabel="Raise cap and continue"
         onSubmit={props.onSubmit}
       />
@@ -127,66 +169,115 @@ export function CapReachedDialog(props: CapReachedDialogProps) {
   );
 }
 
-/** Stripe's card fields, in frames styled as our own fields: number, then expiry and CVC. */
-export function CardFields({
-  number,
-  expiry,
-  cvc,
-}: {
-  number: ReactNode;
-  expiry: ReactNode;
-  cvc: ReactNode;
-}) {
-  const frame =
-    "flex h-10 min-w-0 items-center gap-2.5 rounded-9 bg-surface px-3 text-13 text-faint shadow-field focus-within:shadow-field-focus";
+export interface PaymentFailedDialogProps {
+  open: boolean;
+  onDismiss: () => void;
+  workspaceName: string;
+  /** An admin, who can pay it. */
+  canPay: boolean;
+  /** Opens Stripe's page for the invoice; the dialog stays until it is paid or dismissed. */
+  onPay: () => void;
+}
+
+/** The workspace's last payment didn't go through and its grace is over: pay it, and the prompt sends. */
+export function PaymentFailedDialog(props: PaymentFailedDialogProps) {
+  const { open, onDismiss, workspaceName, canPay } = props;
+  if (!canPay) {
+    return (
+      <AskAnAdmin
+        open={open}
+        onDismiss={onDismiss}
+        title={`${workspaceName}'s last payment didn't go through`}
+        body="Ask an admin to pay the invoice. Your prompt is saved."
+      />
+    );
+  }
   return (
-    <>
-      <div className={frame}>
-        <Icon icon={CreditCardIcon} step="inline" className="shrink-0 text-icon-soft" />
-        <div className="min-w-0 flex-1">{number}</div>
-      </div>
-      <div className="flex gap-2">
-        <div className={cn(frame, "flex-1")}>{expiry}</div>
-        <div className={cn(frame, "flex-1")}>{cvc}</div>
-      </div>
-    </>
+    <BlockingDialog
+      open={open}
+      onDismiss={onDismiss}
+      title="Your last payment didn't go through"
+      body="Pay the invoice to keep going. Your prompt is saved."
+    >
+      <DialogActions>
+        <DialogButton tone="raised" onClick={onDismiss}>
+          Not now
+        </DialogButton>
+        <DialogButton tone="primary" onClick={props.onPay}>
+          Pay invoice
+        </DialogButton>
+      </DialogActions>
+    </BlockingDialog>
+  );
+}
+
+/** The cap and the one button that opens Stripe's page; while it is open, the wait and Cancel. */
+function CardForm({
+  defaultCapUsd,
+  status,
+  error,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  defaultCapUsd: number;
+  status: CardStatus;
+  error: string | null;
+  submitLabel: string;
+  onSubmit: (capUsd: number) => void;
+  onCancel: () => void;
+}) {
+  const waiting = status === "waiting";
+  return (
+    <CapForm
+      initialCap={defaultCapUsd}
+      billed={0}
+      busy={status !== "idle"}
+      error={error}
+      submitLabel={waiting ? "Waiting for your card" : submitLabel}
+      onSubmit={onSubmit}
+      before={
+        waiting ? (
+          <DialogButton tone="raised" onClick={onCancel}>
+            Cancel
+          </DialogButton>
+        ) : null
+      }
+    />
   );
 }
 
 function CapForm({
   initialCap,
   billed,
-  status,
+  busy,
   error,
-  ready,
   submitLabel,
   onSubmit,
-  children,
+  before,
 }: {
   initialCap: number;
   billed: number;
-  status: WallStatus;
+  /** Saving, or waiting on the browser: the field holds and the button turns. */
+  busy: boolean;
   error: string | null;
-  /** What else must be filled in first: the card. */
-  ready: boolean;
   submitLabel: string;
   onSubmit: (capUsd: number) => void;
-  children?: ReactNode;
+  /** A raised button before the primary one. */
+  before?: ReactNode;
 }) {
   const [typed, setTyped] = useState(String(initialCap));
   const cap = parseCap(typed, billed);
   const id = useId();
-  const submitting = status === "submitting";
   return (
     <form
       className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
-        if (cap.ok && ready && !submitting) onSubmit(cap.usd);
+        if (cap.ok && !busy) onSubmit(cap.usd);
       }}
     >
-      <fieldset disabled={submitting} className="m-0 mt-0.5 flex flex-col gap-2 border-0 p-0">
-        {children}
+      <fieldset disabled={busy} className="m-0 mt-0.5 flex flex-col gap-2 border-0 p-0">
         <DialogLabel htmlFor={id}>Monthly spend cap</DialogLabel>
         <TextField
           id={id}
@@ -200,7 +291,8 @@ function CapForm({
         <DialogError>{error ?? (cap.ok || typed === "" ? null : cap.error)}</DialogError>
       </fieldset>
       <DialogActions>
-        <DialogButton tone="primary" type="submit" busy={submitting} disabled={!cap.ok || !ready}>
+        {before}
+        <DialogButton tone="primary" type="submit" busy={busy} disabled={!cap.ok}>
           {submitLabel}
         </DialogButton>
       </DialogActions>

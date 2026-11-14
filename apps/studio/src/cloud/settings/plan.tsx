@@ -12,6 +12,7 @@ import {
   money,
   type PersonUsage,
   parseCap,
+  pastDueWords,
   pastFreeWord,
   type Usage,
   usageBar,
@@ -66,6 +67,8 @@ export interface PlanSectionProps {
   onManageCard?: () => void;
   /** Left out while cards can't be added yet: the row says there is none, and offers nothing. */
   onAddCard?: () => void;
+  /** Stripe's page for the unpaid invoice, while a payment is past due. */
+  onPayInvoice?: () => void;
   /** Use by canvas, most first, for whoever may see it (an admin); left out, not shown. */
   byCanvas?: CanvasUsage[] | null;
 }
@@ -90,8 +93,10 @@ export function PlanSection({
   onCapChange,
   onManageCard,
   onAddCard,
+  onPayInvoice,
   byCanvas,
 }: PlanSectionProps) {
+  const pastDue = usage.pastDue ?? null;
   const billed = billedUsd(usage);
   // Before billing, use is told in credits, which are true, and never in dollars.
   const amount = (n: number) => (billingOn ? money(n * usage.creditUsd) : creditsText(n));
@@ -123,7 +128,9 @@ export function PlanSection({
           <PlanRow
             label="Card"
             action={
-              usage.card && onManageCard ? (
+              pastDue && onPayInvoice ? (
+                <RowIcon icon={ArrowUpRight01Icon} label="Pay invoice" onClick={onPayInvoice} />
+              ) : usage.card && onManageCard ? (
                 <RowIcon
                   icon={ArrowUpRight01Icon}
                   label="Manage in Stripe"
@@ -136,11 +143,17 @@ export function PlanSection({
               <>
                 <CardBrand brand={usage.card.brand} />
                 <span className="truncate">
-                  {BRAND_NAMES[usage.card.brand]} ending {usage.card.last4}
+                  {BRAND_NAMES[usage.card.brand]}
+                  {usage.card.last4 ? ` ending ${usage.card.last4}` : ""}
                   {team ? ` · ${team.name}` : ""}
                 </span>
-                {usage.card.failed ? <span className="text-danger">Payment failed</span> : null}
+                {pastDue ? (
+                  <span className="shrink-0 text-danger">{pastDueWords(pastDue)}</span>
+                ) : null}
               </>
+            ) : pastDue ? (
+              // The card was taken away after a payment failed: the row still says what is owed.
+              <span className="min-w-0 flex-1 truncate text-danger">{pastDueWords(pastDue)}</span>
             ) : (
               <>
                 <span className="flex-1 font-normal text-muted">No card yet</span>

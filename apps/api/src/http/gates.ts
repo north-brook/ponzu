@@ -1,4 +1,5 @@
 import type { UserActor } from "../auth/actor.ts";
+import { refuseSteerAtLimit } from "../billing/enforce.ts";
 import type { Deps } from "../deps/index.ts";
 import { maintenanceRefusal } from "./maintenance.ts";
 
@@ -16,7 +17,8 @@ import { maintenanceRefusal } from "./maintenance.ts";
  *
  *   rateLimit     always a pass-through (see below)
  *   maintenance   Ponzu is read-only while it updates: 503 `maintenance`
- *   billing       the workspace is at a billing limit: 402      (filled by W6 B2)
+ *   billing       the workspace is at a billing limit: 402 `billing_required` (billing/enforce.ts;
+ *                 only with PONZU_BILLING on, and never for an answer, which a running turn waits on)
  *
  * A gate refuses by throwing an `ApiError`, and writes nothing. Each lets everything through
  * until its feature fills it.
@@ -70,10 +72,13 @@ export const maintenanceSteerGate: RequestGate = async (deps) => {
   if (deps.features.maintenance === "read_only") throw maintenanceRefusal();
 };
 
+/** The workspace is at a billing limit (its cached gate), with billing on: 402 `billing_required`. */
+export const billingSteerGate: RequestGate = (deps, request) => refuseSteerAtLimit(deps, request);
+
 export const STEER_GATES: readonly NamedRequestGate[] = [
   { name: "rateLimit", gate: passThrough },
   { name: "maintenance", gate: maintenanceSteerGate },
-  { name: "billing", gate: passThrough },
+  { name: "billing", gate: billingSteerGate },
 ];
 
 /** Ask the gates in order; the first that refuses throws, and the rest are not asked. */

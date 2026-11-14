@@ -16,6 +16,7 @@ import {
   MIN_INVOICE_CENTS,
 } from "./credits.ts";
 import { type BillingGateInput, billingGate, GRACE_MS } from "./gate.ts";
+import { CUT_EVERY_MS, nextCut } from "./meter.ts";
 import { billingPeriod } from "./period.ts";
 import { countedPeople, ungranted, workspaceUsage } from "./usage.ts";
 
@@ -32,6 +33,7 @@ const CARD: RateCardNumbers = {
   sandboxCreditsPerAwakeHour: 5,
   freeCreditsPerMember: 100,
   defaultCapCents: 10_000,
+  capWarningFraction: 0.8,
 };
 const period = {
   start: new Date("2026-11-09T00:00:00Z"),
@@ -66,6 +68,7 @@ function read(
     people: ids.map((id, i) => person(id, i === 0 ? "admin" : "member")),
     canvases: ids.map((id) => ({ id: `cnv_${id}`, name: `${id}'s canvas`, readable: true })),
     granted: { userIds: [], departed: 0 },
+    adjustedCredits: 0,
     ...extra,
   };
 }
@@ -195,6 +198,61 @@ describe("whom the free credits are counted for", () => {
     );
     expect(ungranted(got)).toEqual(["ben"]);
     expect(countedPeople(got)).toBe(3);
+  });
+});
+
+describe("where the meter cuts", () => {
+  const anchor = new Date("2026-01-09T15:00:00Z");
+  const t = (iso: string) => new Date(iso);
+
+  test("not before an hour, and within one period", () => {
+    expect(nextCut(t("2026-11-20T10:00:00Z"), anchor, t("2026-11-20T10:59:59.999Z"))).toBeNull();
+  });
+
+  test("an hour on, at the last whole second of the stretch", () => {
+    expect(nextCut(t("2026-11-20T10:00:00.250Z"), anchor, t("2026-11-20T11:20:07.900Z"))).toEqual(
+      t("2026-11-20T11:20:07.250Z"),
+    );
+    expect(CUT_EVERY_MS).toBe(3_600_000);
+  });
+
+  test("at the end of the period it began in, once that has passed, however short", () => {
+    expect(nextCut(t("2026-12-08T23:55:00Z"), anchor, t("2026-12-09T00:00:30Z"))).toEqual(
+      t("2026-12-09T00:00:00Z"),
+    );
+    // Down for a month: the first period end first, then the next on the next cut.
+    expect(nextCut(t("2026-11-01T00:00:00Z"), anchor, t("2027-01-20T00:00:00Z"))).toEqual(
+      t("2026-11-09T00:00:00Z"),
+    );
+    expect(nextCut(t("2026-11-09T00:00:00Z"), anchor, t("2027-01-20T00:00:00Z"))).toEqual(
+      t("2026-12-09T00:00:00Z"),
+    );
+  });
+});
+
+describe("adjustments", () => {
+  test("support's credits add to the free credits, and a correction takes some away", () => {
+    // 64 hours is 320 credits; one person's 100 are free.
+    const plus = workspaceUsage(read({ ada: 64 }, { adjustedCredits: 50 }), period, viewer("ada"));
+    expect(plus).toMatchObject({ freeCredits: 150, billedCredits: 170, billedCents: 1700 });
+    const minus = workspaceUsage(
+      read({ ada: 64 }, { adjustedCredits: -30 }),
+      period,
+      viewer("ada"),
+    );
+    expect(minus).toMatchObject({ freeCredits: 70, billedCredits: 250, billedCents: 2500 });
+  });
+
+  test("free credits never go below zero, and none means as before", () => {
+    expect(freeCredits(1, 100, -250)).toBe(0);
+    expect(freeCredits(3, 100)).toBe(300);
+    expect(freeCredits(3, 100, 0)).toBe(300);
+    const usage = workspaceUsage(
+      read({ ada: 64 }, { adjustedCredits: -500 }),
+      period,
+      viewer("ada"),
+    );
+    expect(usage).toMatchObject({ freeCredits: 0, billedCredits: 320 });
   });
 });
 

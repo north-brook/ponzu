@@ -46,6 +46,7 @@
     "mdast-util-to-string": "4.0.0",
     "posthog-node": "^5.68.2",
     "resend": "6.37.0",
+    "stripe": "23.1.0",
     "universal-github-app-jwt": "2.2.2",
     "zod": "^4"
   },

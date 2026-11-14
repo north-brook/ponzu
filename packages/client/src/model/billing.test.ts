@@ -13,7 +13,7 @@ import {
 } from "./billing.ts";
 
 const periodEnd = new Date(2026, 11, 9, 12, 0).toISOString();
-const visa = { brand: "visa" as const, last4: "4242", failed: false };
+const visa = { brand: "visa" as const, last4: "4242" };
 
 // The solo board: 64 awake hours, 100 free credits, a $50 cap.
 const solo: Usage = {

@@ -65,6 +65,7 @@ import type { Fetch } from "../deps/fetch.ts";
 import { createGithub, type Github } from "../deps/github.ts";
 import { type Config, type Deps, randomIds } from "../deps/index.ts";
 import { noMail } from "../deps/mail.ts";
+import { noPayments } from "../deps/payments.ts";
 import { noPush } from "../deps/push.ts";
 import { noRateLimit } from "../deps/rate-limit.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
@@ -228,6 +229,7 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
     // Nothing here pings a phone.
     push: noPush,
     mail: noMail,
+    payments: noPayments,
     background: (_name: string, work: Promise<unknown>) => {
       background.push(work.catch(() => {}));
     },
@@ -780,6 +782,7 @@ describe.skipIf(!configured)("the agent's pull request, for real", () => {
       push: noPush,
       mail: noMail,
       rateLimit: noRateLimit,
+      payments: noPayments,
       // Every switch off, as the dev deployment has them.
       features: FEATURES_OFF,
       config: {

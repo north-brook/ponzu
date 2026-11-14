@@ -16,6 +16,8 @@ import {
 } from "@ponzu/db";
 import { parseSandboxName, type SandboxInfo, scopePrefix } from "@ponzu/sandbox";
 import type { ServerEvents } from "../analytics/events.ts";
+import { meterAwake } from "../billing/meter.ts";
+import { refreshBillingGates } from "../billing/refresh.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { notify } from "../notifications/notify.ts";
 import {
@@ -29,7 +31,7 @@ import {
 import { runnerTarget } from "./environment.ts";
 import { sandboxName } from "./orchestrate.ts";
 import { retire } from "./retire.ts";
-import { captureSlept, putToSleep, wakeIfPending } from "./stop.ts";
+import { awakeFor, captureSlept, putToSleep, wakeIfPending } from "./stop.ts";
 
 /*
  * The minute's look over every sandbox that costs something or is moving (docs/cloud.md, "The
@@ -47,6 +49,11 @@ import { captureSlept, putToSleep, wakeIfPending } from "./stop.ts";
  *   repair     a waking or stopping row left past its lease
  *
  * and every tenth minute, `reconcile` compares this database's names at Vercel with its rows.
+ * While billing is on (observe or on), the `meter` pass runs first, before any of these, and
+ * is no sandbox's step: it cuts long awake stretches at period ends and hourly
+ * (`billing/meter.ts`), and after them the billing gates of the workspaces that may have moved are
+ * worked out again (`gated`, `billing/refresh.ts`). While billing is off neither runs, and the
+ * counts name neither.
  * Each step is a move that holds to the state it moves from, so two sweeps at once, or a sweep
  * and a wake, cannot both act on one sandbox.
  */
@@ -122,7 +129,8 @@ export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepSt
   if (sandbox.state === "awake") {
     // Nothing more may run on the credential its runner holds, or for an owner who left.
     if (!row.claudeUsable || !row.ownerMember) return "stop";
-    const heard = Math.max(sandbox.awakeSince?.getTime() ?? 0, row.heardAt?.getTime() ?? 0);
+    // When it woke (`state_at`; the meter moves `awake_since` on as it cuts, and never this).
+    const heard = Math.max(sandbox.stateAt.getTime(), row.heardAt?.getTime() ?? 0);
     if (heard < now - DEAD_AFTER_MS) return "restart";
     const owes = owing(row, now);
     if (owes === "lapse") return "lapse";
@@ -157,7 +165,12 @@ export function extendBy(sandbox: Pick<SandboxRow, "sessionStartedAt" | "expires
   return Math.min(EXTEND_BY_MS, MAX_SESSION_MS - length - EXTEND_MARGIN_MS);
 }
 
-export type SweepCounts = Record<SweepStep | "reconciled", number>;
+export type SweepCounts = Record<SweepStep | "reconciled", number> & {
+  /** The meter's cuts: only while billing is on (observe or on). */
+  metered?: number;
+  /** Workspaces whose billing gate was worked out again: only while billing is on (observe or on). */
+  gated?: number;
+};
 
 export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
   const now = deps.clock.now();
@@ -174,6 +187,14 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
     repair: 0,
     reconciled: 0,
   };
+  if (deps.features.billing !== "off") {
+    try {
+      counts.metered = await meterAwake(deps, new Date(now));
+    } catch (error) {
+      deps.log.warn("sweep_failed", { step: "meter", error });
+      deps.analytics.exception(error, { sweep_step: "meter" });
+    }
+  }
   const rows = await listSandboxesToSweep(deps.db, { now: new Date(now) });
   await Promise.all(
     rows.map(async (row) => {
@@ -187,6 +208,15 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
       }
     }),
   );
+  // After the steps, so a stretch a sleep just metered counts.
+  if (deps.features.billing !== "off") {
+    try {
+      counts.gated = await refreshBillingGates(deps, new Date(now));
+    } catch (error) {
+      deps.log.warn("sweep_failed", { step: "billing_gate", error });
+      deps.analytics.exception(error, { sweep_step: "billing_gate" });
+    }
+  }
   if (new Date(now).getUTCMinutes() % RECONCILE_EVERY_MINUTES === 0) {
     try {
       counts.reconciled = await reconcile(deps);
@@ -402,7 +432,7 @@ async function followEnded(deps: JobDeps, sandbox: SandboxRow, sessionId: string
   if (!asleep) return false;
   await revokeRunnerTokens(deps.db, canvasId);
   deps.log.warn("sandbox_expired", { canvasId, sessionId });
-  const awakeMs = sandbox.awakeSince ? deps.clock.now() - sandbox.awakeSince.getTime() : 0;
+  const awakeMs = awakeFor(sandbox, deps.clock.now());
   await captureSlept(deps, canvasId, "expired", awakeMs);
   await wakeIfPending(deps, canvasId);
   return true;

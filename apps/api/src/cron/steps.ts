@@ -1,6 +1,7 @@
 import { recordOnce } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { archivesStep } from "./steps/archives.ts";
+import { closePeriodsStep } from "./steps/close-periods.ts";
 import { digestsStep } from "./steps/digests.ts";
 import { installationsStep } from "./steps/installations.ts";
 import { jobsStep } from "./steps/jobs.ts";
@@ -65,6 +66,7 @@ export const CRON_STEPS: readonly CronStep[] = [
   archivesStep,
   selfcheckStep,
   retentionStep,
+  closePeriodsStep,
 ];
 
 /**

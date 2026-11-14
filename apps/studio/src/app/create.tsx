@@ -15,6 +15,8 @@ import {
   type Repo,
 } from "../cloud/model.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
+import type { BillingWall, Held } from "./billing/wall.ts";
+import { useBillingWall } from "./billing/wall.tsx";
 import type { FreshCanvas } from "./canvas.tsx";
 import type { Host } from "./host.ts";
 import { Banner } from "./notices.tsx";
@@ -29,7 +31,10 @@ import { useClaudeConnect } from "./setup/claude-connect.ts";
  * first, uploads them to it, then says the message with them.
  *
  * What a send needs first opens over the window with the prompt kept, and the prompt goes once
- * it is done: a Claude not connected, or signed out. Nothing else blocks yet (no billing).
+ * it is done: a Claude not connected, or signed out. While billing is on, a send past the
+ * workspace's free credits or cap, or with a payment past due, is turned down with nothing made
+ * (402 `billing_required`): the billing wall opens with the prompt kept here, and sends it again,
+ * with the same create key, once the card is added, the cap raised or the invoice paid.
  */
 
 /** How long the pictures sent with a first message are kept for its bubble, in ms. */
@@ -94,6 +99,7 @@ export function CreateView({
   onLaunch,
   onLaunchFailed,
   onCreated,
+  onFirstMessageDropped,
   onAllowMore,
 }: {
   host: Host;
@@ -120,12 +126,19 @@ export function CreateView({
    * `messageFailed` when the first message didn't go.
    */
   onCreated: (canvas: FreshCanvas, messageFailed: boolean) => void;
+  /**
+   * A first message sent after its images and held at the billing wall came to nothing after
+   * all: the wall was dismissed, or the send failed once the limit lifted. Told as
+   * `messageFailed` is, since the prompt has already left the page.
+   */
+  onFirstMessageDropped?: () => void;
   onAllowMore: () => void;
 }) {
   const { queries, mutations } = usePonzu();
   const me = useQuery(queries.me());
   const defaults = useQuery(queries.claudeDefaults());
   const create = useMutation(mutations.createCanvas());
+  const wall = useBillingWall();
   // Handed over by the page in the workspace just left, or fresh.
   const [taken] = useState(() => (handoff?.workspaceId === workspaceId ? handoff : null));
   const [prompt, setPrompt] = useState(taken?.prompt ?? "");
@@ -240,7 +253,11 @@ export function CreateView({
         images: images.length,
       });
       pickedIdea.current = null;
-      const said = images.length ? await sayWithImages(host.api, canvas.id, text, images) : true;
+      const said = images.length
+        ? await sayWithImages(host.api, canvas.id, text, images, wall, () =>
+            onFirstMessageDropped?.(),
+          )
+        : true;
       createKey.current = newCreateKey();
       setPrompt("");
       // The thread shows them until it has the canvas's own copies.
@@ -260,13 +277,17 @@ export function CreateView({
             agentBlocker: canvas.agentBlocker,
           },
         },
-        !said,
+        // Held at the billing wall, it isn't lost: it goes once the limit lifts.
+        said === false,
       );
     } catch (failure) {
       // Back to the page as it was: the words, the images, the project; nothing travels back.
       // The page gives the caret back to the field as it shows it again (create-page.tsx).
       setLaunched(false);
       onLaunchFailed();
+      // At a billing limit nothing was made: the wall holds the prompt, and sends it again with
+      // the same create key once the limit lifts.
+      if (wall?.refused(failure, { kind: "create", run: () => latestSend.current() })) return;
       analytics.capture("notice shown", { notice: "canvas_not_made" });
       setError(
         failure instanceof ApiError && failure.code === "network"
@@ -410,13 +431,21 @@ function release(images: Picked[]) {
   for (const image of images) URL.revokeObjectURL(image.previewUrl);
 }
 
-/** Uploads the images to the new canvas, then says the message with them. */
+/**
+ * Uploads the images to the new canvas, then says the message with them. True once said; false
+ * when it wasn't, unless the billing wall held the message to send once its limit lifts (null).
+ * A held message that comes to nothing after all (the wall dismissed, or the send failing once
+ * the limit lifted) calls `dropped`, so the person is told as they would have been at once.
+ */
 async function sayWithImages(
   api: Api,
   canvasId: string,
   text: string,
   images: Picked[],
-): Promise<boolean> {
+  wall: BillingWall | null,
+  dropped: () => void,
+): Promise<boolean | null> {
+  let attachments: string[] | null = null;
   try {
     const uploaded = await Promise.all(
       images.map(async ({ file }) =>
@@ -427,10 +456,24 @@ async function sayWithImages(
         }),
       ),
     );
-    const attachments = uploaded.flatMap((file) => (file.ref ? [file.ref] : []));
+    attachments = uploaded.flatMap((file) => (file.ref ? [file.ref] : []));
     await api.canvases.sendMessage(canvasId, { text, attachments });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    const files = attachments;
+    if (!files || !wall) return false;
+    const held: Held = {
+      kind: "message",
+      run: async () => {
+        try {
+          await api.canvases.sendMessage(canvasId, { text, attachments: files });
+        } catch (again) {
+          // At a limit again, it is held again; anything else, it didn't go.
+          if (!wall.refused(again, held)) dropped();
+        }
+      },
+      dropped,
+    };
+    return wall.refused(error, held) ? null : false;
   }
 }

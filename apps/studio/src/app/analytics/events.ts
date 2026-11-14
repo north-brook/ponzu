@@ -93,7 +93,21 @@ export interface AppEvents {
   "notification shown": { kind: string; surface: "mac" };
   /** A banner clicked, and how long after the notification was made. */
   "notification opened": { kind: string; surface: "mac"; age_ms?: number };
+
+  /**
+   * A billing dialog opened: a send met a limit (`free_used`, `cap_reached`, `payment_failed`),
+   * or an admin chose to add a card in Settings or from a canvas's line (`add_card`). Only while
+   * billing is on. Never an amount or a workspace's name.
+   */
+  "billing dialog shown": { reason: BillingDialogReason };
+  /** It was closed without the card, cap or payment it asked for. */
+  "billing dialog dismissed": { reason: BillingDialogReason };
+  /** An admin opened Stripe's portal from Plan and usage. */
+  "billing portal opened": Record<string, never>;
 }
+
+/** Which billing dialog, by why it opened. */
+export type BillingDialogReason = "free_used" | "cap_reached" | "payment_failed" | "add_card";
 
 export type AppEventName = keyof AppEvents;
 
