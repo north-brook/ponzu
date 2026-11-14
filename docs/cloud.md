@@ -3971,9 +3971,10 @@ The API is deployed by a workflow, which applies the pending migrations to the d
 nobody deploys a branch to production. Both environments deploy from `main`. Dev deploys with
 `vercel deploy --environment dev`, never `--prod`, by `deploy-api.yml`'s dev job once the
 repository variable `API_DEPLOY` is set. Production deploys through the GitHub Environment
-`production`, which needs the founder's approval: the workflow's production job, off until the
-repository variable `API_DEPLOY_PRODUCTION` is set, which builds the deployment without the domain, checks it, and
-only then promotes it to `api.ponzu.design`. `vercel promote`, `vercel rollback` and
+`production`: the workflow's production job, off until the repository variable
+`API_DEPLOY_PRODUCTION` is set and run only after dev's has passed for the same commit, which
+builds the deployment without the domain, checks it, and only then promotes it to
+`api.ponzu.design`, promoting the one before it back if a check after fails. `vercel promote`, `vercel rollback` and
 `vercel alias set` belong to that job and the production runbook alone; dev is taken back by
 deploying an older commit to `dev`. Until the variables are set, the orchestrator runs the same
 steps by hand from `main` (apps/api/README.md, "Deploying"). Every deployment holds its environment's secrets, so only

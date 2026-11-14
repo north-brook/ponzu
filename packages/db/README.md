@@ -30,6 +30,14 @@ three migrations from before the rule are listed in the script with their reason
 checksums, so an edit to one of them is linted again. A rename below is a contract too: it
 needs its `-- contract:` line, and the old name kept working until no deployed API reads it.
 
+CI's "Migrations" job also judges a pull request's migration against the `main` it lands on
+(`scripts/ci/migration-guard.ts`: the next number, a snapshot chain that follows `main`'s, one
+migration, expand only, `lock_timeout` set before a lock on an existing table) and runs `main`'s
+own database and API tests on the new schema (`scripts/ci/migration-contract.ts`). When another
+pull request took the number first, `bun scripts/ci/migration-guard.ts renumber` regenerates the
+migration under the next one and puts its hand-written lines back. See docs/production.md,
+"Landing a change with a migration".
+
 A rename is written by hand. Run `bunx drizzle-kit generate --custom --name <name>`, write the
 SQL, and replace the body of the snapshot it wrote (a copy of the one before) with
 `generateDrizzleJson(schema, prevId)` from `drizzle-kit/api`, keeping its `id` and `prevId`; a

@@ -2,7 +2,7 @@
 
 The Mac app's main window for Ponzu Cloud, as components driven by props: no data fetching, no
 API, no Electron. The data layer maps the API and live queries onto the types in `model.ts` and
-passes them in. The local app's screens beside this folder are deleted at cutover.
+passes them in. The local app's screens that sat beside this folder were deleted at the cutover.
 
 The product's pure rules live in `@ponzu/client/model` (packages/client/src/model/), so the
 phone shows the same ones; their tests are there too. Each file marked "shared" below is a
@@ -79,7 +79,8 @@ window keeps it in `app/ui-state.ts`). The edge is the gutter between pane and c
 covers either. The toggles collapse and expand the same panels, easing while `data-pane-motion` is
 on the window; a drag never eases. Anything that lines up with a pane's edge (the chrome's blocks)
 reads its width from `--pane-sidebar` or `--pane-rail`, which a drag writes in the frame the panes
-move in, and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
+move in, on the elements marked `data-pane-widths` and never on anything that holds the canvas
+(a custom property changed there restyles every element of every board), and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
 `pane-motion` eases only while `data-pane-motion` is on, so nothing tagged with it trails a drag.
 Dragging one edge holds the other pane still (its panel disabled) and stops where the main pane
 reaches 400. Whenever the window lays the panes out itself (opening, a toggle, a window resize),
@@ -90,8 +91,8 @@ shortfall (`fitPanes`); what's remembered changes only when the person moves an 
 
 The chrome departs from the boards on purpose, at the founder's request: it draws no Ponzu
 lockup in any state, the sidebar toggle is the first thing at the left (on a Mac 8px past the
-traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76 to 104 and is
-centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
+traffic lights, which the shell puts at x 16 and centres on the chrome (y 12 since macOS 26,
+13 before it; `apps/desktop/src/traffic-lights.ts`), with the toggle centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
 the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
 on every tab. The chrome is 38px tall where the boards draw 44 (the founder's direction: more
 compact, its 28px controls and the traffic lights centred on it), so everything under it sits 6px
@@ -348,8 +349,9 @@ The create page's keys and caret:
   ladder (below), never a size and stroke by hand; color them with a text token. Brand marks are
   in `ui/marks.tsx`.
 - Motion: durations and easings are tokens; reduced motion stills every animation.
-- Fonts: `vite.config.ts` links the web fonts into every page (the app and the gallery) from one
-  URL; a new family or weight goes there, so the gallery always measures what ships.
+- Fonts: they ship with the app in `styles/fonts/`, declared in `fonts.css`, which `cloud.css`
+  brings into every page (the app and the gallery). A new family or weight goes there with its
+  files, so the gallery always measures what ships.
 - What is open or chosen (the open row, the selected result, the open "+") takes `bg-selected`,
   not `bg-canvas`: in dark the black canvas would read as a hole in the shell.
 - The grounds, at the founder's direction: the canvas (`--c-canvas`) is pure white or pure black,
@@ -360,8 +362,8 @@ The create page's keys and caret:
   shell with `bg-shell`, never `bg-chrome`: over the glass only `<html>` paints the tint, once.
   Raised things on the shell (the composer, cards, menus, popovers) stay solid. `bun
   scripts/glass-shots.ts <dir> [ids]` draws compositions solid and over a stand-in for the glass.
-- One way to style: the canvas keeps its own `pz:` build, and `studio.css` (the local app's)
-  doesn't scan this folder.
+- One way to style: the canvas keeps its own `pz:` build in `src/pz.css`, which scans only
+  `@ponzu/canvas`.
 
 ## The ladder
 
@@ -527,10 +529,8 @@ repaint something or say what isn't so. The usual swaps:
   the ideas are not tiles under the composer but take turns as its placeholder
   (`create/ideas.tsx`: each for `SUGGESTION_DWELL_MS`, the one before lifting away as the next
   rises in), put away by typing and taken into the field with Tab, to edit and send; and the
-  page sits on the canvas's dotted ground (`canvas-dots`, the same dots the canvas draws under
-  its boards with `--pz-dot`), since this is where a canvas starts. The dots are
-  `--c-canvas-dot`, 13% ink in light and 15% white in dark (the founder found 8% and 9% too
-  subtle), the same size and spacing, on every canvas. Nothing on the page moves when ideas
+  page sits on the canvas's plain ground (`--c-canvas`), since this is where a canvas starts.
+  Neither has dots: the founder had them taken off both. Nothing on the page moves when ideas
   arrive or don't.
 - The project selector is the statement's last words, not a chip under the composer (the
   founder's direction): the display face at 28 in ink with the owner and slash faint so the name
@@ -571,7 +571,7 @@ repaint something or say what isn't so. The usual swaps:
 - A send from the create page (the founder's direction; `create/flight.ts`, `create/landing.ts`).
   The moment it goes, before the API answers: the hero fades where it stood (the page keeps its
   width as the pane narrows), the new canvas's view comes (its chrome with the name it will have,
-  the main pane on the same dotted ground, and the thread's pane opening whatever it was left
+  the main pane on the same plain ground, and the thread's pane opening whatever it was left
   as, with the sent words as its first line and the agent waking), and the composer travels from
   the foot of the main pane to its home at the foot of the thread, changing size on the way.
   It is one card that moves: its surface, its + and its send button (which keep their corners

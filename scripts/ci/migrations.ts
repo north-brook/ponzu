@@ -11,8 +11,9 @@
  *
  * What counts as taking something away: DROP TABLE, DROP COLUMN, any RENAME, a column's type
  * changed (ALTER COLUMN … TYPE), SET NOT NULL, ADD COLUMN … NOT NULL with no DEFAULT or
- * GENERATED clause of its own (an older API's inserts leave it out), TRUNCATE, and DROP SCHEMA
- * or VIEW. In an ALTER TABLE the word COLUMN is optional, as it is to Postgres. Words inside
+ * GENERATED clause of its own (an older API's inserts leave it out), a column's DEFAULT
+ * dropped, TRUNCATE, DROP SCHEMA or VIEW, and DROP INDEX, TYPE, DOMAIN, EXTENSION, FUNCTION or
+ * SEQUENCE. In an ALTER TABLE the word COLUMN is optional, as it is to Postgres. Words inside
  * string literals count too, so dynamic SQL in a DO block (`EXECUTE format('… RENAME …')`) is
  * caught; comments do not, and comments are found the way Postgres finds them (E'…' escapes,
  * `$tag1$` dollar quotes, nested block comments).
@@ -155,6 +156,19 @@ const RULES: { rule: string; test: (code: string) => boolean }[] = [
   {
     rule: "DROP SCHEMA or VIEW",
     test: (c) => /\bDROP\s+(?:SCHEMA|VIEW|MATERIALIZED\s+VIEW)\b/.test(c),
+  },
+  // An older API's insert that leaves the column out relies on its default; without it a NOT
+  // NULL column refuses the row.
+  {
+    rule: "DROP DEFAULT",
+    test: (c) => /\bALTER\s+(?:COLUMN\s+)?(?:"[^"]*"|%I|\S+)\s+DROP\s+DEFAULT\b/.test(c),
+  },
+  // An older API's ON CONFLICT names a unique index, its search calls an extension's function,
+  // and a dropped type, domain or sequence takes its columns' defaults (or, with CASCADE, the
+  // columns) with it.
+  {
+    rule: "DROP INDEX, TYPE, DOMAIN, EXTENSION, FUNCTION or SEQUENCE",
+    test: (c) => /\bDROP\s+(?:INDEX|TYPE|DOMAIN|EXTENSION|FUNCTION|SEQUENCE)\b/.test(c),
   },
 ];
 

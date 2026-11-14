@@ -6,6 +6,12 @@ on:
   push:
     branches: [main, cloud]
   pull_request:
+  # Main merges through GitHub's merge queue (infra/github/ruleset-main.json): each entry is
+  # tested as main with the entries ahead of it and itself on top, and merges only when the
+  # required checks pass there too, so two pull requests that are green alone and break each
+  # other (or take the same migration number) cannot both land. Every job below runs there.
+  merge_group:
+    types: [checks_requested]
   # The pull requests image.yml and claude-code.yml open with GITHUB_TOKEN start no workflows;
   # they dispatch this on the branch instead, and it reports on the head commit as a push
   # would (every suite runs; nothing is cached).
@@ -15,15 +21,17 @@ permissions:
   contents: read
 
 # Merging into main requires (ruleset "Protect main") the commits, checks and
-# desktop package jobs. Each reports on every pull request: a suite a change
-# can't affect (scripts/ci/scope.ts) passes without doing its work, rather
-# than never reporting.
+# desktop package jobs, on the pull request and again on its merge-queue entry.
+# Each reports on every pull request and entry: a suite a change can't affect
+# (scripts/ci/scope.ts) passes without doing its work, rather than never
+# reporting.
 concurrency:
   # A pull request's runs share a group, and a newer push to it cancels the old head's. A
   # push to a branch is its own group, keyed by commit, and is never cancelled: grouped by
   # branch, a third quick merge would cancel the second's pending run, and when merges come
-  # quickly the commit that broke the branch would have no verdict of its own. The two
-  # kinds never share a group, so neither cancels the other.
+  # quickly the commit that broke the branch would have no verdict of its own. A merge-queue
+  # entry is keyed by its own commit the same way, and GitHub drops what it no longer needs.
+  # The kinds never share a group, so none cancels another.
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -62,8 +70,10 @@ jobs:
           BODY: ${{ github.event.pull_request.body }}
 
   scope:
-    # Which suites this pull request can affect (scripts/ci/scope.ts). A push
-    # runs everything. A suite whose scope is unknown runs: the jobs
+    # Which suites this pull request, or merge-queue entry, can affect
+    # (scripts/ci/scope.ts). An entry is judged by what it adds to the entry
+    # ahead of it (its base_sha), which is its own pull request's change. A
+    # push runs everything. A suite whose scope is unknown runs: the jobs
     # below skip only when this job answered false, so its failing never
     # passes them.
     name: Test scope
@@ -74,20 +84,20 @@ jobs:
       mobile: ${{ steps.scope.outputs.mobile || 'true' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         with:
           bun-version-file: package.json
       - id: scope
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE: ${{ github.event.merge_group.base_sha || format('origin/{0}', github.base_ref) }}
         run: |
-          bun scripts/ci/scope.ts "origin/$BASE_REF" > "$RUNNER_TEMP/scope"
+          bun scripts/ci/scope.ts "$BASE" > "$RUNNER_TEMP/scope"
           tee -a "$GITHUB_OUTPUT" < "$RUNNER_TEMP/scope"
 
   checks:
@@ -298,13 +308,96 @@ jobs:
           path: ${{ env.TIMINGS }}
           key: bun-timings-${{ github.sha }}
 
+  migrations:
+    # A change's migration, judged against the main it lands on: for a pull request, the base
+    # its merge commit was made with; in the merge queue, the entry ahead of it, so a number
+    # that entry took fails here before anything merges; for a push, the commit before it.
+    # The guard (scripts/ci/migration-guard.ts) fails a wrong number, a snapshot chain that
+    # does not follow main's, an edit to one of main's migrations, more than one new migration,
+    # a statement that is not expand only, and a lock on one of main's tables with no
+    # lock_timeout set first, and says how to renumber. The contract
+    # (scripts/ci/migration-contract.ts) runs that base's own database and API tests on the
+    # schema this change's migrations make, on PGlite and on this Postgres: a merge migrates
+    # production before its API is live, and the API from before the merge runs on the new
+    # schema meanwhile. Without a new migration both pass at once. "Check, typecheck, test"
+    # passes only when this did, so main's required check holds it.
+    name: Migrations
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ponzu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The base's tree is read from history.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: What this change lands on
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT" in
+            merge_group) base=$MERGE_GROUP_BASE ;;
+            # The merge commit's first parent: the base it was made with.
+            pull_request) base=$(git rev-parse HEAD^1) ;;
+            push)
+              base=$BEFORE
+              git cat-file -e "$base^{commit}" 2>/dev/null || base=$(git rev-parse HEAD^1)
+              ;;
+            *) base=$(git merge-base HEAD origin/main) ;;
+          esac
+          git cat-file -e "$base^{commit}"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          # Most changes touch no migration; the contract then passes at once and installs nothing.
+          if git diff --quiet "$base" HEAD -- packages/db/migrations; then
+            echo "migrations=unchanged" >> "$GITHUB_OUTPUT"
+          else
+            echo "migrations=changed" >> "$GITHUB_OUTPUT"
+          fi
+      # "Lint, typecheck, build" saves it. The contract installs the base's tree from it.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: steps.base.outputs.migrations == 'changed'
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - name: The migration is the next after main's, follows its chain, and is expand only
+        run: bun scripts/ci/migration-guard.ts check --base "$BASE"
+        env:
+          BASE: ${{ steps.base.outputs.base }}
+      - name: The API from before this change runs on its schema
+        # Runs even when the guard failed, so a lane learns both at once.
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        run: bun scripts/ci/migration-contract.ts --base "$BASE"
+        env:
+          BASE: ${{ steps.base.outputs.base }}
+          PONZU_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/ponzu_test
+
   test:
     # Main's ruleset requires this check by its name. It used to run the lint, typecheck,
-    # builds and tests in one job; they now run beside each other in the two above, and this
-    # passes only when both did, so the required check still fails when any of them does. The
-    # workflows' lint is held to it too, so a workflow actionlint rejects cannot merge.
+    # builds and tests in one job; they now run beside each other in the jobs above, and this
+    # passes only when each did, so the required check still fails when any of them does. The
+    # workflows' lint and the migrations job are held to it too, so a workflow actionlint
+    # rejects, or a migration the guard or the contract refuses, cannot merge.
     name: Check, typecheck, test
-    needs: [checks, tests, workflows]
+    needs: [checks, tests, workflows, migrations]
     if: ${{ !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
@@ -313,9 +406,10 @@ jobs:
           CHECKS: ${{ needs.checks.result }}
           TESTS: ${{ needs.tests.result }}
           WORKFLOWS: ${{ needs.workflows.result }}
+          MIGRATIONS: ${{ needs.migrations.result }}
         run: |
-          echo "lint, typecheck, build: $CHECKS; tests: $TESTS; workflows: $WORKFLOWS"
-          [ "$CHECKS" = success ] && [ "$TESTS" = success ] && [ "$WORKFLOWS" = success ]
+          echo "lint, typecheck, build: $CHECKS; tests: $TESTS; workflows: $WORKFLOWS; migrations: $MIGRATIONS"
+          [ "$CHECKS" = success ] && [ "$TESTS" = success ] && [ "$WORKFLOWS" = success ] && [ "$MIGRATIONS" = success ]
 
   database:
     # The cloud database's migrations and queries on a real Postgres. Every
