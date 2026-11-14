@@ -209,7 +209,7 @@ export function arriveLayer(root: ShadowRoot): HTMLElement {
   layer.dataset.pzArrive = "";
   layer.setAttribute("aria-hidden", "true");
   layer.style.cssText =
-    "all:initial;position:absolute;inset:0;overflow:hidden;pointer-events:none;--pz-board-radius:inherit;border-radius:var(--pz-board-radius,0)";
+    "all:initial;position:absolute;inset:0;overflow:hidden;pointer-events:none;--pz-board-radius:inherit;border-radius:var(--pz-board-corners,var(--pz-board-radius,0))";
   root.append(layer);
   return layer;
 }
