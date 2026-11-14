@@ -201,6 +201,7 @@ async function gesture(
   return {
     fps: value.during.fps,
     frameP95: value.during.frameP95,
+    missed: value.during.missed,
     longFrames: value.during.longFrames,
     settleMs: value.after.maxFrame,
     mainMs: round(t.mainMs),
@@ -272,8 +273,8 @@ async function thrice(run: () => Promise<Measured>): Promise<Measured> {
 const pinch = (s: Studio) =>
   gesture(s, () =>
     s.page.evaluate(async () => {
-      await window.__pz.wheel(60, -1.5, true);
-      await window.__pz.wheel(60, 1.5, true);
+      await window.__pz.wheel(60, -3, true);
+      await window.__pz.wheel(60, 3, true);
     }),
   );
 
@@ -281,8 +282,8 @@ const pinch = (s: Studio) =>
 const pan = (s: Studio) =>
   gesture(s, () =>
     s.page.evaluate(async () => {
-      await window.__pz.wheel(45, 12, false);
-      await window.__pz.wheel(45, -12, false);
+      await window.__pz.wheel(45, 24, false);
+      await window.__pz.wheel(45, -24, false);
     }),
   );
 
@@ -320,7 +321,7 @@ function canvasSuite(canvas: string, extra: Scenario[] = [], gestures = true): S
               run: (s: Studio) => pinch(s),
             },
             // In to about 3.3 times the zoom, and stop: every board on screen drawn again, bigger.
-            zoomAndStop(`${canvas}.zoom-in`, "Pinch in and stop", 40, -1.5),
+            zoomAndStop(`${canvas}.zoom-in`, "Pinch in and stop", 40, -3),
             {
               id: `${canvas}.pan`,
               title: "Pan",
@@ -437,7 +438,7 @@ const website: Suite = {
     resize("thread"),
     commitText,
     // From 100% out to about 16% in one gesture: the bitmap drawn again on the way.
-    zoomAndStop("website.zoom-out", "Pinch out a long way", 60, 1.5, 100),
+    zoomAndStop("website.zoom-out", "Pinch out a long way", 60, 3, 100),
   ]),
   // As the person had it: the two pages fitted, about 13%.
   setup: async (s) => {
@@ -577,6 +578,8 @@ const thread: Suite = {
           from,
         );
         m.inputP95 = round(percentile(keys, 0.95), 1);
+        // Typing draws a frame per key, at the keys' pace, not a gesture's: it has no frame rate.
+        for (const k of ["fps", "frameP95", "missed", "longFrames"]) delete m[k];
         await field.fill("");
         return m;
       },
@@ -711,21 +714,43 @@ const sandbox: Suite = {
       id: "sandbox.wake",
       title: "Sandbox wakes",
       headline: ["latencyMs", "commits"],
-      // A wake has no line of its own: the thread's working line at its foot says it.
-      run: (s) =>
-        thrice(() =>
+      // A wake has no line of its own: the thread's working line at its foot says it. On a
+      // canvas of its own, opened by a link with its thread pane open: one just made from the
+      // create page opens the pane only while it lands, then leaves it as the person had it.
+      run: async (s) => {
+        const canvasId = await seedCanvas(s.page, {
+          name: "Wake",
+          tokens: CORPUS_TOKENS,
+          boards: row("wk", ["tiny-card"]),
+          thread: (agent) => agent.say("Ready when you are."),
+        });
+        await linkTo(s.page, canvasId);
+        await boardsReady(s.page);
+        const rail = s.page.locator("#thread:not([inert])");
+        if (!(await rail.count())) {
+          await s.page.evaluate(() => window.ponzuFake!.command("toggle-thread"));
+          await rail.waitFor({ timeout: 10_000 });
+        }
+        await s.page.locator("#thread").getByText("Ready when you are.").waitFor();
+        await settled(s.page);
+        return thrice(() =>
           action(s, () =>
-            s.page.evaluate(async () => {
+            s.page.evaluate(async (id) => {
               const w = window.ponzuFake!;
-              const id = [...w.backend.canvases.keys()].at(-1)!;
               const says = () =>
                 document.querySelector("#thread")?.textContent?.includes("Waking up");
               w.backend.agent(id).wake();
-              while (!says()) await window.__pz.frame();
+              const end = performance.now() + 10_000;
+              while (!says()) {
+                if (performance.now() > end)
+                  throw new Error("The thread never said it was waking.");
+                await window.__pz.frame();
+              }
               w.backend.agent(id).idle();
-            }),
+            }, canvasId),
           ),
-        ),
+        );
+      },
     },
   ],
 };
