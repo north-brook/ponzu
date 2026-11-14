@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.2](https://github.com/north-brook/ponzu/compare/v2.4.1...v2.4.2) (2026-11-14)
+
+
+### Performance Improvements
+
+* opening and switching canvases, an agent's edit and the thread do less work ([#643](https://github.com/north-brook/ponzu/issues/643)) ([3e91304](https://github.com/north-brook/ponzu/commit/3e9130429bbf716bf8fada9f7577b701e3789b42))
+
 ## [2.4.1](https://github.com/north-brook/ponzu/compare/v2.4.0...v2.4.1) (2026-11-13)
 
 
