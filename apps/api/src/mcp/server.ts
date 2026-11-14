@@ -14,7 +14,7 @@ import type { McpTool, ToolAnswer, ToolContext } from "./tools.ts";
 
 export const SERVER_NAME = "ponzu";
 
-export const INSTRUCTIONS = `Ponzu is a canvas where Claude designs in HTML and CSS: brands, apps, pages, diagrams, whole features. People steer it with comments pinned on the boards. A canvas can start from one of the person's GitHub repositories, where its work lands on a branch and a pull request.
+export const INSTRUCTIONS = `Ponzu is a canvas where Claude makes brands, apps, pages, diagrams and whole features in HTML and CSS. People steer it with comments pinned on the boards. A canvas can start from one of the person's GitHub repositories, where its work lands on a branch and a pull request.
 
 Two ways to use a canvas from here:
 - Hand it to Ponzu's agent: create_canvas with a message (or send_message on one that exists), then wait_for_activity until it finishes or asks something, and read what it did with get_canvas and read_thread. It runs in its own sandbox on the person's Claude.
