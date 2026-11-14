@@ -130,6 +130,35 @@ test("a review names the reviewer and gives its line comments, quoted, where the
   );
 });
 
+test("a linked pull request's check or review says which it is, and that it isn't the canvas's to push to", () => {
+  const linked = { repository: "north/api" };
+  expect(
+    eventText(
+      event(
+        {
+          kind: "check",
+          payload: {
+            name: "lint",
+            conclusion: "failure",
+            url: null,
+            summary: null,
+            pullRequest: 7,
+            linked,
+          },
+        },
+        null,
+      ),
+    ),
+  ).toBe(
+    `A check failed on north/api#7, a pull request linked to this canvas: "lint" (failure).\nIt isn't this canvas's own pull request, so you can't push to it. Change the canvas if this calls for it, and say what it means for the work here.`,
+  );
+  // As the webhook kept a review before it named the reviewer as an object, with no comments.
+  const old = { state: "approved", reviewer: "grace", body: "", url: null, pullRequest: 7, linked };
+  expect(eventText(event({ kind: "review", payload: old as never }, null))).toStartWith(
+    "Review from @grace on north/api#7, a pull request linked to this canvas: approved it.\nIt isn't",
+  );
+});
+
 test("an answer nobody waits for says again what it answers", () => {
   const plan = { kind: "plan" as const, payload: { plan: "1. Draw\n2. Ship" } };
   expect(

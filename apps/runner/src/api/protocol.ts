@@ -389,6 +389,19 @@ export interface CheckEvent {
   url: string | null;
   /** The check's own summary, or the end of its log, clipped. */
   summary: string | null;
+  /** The pull request's number. */
+  pullRequest?: number;
+  /** Set for a pull request linked to the canvas, not its branch's own (`LinkedFrom`). */
+  linked?: LinkedFrom;
+}
+
+/**
+ * A check or review on a pull request linked to the canvas (docs/cloud.md, "Linked pull
+ * requests"): someone else's, which the agent can read but not push to.
+ */
+export interface LinkedFrom {
+  /** owner/name */
+  repository: string;
 }
 
 /** Someone reviewed the pull request. */
@@ -400,6 +413,10 @@ export interface ReviewEvent {
   url: string | null;
   /** The line comments that came with it: the first `MAX_REVIEW_COMMENTS`, each body clipped. */
   comments: ReviewComment[];
+  /** The pull request's number. */
+  pullRequest?: number;
+  /** Set for a pull request linked to the canvas, not its branch's own. */
+  linked?: LinkedFrom;
 }
 
 export interface ReviewComment {

@@ -2482,8 +2482,11 @@ insert, without a lock, so two links at the same moment can go one past it. Unli
 `check_run`, `check_suite`, `pull_request_review`) read again each link of the pull requests
 they name, found by the repo's GitHub id and the number (any head, forks included: a link is the
 pull request its URL names), in the same two-second windows, as a `pull_request.refresh` job keyed
-`link:<canvas>:<repo>:<number>@<time>`. Nothing about a linked pull request reaches the canvas's
-agent: it didn't open it. A push to the default branch reads only the canvases' own, not links,
+`link:<canvas>:<repo>:<number>@<time>`. A failed check and a review reach the canvas's agent as
+its own pull request's do (`tellCanvases`: `next`, a review only from someone GitHub says can
+push to the linked pull request's repo, and nothing once the canvas is settled), with
+`linked: { repository }` on the event, so the agent is told which pull request it is and that it
+can't push to it. An approval on a link pings nobody. A push to the default branch reads only the canvases' own, not links,
 so a link's mergeability can lag until its next webhook or the sweep. `recordLinkedRead` keeps
 only the newest read (the same rule as `pr_read_at`; a merge is the last word), sets
 `finished_at` the first time it is merged or closed (and clears it if reopened), and writes a
