@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/north-brook/ponzu/compare/v2.5.0...v2.5.1) (2026-11-14)
+
+
+### Performance Improvements
+
+* **canvas:** a zoom restyles and repaints almost nothing, and each board contains its own work ([#646](https://github.com/north-brook/ponzu/issues/646)) ([dde2352](https://github.com/north-brook/ponzu/commit/dde2352abd2231cfb9df899666706005b7b471e6))
+
 ## [2.5.0](https://github.com/north-brook/ponzu/compare/v2.4.2...v2.5.0) (2026-11-14)
 
 
