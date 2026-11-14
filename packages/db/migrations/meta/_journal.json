@@ -232,6 +232,13 @@
       "when": 1794584483679,
       "tag": "0032_email",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794591932848,
+      "tag": "0033_public_repo_read",
+      "breakpoints": true
     }
   ]
 }
