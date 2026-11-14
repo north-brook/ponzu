@@ -20,7 +20,14 @@ import {
   type ThreadItem,
   type TurnRecord,
 } from "@ponzu/runner/protocol";
-import { type AnswerBody, type Api, SEARCH_GROUPS, SEARCH_QUERY_MAX } from "../api.ts";
+import {
+  type AnswerBody,
+  type Api,
+  type LinkedPullRequest,
+  type LinkResult,
+  SEARCH_GROUPS,
+  SEARCH_QUERY_MAX,
+} from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError, abortError, networkError } from "../errors.ts";
 import { createLive, type Live, MAX_LIVE_QUERIES } from "../live/live.ts";
@@ -128,6 +135,8 @@ export interface FakeCanvas {
   branch: string | null;
   /** Its branch and pull request on GitHub; null for Scratch. */
   github: FakePullRequests | null;
+  /** The pull requests it links besides its branch's, the first linked first. */
+  linked: LinkedPullRequest[];
   /** The files people uploaded to it: `assets/<name>` to their type. */
   assets: Map<string, string>;
   /** The pictures of people's comments, `comments/<name>` to their bytes, by upload id. */
@@ -916,6 +925,7 @@ export class FakeBackend {
               assetKeyRotatedAt: null,
               branch,
               github: null,
+              linked: [],
               assets: new Map(),
               pictures: new Map(),
               stops: [],
@@ -1309,6 +1319,43 @@ export class FakeBackend {
           close: (id, number) => call(() => github(writable(id)).close(number)),
           updateBranch: (id, body) => call(() => github(writable(id)).updateBranch(body.headSha)),
         },
+        pullRequests: {
+          list: (id) =>
+            call(() => {
+              const canvas = readable(id);
+              const pr = canvas.github?.row;
+              return {
+                branch:
+                  pr && pr.prNumber !== null && pr.prState !== null
+                    ? {
+                        number: pr.prNumber,
+                        state: pr.prState,
+                        checks: pr.prChecks,
+                        mergeable: pr.prMergeable,
+                        autoMerge: pr.prAutoMerge,
+                      }
+                    : null,
+                linked: [...canvas.linked],
+              };
+            }),
+          link: (id, urls) =>
+            call(() => {
+              const canvas = writable(id);
+              return { results: urls.map((url) => this.link(canvas, person, url)) };
+            }),
+          unlink: (id, repoId, number) =>
+            call(() => {
+              const canvas = writable(id);
+              const at = canvas.linked.findIndex(
+                (pr) => pr.repoId === repoId && pr.number === number,
+              );
+              if (at < 0) {
+                throw new ApiError(404, "not_found", "This canvas doesn't link that pull request.");
+              }
+              canvas.linked.splice(at, 1);
+              this.touch(canvas);
+            }),
+        },
       },
       live: (queries) =>
         call(() => {
@@ -1516,6 +1563,8 @@ export class FakeBackend {
             pr_number: head.prNumber,
             pr_state: head.prState,
             pr_checks: head.prChecks,
+            pr_linked_count: head.prLinkedCount,
+            pr_linked_open: head.prLinkedOpen,
             last_activity_at: visible.lastActivityAt,
             created_at: visible.createdAt,
             asset_key_rotated_at: visible.assetKeyRotatedAt,
@@ -1543,6 +1592,8 @@ export class FakeBackend {
           pr_checks: head.prChecks,
           pr_mergeable: head.prMergeable,
           pr_auto_merge: head.prAutoMerge,
+          pr_linked_count: head.prLinkedCount,
+          pr_linked_open: head.prLinkedOpen,
           last_activity_at: head.lastActivityAt,
           asset_key_rotated_at: canvas!.assetKeyRotatedAt,
           agent_blocker: head.agentBlocker,
@@ -1635,8 +1686,148 @@ export class FakeBackend {
       prChecks: pr?.prChecks ?? ("none" as const),
       prMergeable: pr?.prMergeable ?? null,
       prAutoMerge: pr?.prAutoMerge ?? false,
+      prLinkedCount: canvas.linked.length,
+      prLinkedOpen: canvas.linked.filter((linked) => !isFinished(linked.state)).length,
       lastActivityAt: canvas.lastActivityAt,
     };
+  }
+
+  /**
+   * Links one pull request to the canvas as the API does (apps/api/src/pull-requests/links.ts):
+   * a repo of its workspace the person can read, at most twenty. GitHub is played by making the
+   * pull request up, open, as `finishLinked` later changes it.
+   */
+  private link(canvas: FakeCanvas, person: FakePerson, url: string): LinkResult {
+    const refuse = (code: Extract<LinkResult, { result: "refused" }>["code"], message: string) =>
+      ({ ref: url, result: "refused", code, message }) as const;
+    const match = /^https?:\/\/(?:www\.)?github\.com\/([\w.-]+\/[\w.-]+)\/pull\/([1-9]\d*)/.exec(
+      url.trim(),
+    );
+    if (!match) {
+      return refuse(
+        "invalid_url",
+        "That isn't a GitHub pull request link. Pass one like https://github.com/owner/repo/pull/12.",
+      );
+    }
+    const fullName = match[1]!;
+    const number = Number(match[2]);
+    const workspace = this.workspaces.get(canvas.workspaceId)!;
+    const repo = workspace.repos.find((r) => r.fullName.toLowerCase() === fullName.toLowerCase());
+    if (!repo || !workspace.installed || workspace.suspended) {
+      return refuse(
+        "repo_not_in_workspace",
+        `Ponzu's GitHub App isn't installed on ${fullName} for ${workspace.name}, so Ponzu can't follow that pull request. Link a pull request in one of ${workspace.name}'s repositories, or ask the person to add ${fullName} to Ponzu on GitHub.`,
+      );
+    }
+    if (repoPermission(repo, person.id) === "none") {
+      return refuse(
+        "forbidden",
+        `${person.name ?? person.githubLogin} can't read ${repo.fullName} on GitHub, so Ponzu won't link it.`,
+      );
+    }
+    if (repo.id === canvas.repoId && canvas.github?.row.prNumber === number) {
+      return {
+        ref: url,
+        result: "alreadyLinked",
+        alreadyLinked: true,
+        branch: true,
+        pullRequest: null,
+        message: `#${number} in ${repo.fullName} is this canvas's own pull request, from its branch. It already counts toward settling the canvas.`,
+      };
+    }
+    const existing = canvas.linked.find((pr) => pr.repoId === repo.id && pr.number === number);
+    if (existing) {
+      return {
+        ref: url,
+        result: "alreadyLinked",
+        alreadyLinked: true,
+        branch: false,
+        pullRequest: existing,
+        message: `${repo.fullName}#${number} is already linked to this canvas.`,
+      };
+    }
+    if (canvas.linked.length >= 20) {
+      return refuse(
+        "too_many_pull_requests",
+        "This canvas already links 20 pull requests, the most it can. Unlink one it no longer needs, then link this one.",
+      );
+    }
+    const linked: LinkedPullRequest = {
+      repoId: repo.id,
+      repository: repo.fullName,
+      number,
+      title: `Pull request #${number}`,
+      url: `https://github.com/${repo.fullName}/pull/${number}`,
+      state: "open",
+      checks: "none",
+      mergeable: null,
+      autoMerge: false,
+      source: "person",
+      via: null,
+      linkedAt: this.now(),
+      linkedBy: {
+        id: person.id,
+        name: person.name ?? person.githubLogin,
+        avatarUrl: person.avatarUrl,
+      },
+    };
+    canvas.linked.push(linked);
+    const payload = {
+      type: "pull_request_linked",
+      repository: repo.fullName,
+      number,
+      url: linked.url,
+      title: linked.title,
+      state: linked.state,
+      via: null,
+    } as const;
+    this.append(
+      canvas,
+      { kind: "notice", payload },
+      null,
+      false,
+      `ti_prl-${repo.id}-${number}-${Date.parse(linked.linkedAt)}`,
+    );
+    this.touch(canvas);
+    return { ref: url, result: "linked", pullRequest: linked };
+  }
+
+  /**
+   * GitHub merged or closed a pull request the canvas links: the canvas settles if that leaves
+   * all of its pull requests done and one merged, as the API's `settleWhenDone` does.
+   */
+  finishLinked(canvasId: string, repoId: string, number: number, state: "merged" | "closed") {
+    const canvas = this.canvases.get(canvasId);
+    const linked = canvas?.linked.find((pr) => pr.repoId === repoId && pr.number === number);
+    if (!canvas || !linked || isFinished(linked.state)) return;
+    linked.state = state;
+    const payload = {
+      type: "pull_request",
+      repository: linked.repository,
+      number,
+      url: linked.url,
+      title: linked.title,
+      state,
+    } as const;
+    this.append(
+      canvas,
+      { kind: "notice", payload },
+      null,
+      false,
+      `ti_pr-${repoId}-${number}-${state}`,
+    );
+    this.settleWhenDone(canvas);
+    this.touch(canvas);
+  }
+
+  /** Settles an active canvas whose pull requests are all merged or closed, one of them merged. */
+  private settleWhenDone(canvas: FakeCanvas) {
+    if (canvas.settledAt) return;
+    const states = [
+      ...(canvas.github?.row.prState ? [canvas.github.row.prState] : []),
+      ...canvas.linked.map((pr) => pr.state),
+    ];
+    if (states.every(isFinished) && states.includes("merged")) canvas.settledAt = this.now();
   }
 
   /** The canvas's branch and pull request, saying in its thread what GitHub does to it. */
@@ -1649,10 +1840,8 @@ export class FakeBackend {
         const payload = { type: "pull_request", number, url, title, state } as const;
         this.append(canvas, { kind: "notice", payload }, null, false, id);
       },
-      // A merge settles the canvas, as a read that finds it merged does.
-      merged: () => {
-        canvas.settledAt = this.now();
-      },
+      // A merge settles the canvas once every pull request it links is done too.
+      merged: () => this.settleWhenDone(canvas),
       changed: () => this.touch(canvas),
     });
   }
@@ -1898,4 +2087,8 @@ export function fakeSession(person: FakePerson): Session {
       set({ status: "signed_out" });
     },
   };
+}
+
+function isFinished(state: string): boolean {
+  return state === "merged" || state === "closed";
 }

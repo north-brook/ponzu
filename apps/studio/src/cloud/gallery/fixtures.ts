@@ -174,6 +174,8 @@ export const pr412: PullRequestSummary = {
   checks: "passing",
   mergeable: true,
   autoMerge: false,
+  linkedCount: 0,
+  linkedOpen: 0,
 };
 const pr405: PullRequestSummary = {
   number: 405,
@@ -181,6 +183,8 @@ const pr405: PullRequestSummary = {
   checks: "running",
   mergeable: null,
   autoMerge: false,
+  linkedCount: 0,
+  linkedOpen: 0,
 };
 
 function canvas(
@@ -313,6 +317,8 @@ export const settled: CanvasSummary[] = [
       checks: "passing",
       mergeable: true,
       autoMerge: false,
+      linkedCount: 0,
+      linkedOpen: 0,
     },
     lastActivityAt: minutesAgo(60 * 24 * (5 + i * 16)),
     settledAt: minutesAgo(60 * 24 * (5 + i * 16)),

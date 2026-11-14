@@ -275,6 +275,16 @@ export const PR = {
   none: "This canvas has no pull request yet.",
   /** VoiceOver, on the stack's button and the sheet. */
   button: (number: number) => `Pull request #${number}`,
+  /** VoiceOver, on the stack's button, when the canvas links pull requests too. */
+  buttonWithLinked: (number: number | null, linked: number) =>
+    number === null
+      ? linked === 1
+        ? "1 linked pull request"
+        : `${linked} linked pull requests`
+      : `Pull request #${number} and ${linked} linked`,
+  /** The sheet's list of the pull requests the canvas links, read-only. */
+  linked: "Linked pull requests",
+  linkedBy: (who: string) => `linked by ${who}`,
   loading: "Loading the pull request",
 } as const;
 

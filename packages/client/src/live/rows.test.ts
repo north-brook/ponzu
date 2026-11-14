@@ -41,6 +41,8 @@ test("a row as Realtime sends it becomes one the apps read", () => {
     pr_checks: "passing",
     pr_mergeable: true,
     pr_auto_merge: false,
+    pr_linked_count: 3,
+    pr_linked_open: "1",
     last_activity_at: new Date("2026-11-10T12:00:00Z"),
     asset_key_rotated_at: null,
     agent_blocker: "claude_limited",
@@ -53,6 +55,7 @@ test("a row as Realtime sends it becomes one the apps read", () => {
   expect(head.agentBlockedUntil).toBe("2026-11-10T16:00:00.000Z");
   expect(head.lastActivityAt).toBe("2026-11-10T12:00:00.000Z");
   expect(head.agentArtboards).toEqual(["ab_1"]);
+  expect([head.prLinkedCount, head.prLinkedOpen]).toEqual([3, 1]);
 
   const thread = DECODE["canvas.thread"]({
     id: "ti_1",

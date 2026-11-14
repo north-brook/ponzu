@@ -32,6 +32,7 @@ import { Prose } from "../ui/prose.tsx";
 import { Skeleton } from "../ui/skeleton.tsx";
 import { orderChecks } from "./diff.ts";
 import { Files, MoreOnGithub } from "./files.tsx";
+import { LinkedSection, type LinkedSectionProps } from "./linked.tsx";
 
 /** The tab's content: the pull request, or the moments before it arrives or when it can't. */
 export type PullRequestTabState =
@@ -75,6 +76,7 @@ export function PullRequestView({
   onLoadDiff,
   summary = null,
   menu = null,
+  linked = null,
 }: {
   state: PullRequestTabState;
   viewerLogin: string;
@@ -88,6 +90,8 @@ export function PullRequestView({
    */
   summary?: string | null;
   menu?: PullRequestMenu | null;
+  /** The pull requests the canvas links besides this one, under its details. */
+  linked?: Omit<LinkedSectionProps, "onOpenLink"> | null;
 }) {
   // Whether this tab waited on GitHub: what it says then settles in. A tab that had it at once
   // (opened before, its last answer kept) just shows it.
@@ -116,6 +120,7 @@ export function PullRequestView({
           ) : (
             <DetailsSkeleton rows={6} />
           )}
+          {linked ? <LinkedSection {...linked} onOpenLink={onOpenLink} /> : null}
         </div>
         <div className={cn(COLUMN, "gap-2.5")} aria-hidden>
           <Skeleton className="h-3.5 w-12 rounded-3" />
@@ -202,6 +207,7 @@ export function PullRequestView({
             ))}
           </Section>
         ) : null}
+        {linked ? <LinkedSection {...linked} onOpenLink={onOpenLink} /> : null}
       </div>
       <div className={COLUMN}>
         <Files
@@ -214,6 +220,30 @@ export function PullRequestView({
           onOpenLink={onOpenLink}
           onLoadDiff={onLoadDiff}
         />
+      </div>
+    </Columns>
+  );
+}
+
+/**
+ * The tab of a canvas with no pull request from its branch, only linked ones: the linked
+ * section alone, in the details column's place.
+ */
+export function LinkedPullRequestsView({
+  linked,
+  onOpenLink: open,
+}: {
+  linked: Omit<LinkedSectionProps, "onOpenLink">;
+  onOpenLink: (url: string) => void;
+}) {
+  const onOpenLink = (url: string) => {
+    const href = safeHref(url);
+    if (href) open(href);
+  };
+  return (
+    <Columns>
+      <div className={cn(COLUMN, "gap-[26px]")}>
+        <LinkedSection {...linked} onOpenLink={onOpenLink} />
       </div>
     </Columns>
   );

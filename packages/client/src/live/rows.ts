@@ -82,6 +82,8 @@ export const LIVE_COLUMNS = {
     "pr_number",
     "pr_state",
     "pr_checks",
+    "pr_linked_count",
+    "pr_linked_open",
     "last_activity_at",
     "created_at",
     "asset_key_rotated_at",
@@ -105,6 +107,8 @@ export const LIVE_COLUMNS = {
     "pr_checks",
     "pr_mergeable",
     "pr_auto_merge",
+    "pr_linked_count",
+    "pr_linked_open",
     "last_activity_at",
     "asset_key_rotated_at",
     "agent_blocker",
@@ -247,6 +251,9 @@ export interface CanvasListRow {
   prNumber: number | null;
   prState: PrState | null;
   prChecks: PrChecks;
+  /** How many pull requests the canvas links, and how many of them are not merged or closed. */
+  prLinkedCount: number;
+  prLinkedOpen: number;
   lastActivityAt: string;
   createdAt: string;
   /** When its file links were last reset: its previews' address changed then. */
@@ -273,6 +280,9 @@ export interface CanvasHeadRow {
   prChecks: PrChecks;
   prMergeable: boolean | null;
   prAutoMerge: boolean;
+  /** How many pull requests the canvas links, and how many of them are not merged or closed. */
+  prLinkedCount: number;
+  prLinkedOpen: number;
   lastActivityAt: string;
   /**
    * When the canvas's file links were last reset; null while they never were. When it moves,
@@ -394,6 +404,8 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prNumber: maybeNumber(r.pr_number),
     prState: (r.pr_state ?? null) as PrState | null,
     prChecks: r.pr_checks as PrChecks,
+    prLinkedCount: number(r.pr_linked_count ?? 0),
+    prLinkedOpen: number(r.pr_linked_open ?? 0),
     lastActivityAt: time(r.last_activity_at),
     createdAt: time(r.created_at),
     assetKeyRotatedAt: maybeTime(r.asset_key_rotated_at),
@@ -417,6 +429,8 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prChecks: r.pr_checks as PrChecks,
     prMergeable: (r.pr_mergeable ?? null) as boolean | null,
     prAutoMerge: Boolean(r.pr_auto_merge),
+    prLinkedCount: number(r.pr_linked_count ?? 0),
+    prLinkedOpen: number(r.pr_linked_open ?? 0),
     lastActivityAt: time(r.last_activity_at),
     assetKeyRotatedAt: maybeTime(r.asset_key_rotated_at),
     agentBlocker: (r.agent_blocker ?? null) as AgentBlocker | null,

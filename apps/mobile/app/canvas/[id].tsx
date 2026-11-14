@@ -928,6 +928,7 @@ export default function CanvasScreen() {
           bottom={foot}
           right={16 + sheetRight}
           prNumber={head?.prNumber ?? null}
+          linkedCount={head?.prLinkedCount ?? 0}
           onPullRequest={openPullRequest}
           chat={status.chat}
           onChat={chatDocked ? closeDockedChat : openChat}

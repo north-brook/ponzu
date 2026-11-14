@@ -25,6 +25,8 @@ export const PR_STATES = ["draft", "open", "merged", "closed"] as const;
 export const PR_CHECKS = ["none", "running", "failing", "passing"] as const;
 export const OP_KINDS = ["do", "undo", "redo"] as const;
 export const ACTOR_KINDS = ["user", "agent"] as const;
+/** Who linked a pull request to a canvas: a person in Ponzu, or an agent of theirs over MCP. */
+export const PR_LINK_SOURCES = ["person", "agent"] as const;
 export const THREAD_ITEM_KINDS = ["message", "comment", "assistant", "tool", "notice"] as const;
 export const EVENT_KINDS = [
   "message",
@@ -193,6 +195,7 @@ export type PrState = (typeof PR_STATES)[number];
 export type PrChecks = (typeof PR_CHECKS)[number];
 export type OpKind = (typeof OP_KINDS)[number];
 export type ActorKind = (typeof ACTOR_KINDS)[number];
+export type PrLinkSource = (typeof PR_LINK_SOURCES)[number];
 export type ThreadItemKind = (typeof THREAD_ITEM_KINDS)[number];
 export type EventKind = (typeof EVENT_KINDS)[number];
 export type EventPriority = (typeof EVENT_PRIORITIES)[number];

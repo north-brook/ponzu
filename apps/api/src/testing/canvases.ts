@@ -94,6 +94,30 @@ export async function workspaceWithRepo(
   };
 }
 
+/**
+ * Another repository of the workspace's installation, which each named member can reach as
+ * given (anyone left out, not at all).
+ */
+export async function addRepo(
+  t: TestApp,
+  workspace: Workspace,
+  name: string,
+  access: Record<string, Exclude<Access, "admin">> = {},
+): Promise<{ id: string; githubRepoId: number; fullName: string; github: FakeRepository }> {
+  const githubRepoId = nextGithubId++;
+  const fullName = `${workspace.github.installation.account.login}/${name}`;
+  const [repo] = await upsertRepos(t.db, {
+    workspaceId: workspace.id,
+    repos: [{ githubRepoId, fullName, defaultBranch: "main", private: true, pushedAt: null }],
+  });
+  const repository: FakeRepository = { id: githubRepoId, fullName, private: true, access: {} };
+  for (const [who, level] of Object.entries(access)) {
+    if (level !== "none") repository.access[workspace.people[who]!.github.id] = level;
+  }
+  workspace.github.installation.repositories.push(repository);
+  return { id: repo!.id, githubRepoId, fullName, github: repository };
+}
+
 /** A canvas in the workspace's repository, owned by `owner`, starting as `doc`. */
 export async function canvasIn(
   t: TestApp,

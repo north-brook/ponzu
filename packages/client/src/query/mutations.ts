@@ -217,6 +217,30 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
           queryClient.invalidateQueries({ queryKey: queryKeys.pullRequest(canvasId) }),
       }),
 
+    /** Links pull requests to the canvas by their URLs; the list is read again afterwards. */
+    linkPullRequests: () =>
+      mutationOptions({
+        mutationFn: ({ canvasId, urls }: { canvasId: string; urls: string[] }) =>
+          api.canvases.pullRequests.link(canvasId, urls),
+        onSettled: (_answer, _error, { canvasId }) =>
+          queryClient.invalidateQueries({ queryKey: queryKeys.canvasPullRequests(canvasId) }),
+      }),
+    /** Unlinks one pull request; the list is read again afterwards. */
+    unlinkPullRequest: () =>
+      mutationOptions({
+        mutationFn: ({
+          canvasId,
+          repoId,
+          number,
+        }: {
+          canvasId: string;
+          repoId: string;
+          number: number;
+        }) => api.canvases.pullRequests.unlink(canvasId, repoId, number),
+        onSettled: (_answer, _error, { canvasId }) =>
+          queryClient.invalidateQueries({ queryKey: queryKeys.canvasPullRequests(canvasId) }),
+      }),
+
     /* Settings. */
 
     /** Flips ping toggles: shown at once, put back if the API turns it down. */

@@ -194,3 +194,51 @@ test("at most the limit a run, oldest read first, and never for a workspace GitH
   await sweepPullRequests(t.deps, now(), { limit: 100 });
   for (const { canvas } of [first, second, third]) expect(await waiting(canvas.id)).toEqual([]);
 });
+
+test("an open linked pull request is swept too, in the same budget, and settles its canvas", async () => {
+  // The earlier tests' reads left waiting are out of the way.
+  t.clock.advance(SWEEP_STALE_MS);
+  await cron();
+  const ws = await workspaceWithRepo(t, { maya: "write" });
+  const canvas = await createCanvas(t.db, {
+    workspaceId: ws.id,
+    repoId: ws.repo.id,
+    ownerId: ws.people.maya!.userId,
+    claudeAccountId: null,
+    name: "Linked",
+    branch: `pz/swept-${++branches}`,
+    doc: emptyDoc("Linked"),
+  });
+  const repo = t.github.repo(ws.repo.fullName)!;
+  t.github.pulls.push(repo, "feature/linked");
+  const pull = t.github.pulls.openAsSomeone(repo, { head: "feature/linked", login: "sam" });
+  const linked = await call(
+    t,
+    ws.people.maya!.headers,
+    "POST",
+    `/v1/canvases/${canvas.id}/pull-requests`,
+    {
+      urls: [`https://github.com/${ws.repo.fullName}/pull/${pull.number}`],
+    },
+  );
+  expect(linked.body.results[0]).toMatchObject({ result: "linked" });
+  mergedOnGithub(repo, pull);
+
+  t.clock.advance(SWEEP_STALE_MS + MINUTE);
+  expect(
+    await sweepPullRequests(t.deps, new Date(t.clock.now()), { limit: 100 }),
+  ).toBeGreaterThanOrEqual(1);
+  const reads = (await waiting(canvas.id)).filter(
+    (job) => (job.payload as { repoId?: string }).repoId === ws.repo.id,
+  );
+  expect(reads).toHaveLength(1);
+  expect(reads[0]!.key).toStartWith(`sweep:link:${canvas.id}:${ws.repo.id}:${pull.number}:`);
+  // Taken this window: not again.
+  expect((await waiting(canvas.id)).length).toBe(1);
+  await sweepPullRequests(t.deps, new Date(t.clock.now()), { limit: 100 });
+  expect(await waiting(canvas.id)).toHaveLength(1);
+
+  t.clock.advance(MINUTE);
+  await cron();
+  expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prLinkedOpen: 0, status: "settled" });
+});

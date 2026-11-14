@@ -927,6 +927,103 @@ describe("pull requests, checks and reviews", () => {
     expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prNumber: null, prState: null });
   });
 
+  test("a linked pull request is read again on its webhooks, from any branch or fork, and its failed checks are told to the agent", async () => {
+    const { person, repository, canvas } = await canvasInRepo("linkhookco");
+    const repo = t.github.repo(repository.fullName)!;
+    // From a fork's branch: a link is the pull request its URL names, whatever its head.
+    t.github.pulls.push(repo, "feature/fork");
+    const pull = t.github.pulls.openAsSomeone(repo, {
+      head: "feature/fork",
+      login: "sam",
+      headRepositoryId: 31_338,
+    });
+    const linked = await t.app.request(`/v1/canvases/${canvas.id}/pull-requests`, {
+      method: "POST",
+      headers: { ...person.headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        urls: [`https://github.com/${repository.fullName}/pull/${pull.number}`],
+      }),
+    });
+    expect(linked.status).toBe(200);
+    const payload = pullRequest(repository.id, {
+      number: pull.number,
+      branch: "feature/fork",
+      headRepo: 31_338,
+    });
+
+    // A failed check on it reads it again, and reaches the agent as a linked pull request's.
+    t.github.pulls.setChecks(t.github.pulls.head(repo, "feature/fork")!, [
+      { name: "lint", state: "failure" },
+    ]);
+    await deliver("check_run", {
+      action: "completed",
+      repository: { id: repository.id },
+      check_run: {
+        name: "lint",
+        conclusion: "failure",
+        head_sha: "abc123",
+        details_url: "https://ci.example/1",
+        pull_requests: [payload],
+      },
+    });
+    const listed = async () =>
+      (
+        await (
+          await t.app.request(`/v1/canvases/${canvas.id}/pull-requests`, {
+            headers: person.headers,
+          })
+        ).json()
+      ).linked;
+    expect(await listed()).toEqual([
+      expect.objectContaining({ number: pull.number, checks: "failing" }),
+    ]);
+    const told = await eventsOf(canvas.id);
+    expect(told.map((event) => [event.kind, event.priority, event.payload])).toEqual([
+      [
+        "check",
+        "next",
+        {
+          source: "check_run",
+          name: "lint",
+          conclusion: "failure",
+          url: "https://ci.example/1",
+          headSha: "abc123",
+          pullRequest: pull.number,
+          linked: { repository: repository.fullName },
+        },
+      ],
+    ]);
+
+    // Merged on GitHub: its webhook records it, and with nothing else open the canvas settles.
+    pull.state = "closed";
+    pull.merged = true;
+    pull.closedAt = t.clock.now();
+    pull.updatedAt = t.clock.now();
+    await deliver("pull_request", {
+      action: "closed",
+      repository: { id: repository.id },
+      pull_request: { ...payload, state: "closed", merged: true },
+    });
+    expect(await listed()).toEqual([expect.objectContaining({ state: "merged" })]);
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({
+      prNumber: null,
+      prLinkedOpen: 0,
+      status: "settled",
+    });
+    // Settled, it hears nothing more.
+    await deliver("check_run", {
+      action: "completed",
+      repository: { id: repository.id },
+      check_run: {
+        name: "test",
+        conclusion: "failure",
+        head_sha: "abc124",
+        pull_requests: [payload],
+      },
+    });
+    expect(await eventsOf(canvas.id)).toHaveLength(1);
+  });
+
   test("a failed check run or suite is news for the agent; a passing one is not", async () => {
     const { repository, canvas } = await canvasInRepo("checkco");
     const { repo } = openOnGithub(repository);
@@ -1029,8 +1126,9 @@ describe("pull requests, checks and reviews", () => {
       priority: "next",
       payload: {
         state: "changes_requested",
-        reviewer: "kim",
+        reviewer: { login: "kim" },
         reviewerAssociation: "COLLABORATOR",
+        comments: [],
         url: "https://gh/r",
         pullRequest: 12,
       },
@@ -1097,6 +1195,55 @@ describe("pull requests, checks and reviews", () => {
     expect(
       t.github.permissionRequests.filter((line) => line.endsWith(` ${person.github.login}`)),
     ).toHaveLength(0);
+  });
+
+  test("a review on a linked pull request reaches the agent, only from someone who can push to it", async () => {
+    const { person, repository, canvas } = await canvasInRepo("linkreviewco");
+    const repo = t.github.repo(repository.fullName)!;
+    t.github.pulls.push(repo, "feature/api");
+    const pull = t.github.pulls.openAsSomeone(repo, { head: "feature/api", login: "sam" });
+    const linked = await t.app.request(`/v1/canvases/${canvas.id}/pull-requests`, {
+      method: "POST",
+      headers: { ...person.headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        urls: [`https://github.com/${repository.fullName}/pull/${pull.number}`],
+      }),
+    });
+    expect(linked.status).toBe(200);
+    const kim = reviewer("kim-links", repository, "write");
+    const reader = reviewer("rae-links", repository, "read");
+    const review = (user: { id: number; login: string }, state: string) => ({
+      action: "submitted",
+      repository: { id: repository.id },
+      review: {
+        id: 41,
+        state,
+        body: "The empty state needs a picture.",
+        html_url: "https://gh/r/41",
+        user,
+        author_association: "MEMBER",
+      },
+      pull_request: pullRequest(repository.id, { number: pull.number, branch: "feature/api" }),
+    });
+
+    await deliver("pull_request_review", review(reader, "CHANGES_REQUESTED"));
+    await deliver("pull_request_review", review(kim, "CHANGES_REQUESTED"));
+    const feed = await eventsOf(canvas.id);
+    expect(feed.map((event) => [event.kind, event.payload])).toEqual([
+      [
+        "review",
+        {
+          state: "changes_requested",
+          reviewer: { login: "kim-links" },
+          reviewerAssociation: "MEMBER",
+          body: "The empty state needs a picture.",
+          url: "https://gh/r/41",
+          comments: [],
+          pullRequest: pull.number,
+          linked: { repository: repository.fullName },
+        },
+      ],
+    ]);
   });
 
   test("a review waits for GitHub to say who wrote it: the job is tried again", async () => {
