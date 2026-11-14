@@ -256,7 +256,11 @@ const route = (
   method,
   path: `/v1/canvases/:id${tail}`,
   url: (id) =>
-    `/v1/canvases/${id}${tail.replace(":questionId", "q_1").replace(":messageId", "m_1")}${extra.query ?? ""}`,
+    `/v1/canvases/${id}${tail
+      .replace(":questionId", "q_1")
+      .replace(":messageId", "m_1")
+      .replace(":repoId", "rep_1")
+      .replace(":number", "1")}${extra.query ?? ""}`,
   body: extra.body,
   need,
 });
@@ -299,6 +303,11 @@ const CANVAS_ROUTES: CanvasRoute[] = [
   route("POST", "/pull-request/update-branch", "write", { body: { headSha: head } }),
   route("PUT", "/driver", "write", { body: {} }),
   route("DELETE", "/driver", "write"),
+  route("GET", "/pull-requests", "read"),
+  route("POST", "/pull-requests", "write", {
+    body: { urls: ["https://github.com/acme/web/pull/1"] },
+  }),
+  route("DELETE", "/pull-requests/:repoId/:number", "write"),
 ];
 
 const LIVE_CANVAS_QUERIES = ["canvas.head", "canvas.thread", "canvas.questions", "canvas.presence"];

@@ -32,7 +32,7 @@ import { ApiError } from "../http/errors.ts";
  * the canvas by itself.
  */
 
-export type LinkDeps = Pick<Deps, "db" | "github" | "clock" | "log">;
+export type LinkDeps = Pick<Deps, "db" | "github" | "clock" | "vault" | "log">;
 
 /** A pull request as a link names it: its URL on GitHub, or its repo and number. */
 export type PullRequestRef = string | { repository: string; number: number };
