@@ -436,3 +436,120 @@ test("Ponzu Dev and Ponzu Local never clean up after 1.x; only a release does", 
   expect(existsSync(m.shim)).toBe(false);
   expect(existsSync(record)).toBe(true);
 });
+
+/*
+ * Ponzu Cloud's MCP is a URL (`https://api.ponzu.design/v1/mcp`), set up by hand or by the
+ * plugin in plugin/. The cleanup must never take either for 1.x's: it removes only an entry
+ * that launches 1.x's shim (or bundled server) with `mcp`, which an HTTP entry never does.
+ */
+
+const CLOUD_MCP = "https://api.ponzu.design/v1/mcp";
+const pluginRoot = join(import.meta.dir, "../../../plugin");
+
+/** The plugin installed in Claude Code and Codex, as their CLIs lay it out, from plugin/ itself. */
+function installPlugin(home: string) {
+  const files = [".mcp.json", ".codex-plugin/mcp.json", ".codex-plugin/plugin.json"];
+  for (const cache of [
+    ".claude/plugins/cache/ponzu/ponzu/2.4.0",
+    ".codex/plugins/cache/ponzu/ponzu/2.4.0",
+  ])
+    for (const file of files)
+      put(join(home, cache, file), readFileSync(join(pluginRoot, file), "utf8"));
+  put(join(home, ".codex/config.toml"), '[plugins."ponzu@ponzu"]\nenabled = true\n');
+}
+
+test("the plugin's MCP servers are HTTP, so no form of the cleanup's test could match them", () => {
+  for (const file of [".mcp.json", ".codex-plugin/mcp.json"]) {
+    const { mcpServers } = JSON.parse(readFileSync(join(pluginRoot, file), "utf8"));
+    expect(mcpServers).toEqual({ ponzu: { type: "http", url: CLOUD_MCP } });
+  }
+});
+
+test("an HTTP ponzu entry and the cloud plugin stay, even beside a dead 1.x shim", async () => {
+  const m = machine();
+  m.agents();
+  put(m.shim, macShim(join(m.home, "Gone/Ponzu.app")));
+  // Added by hand (`claude mcp add --transport http ponzu …`, `codex mcp add ponzu --url …`)…
+  put(
+    join(m.home, ".claude.json"),
+    JSON.stringify({ mcpServers: { ponzu: { type: "http", url: CLOUD_MCP } } }),
+  );
+  // …which `codex mcp get ponzu --json` describes like this (Codex 0.167), plugin or not.
+  m.codex({
+    type: "streamable_http",
+    url: CLOUD_MCP,
+    bearer_token_env_var: null,
+    http_headers: null,
+    env_http_headers: null,
+  });
+  put(
+    join(m.home, ".cursor/mcp.json"),
+    JSON.stringify({ mcpServers: { ponzu: { url: CLOUD_MCP } } }),
+  );
+  installPlugin(m.home);
+  const before = snapshot(m.home);
+
+  const steps = await removeLegacy(m.host);
+
+  // 1.x's dead shim goes; nothing registered with an agent does.
+  expect(steps.filter((s) => s.outcome !== "kept")).toEqual([{ what: m.shim, outcome: "removed" }]);
+  expect(m.calls).toEqual(["codex mcp get ponzu --json"]);
+  const after = snapshot(m.home);
+  const gone = Object.keys(before).filter((path) => !(path in after));
+  expect(gone.sort()).toEqual([join(m.home, ".ponzu/bin"), m.shim].sort());
+  for (const [path, entry] of Object.entries(after)) expect(entry).toBe(before[path]!);
+});
+
+test("1.x's stdio entry goes and the plugin installed beside it stays", async () => {
+  const m = machine();
+  m.agents();
+  put(m.shim, macShim(join(m.home, "Gone/Ponzu.app")));
+  put(
+    join(m.home, ".claude.json"),
+    JSON.stringify({ mcpServers: { ponzu: { type: "stdio", command: m.shim, args: ["mcp"] } } }),
+  );
+  // A user entry named ponzu shadows the plugin's in Codex; removing it uncovers the plugin's.
+  m.codex({ type: "stdio", command: m.shim, args: ["mcp"] });
+  installPlugin(m.home);
+  const plugins = () =>
+    Object.fromEntries(
+      Object.entries(snapshot(m.home)).filter(([path]) =>
+        [".claude/plugins", ".codex"].some((dir) => path.startsWith(join(m.home, dir))),
+      ),
+    );
+  const before = plugins();
+
+  await removeLegacy(m.host);
+
+  // Each agent's own CLI removes the user-scoped entry by name; no plugin is uninstalled.
+  expect(m.calls).toEqual([
+    "claude mcp remove --scope user ponzu",
+    "codex mcp get ponzu --json",
+    "codex mcp remove ponzu",
+  ]);
+  expect(m.calls.some((call) => call.includes("plugin"))).toBe(false);
+  expect(plugins()).toEqual(before);
+});
+
+test("on Windows an HTTP entry is never taken for the server bundled in 1.x's app", async () => {
+  const m = machine("win32");
+  m.agents();
+  put(join(m.home, ".local/bin/claude.cmd"), "");
+  put(join(m.home, ".local/bin/codex.cmd"), "");
+  put(
+    join(m.home, ".claude.json"),
+    JSON.stringify({ mcpServers: { ponzu: { type: "http", url: CLOUD_MCP } } }),
+  );
+  m.codex({ type: "streamable_http", url: CLOUD_MCP });
+  put(
+    join(m.home, ".cursor/mcp.json"),
+    JSON.stringify({ mcpServers: { ponzu: { url: CLOUD_MCP } } }),
+  );
+  const before = snapshot(m.home);
+
+  const steps = await removeLegacy(m.host);
+
+  expect(steps.filter((s) => s.outcome !== "kept")).toEqual([]);
+  expect(m.calls.filter((call) => call.includes("remove"))).toEqual([]);
+  expect(snapshot(m.home)).toEqual(before);
+});

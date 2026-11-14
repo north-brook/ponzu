@@ -1,0 +1,34 @@
+{
+  "name": "ponzu",
+  "version": "2.4.0",
+  "description": "Ponzu's canvases for your own agent: hand a canvas to Ponzu's agent, or drive one yourself, and steer with comments. Sign in with your Ponzu account.",
+  "author": {
+    "name": "Northbrook",
+    "url": "https://ponzu.design"
+  },
+  "homepage": "https://ponzu.design",
+  "repository": "https://github.com/north-brook/ponzu",
+  "license": "MIT",
+  "keywords": ["design", "canvas", "html", "css", "mockups", "prototyping"],
+  "skills": "./skills/",
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "Ponzu",
+    "shortDescription": "Canvases in the cloud, for your agent",
+    "longDescription": "Ponzu keeps canvases in the cloud, each beside a repository. From your agent, start a canvas and let Ponzu's agent make it, or take the canvas and work on it yourself with Ponzu's tools while people comment. Then build what was settled in your own checkout and link the pull request, so the canvas settles once it merges. Sign in with your Ponzu account when your agent first connects.",
+    "developerName": "Northbrook",
+    "category": "Creativity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://ponzu.design",
+    "privacyPolicyURL": "https://ponzu.design/privacy",
+    "defaultPrompt": [
+      "Start a Ponzu canvas for a new onboarding flow and give me three takes",
+      "Bring this screen into a Ponzu canvas so we can redesign it",
+      "Watch my comments on the Ponzu canvas"
+    ],
+    "brandColor": "#FFC81E",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png",
+    "screenshots": []
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "ponzu",
+  "description": "Ponzu, canvases in the cloud for your agent.",
+  "owner": {
+    "name": "Northbrook",
+    "url": "https://ponzu.design"
+  },
+  "plugins": [
+    {
+      "name": "ponzu",
+      "source": "./plugin",
+      "description": "Ponzu's canvases for your own agent: hand a canvas to Ponzu's agent, or drive one yourself, and steer with comments."
+    }
+  ]
+}
