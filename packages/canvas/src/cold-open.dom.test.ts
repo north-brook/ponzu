@@ -27,13 +27,18 @@ import { createRoot } from "react-dom/client";
 import { emptyDoc, parseArtboardFile } from "@ponzu/core";
 import { Canvas } from "./Canvas.tsx";
 import { boardCost } from "./coldopen.ts";
-import { thawsQueued } from "./snapshot.tsx";
+import { thawsQueued, watchThaws } from "./snapshot.tsx";
 import { MemorySource } from "./connection.ts";
 
 /*
- * What each frame's thaw built: before each run of the thaw queue, the boards built since the
- * last run (what the last one brought live), so a frame's work is counted whatever React's
- * timing. The first group is what the page built as it mounted.
+ * What each frame's thaw took, as the queue took it (rank and cost): a frame's boards show in the
+ * page only once React commits them, which under load may be together with the next frame's.
+ */
+window.pzTicks = [];
+watchThaws((taken) => window.pzTicks.push(taken));
+/*
+ * Before each run of the thaw queue, the boards built since the last run. Only the first group is
+ * read: what the page built as it mounted.
  */
 const raf = window.requestAnimationFrame.bind(window);
 window.pzGroups = [];
@@ -94,22 +99,6 @@ window.pzMount = (opts) => {
   // Mounted in this task, so the first group is what the mount itself built.
   flushSync(() => window.pzShow(opts?.link));
   group();
-};
-
-/** Each board's distance from the middle of the view in screen px, as the thaw queue ranks it. */
-window.pzRanks = () => {
-  const layer = document.querySelector("[data-pz-board]").parentElement;
-  const v = layer.parentElement.parentElement.getBoundingClientRect();
-  const cx = v.left + v.width / 2;
-  const cy = v.top + v.height / 2;
-  return Object.fromEntries(
-    [...document.querySelectorAll("[data-pz-board]")].map((el) => {
-      const r = el.getBoundingClientRect();
-      const dx = Math.max(r.left - cx, 0, cx - r.right);
-      const dy = Math.max(r.top - cy, 0, cy - r.bottom);
-      return [el.getAttribute("data-pz-board"), Math.hypot(dx, dy)];
-    }),
-  );
 };
 `;
 
@@ -189,12 +178,14 @@ describe.skipIf(!chromium)("a cold open without pictures, in Chromium", () => {
 
   test("a page of forty boards builds them over frames, nearest first, a frame's budget at a time", async () => {
     const page = await open();
-    const { groups, costs } = await page.evaluate(() => {
+    const { groups, ticks, costs } = await page.evaluate(() => {
       const w = window as any;
-      w.pzGroup();
-      return { groups: w.pzGroups as string[][], costs: w.pzCosts as Record<string, number> };
+      return {
+        groups: w.pzGroups as string[][],
+        ticks: w.pzTicks as { rank: number; cost: number }[][],
+        costs: w.pzCosts as Record<string, number>,
+      };
     });
-    const ranks = (await page.evaluate(() => (window as any).pzRanks())) as Record<string, number>;
     // The page fits all forty on screen, and every one of them ends up drawn: nothing left blank.
     expect((await built(page)).length).toBe(BOARDS);
     const tiers = await page.evaluate(() =>
@@ -204,18 +195,19 @@ describe.skipIf(!chromium)("a cold open without pictures, in Chromium", () => {
     expect(await page.locator("[data-pz-placeholder]").count()).toBe(0);
     // None was built as the page mounted: on main all forty were, in one frame.
     expect(groups[0]).toEqual([]);
-    // Each frame brings at most the budget's worth of elements live, so the forty take several.
-    const frames = groups.slice(1).filter((g) => g.length);
-    for (const g of frames) {
-      const spent = g.reduce((n, id) => n + costs[id]!, 0);
-      expect(g.length === 1 || spent <= THAW_BUDGET).toBe(true);
+    // Each frame brings at most the budget's worth of elements live (or one board bigger than
+    // that), so the forty take several: counted as the queue took them, whenever React committed.
+    const frames = ticks.filter((taken) => taken.length);
+    for (const taken of frames) {
+      const spent = taken.reduce((n, t) => n + t.cost, 0);
+      expect(taken.length === 1 || spent <= THAW_BUDGET).toBe(true);
     }
     expect(costs.ab_0).toBe(PER_BOARD);
     expect(frames.length).toBeGreaterThanOrEqual(Math.ceil((BOARDS * PER_BOARD) / THAW_BUDGET));
-    // Nearest the middle first: no board is built in a later frame than one farther out.
+    // Nearest the middle first: no board goes live in a later frame than one farther out.
     for (let k = 1; k < frames.length; k++) {
-      const before = Math.max(...frames[k - 1]!.map((id) => ranks[id]!));
-      const after = Math.min(...frames[k]!.map((id) => ranks[id]!));
+      const before = Math.max(...frames[k - 1]!.map((t) => t.rank));
+      const after = Math.min(...frames[k]!.map((t) => t.rank));
       expect(after).toBeGreaterThanOrEqual(before - 0.5);
     }
     // The camera never moved, and the pin on the last board built is on its node all the same.
