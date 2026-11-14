@@ -232,22 +232,6 @@ const MID = PLANE / 2;
  * screen pixels, so titles and pins keep their screen size at any zoom, mid-
  * zoom too. `onSettle` runs once the camera has rested for `settle` ms.
  */
-/** How far apart the ground's dots are on the page at 100%, in px. */
-export const DOT_STEP = 24;
-
-/**
- * The dots' step on screen at `zoom`: the page's step scaled, then doubled or halved until it
- * is between two thirds of it and four thirds, so zooming out thins them and zooming in adds
- * the ones between, and the ground never crowds or empties.
- */
-export function dotStep(zoom: number): number {
-  let step = DOT_STEP * zoom;
-  if (!(step > 0) || !Number.isFinite(step)) return DOT_STEP;
-  while (step < (DOT_STEP * 2) / 3) step *= 2;
-  while (step >= (DOT_STEP * 4) / 3) step /= 2;
-  return step;
-}
-
 /** How far a gesture may zoom out from the zoom its bitmap was drawn at before it is redrawn. */
 export const REPROMOTE = 0.5;
 
@@ -274,7 +258,6 @@ export function useCameraLayers(
   useLayoutEffect(() => {
     const s = scroller.current;
     if (!mounted || !s) return;
-    const dots = s.querySelector<HTMLElement>(":scope > .pz-dots");
     let moving: ReturnType<typeof setTimeout> | undefined;
     let zoom = Number.NaN;
     /** The zoom the promoted layer's bitmap was drawn at, while it is promoted. */
@@ -291,18 +274,6 @@ export function useCameraLayers(
     const place = () => {
       const at = `translate(${tx}px, ${ty}px)`;
       if (layer.current) layer.current.style.transform = `${at} scale(${zoom})`;
-      // The ground's dots (styles.css, .pz-dots): one on the page's origin, which is at
-      // (tx, ty) on the plane; each is drawn 1px into its tile. Written on the dots
-      // themselves, never on the plane: a custom property is inherited by everything under the
-      // element it's set on, and Chrome restyles all of it when it changes, so on the plane
-      // every frame of a zoom restyled every element of every board (apps/studio/perf).
-      const step = dotStep(zoom);
-      const from = (t: number) => (((t - 1) % step) + step) % step;
-      if (dots) {
-        dots.style.setProperty("--pz-dots-step", `${step}px`);
-        dots.style.setProperty("--pz-dots-x", `${from(tx)}px`);
-        dots.style.setProperty("--pz-dots-y", `${from(ty)}px`);
-      }
       const o = overlay.current;
       if (!o) return;
       o.style.transform = at;

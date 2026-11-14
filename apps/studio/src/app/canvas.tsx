@@ -650,9 +650,6 @@ export const BoardsView = memo(function BoardsView({
         body="This canvas opens as soon as you're back online."
         busy
       />
-    ) : open.fresh ? (
-      // Just made on the create page: its dotted ground stays until the canvas draws its own.
-      <div className="canvas-dots absolute inset-0" />
     ) : null;
   }
   return (

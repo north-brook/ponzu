@@ -76,11 +76,6 @@ export const KEEP_APPS: Keep[] = [
     why: "the footer regex reads the new footer and the old one (plan 6.2)",
   },
   {
-    path: "apps/studio/src/cloud/styles/cloud.css",
-    has: "as design tools draw one",
-    why: "third-party design tools and how they draw a ground (plan 6.1)",
-  },
-  {
     path: "apps/studio/src/app/ui-state.ts",
     has: "designs",
     why: "the window state's key from before the rename, still read so the open canvas comes back",
