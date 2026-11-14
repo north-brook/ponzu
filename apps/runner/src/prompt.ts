@@ -1,4 +1,10 @@
-import type { AnswerEvent, Person, PullRequestState, RunnerEvent } from "./api/protocol.ts";
+import type {
+  AnswerEvent,
+  LinkedFrom,
+  Person,
+  PullRequestState,
+  RunnerEvent,
+} from "./api/protocol.ts";
 import { secretLateText } from "./secret-tool.ts";
 
 /*
@@ -108,7 +114,8 @@ function textOf(event: Exclude<RunnerEvent, { kind: "stop" | "push" }>): string 
     case "check": {
       const c = event.payload;
       return lines(
-        `A check failed on the pull request: ${quote(c.name)} (${c.conclusion.replace("_", " ")}).`,
+        `A check failed on ${which(c)}: ${quote(c.name)} (${c.conclusion.replace("_", " ")}).`,
+        c.linked && LINKED_NOTE,
         c.url && `Details: ${c.url}`,
         c.summary && `What it reported:\n${quoted(c.summary)}`,
       );
@@ -120,18 +127,32 @@ function textOf(event: Exclude<RunnerEvent, { kind: "stop" | "push" }>): string 
         changes_requested: "asked for changes",
         commented: "left comments",
       }[r.state];
-      const by = event.from ? `${event.from.name} (@${r.reviewer.login})` : `@${r.reviewer.login}`;
+      // An event kept from before the reviewer was an object names them by login alone.
+      const reviewer = r.reviewer as { login: string } | string;
+      const login = typeof reviewer === "string" ? reviewer : reviewer.login;
+      const by = event.from ? `${event.from.name} (@${login})` : `@${login}`;
       return lines(
-        `Review from ${by} on the pull request: ${verdict}.`,
+        `Review from ${by} on ${which(r)}: ${verdict}.`,
+        r.linked && LINKED_NOTE,
         r.url && `Details: ${r.url}`,
         r.body && quoted(r.body),
-        ...r.comments.map((c) =>
+        ...(r.comments ?? []).map((c) =>
           lines(`On ${c.path}${c.line === null ? "" : `:${c.line}`}:`, quoted(c.body)),
         ),
       );
     }
   }
 }
+
+/** The pull request a check or review is on: the canvas's own, or one linked to it. */
+function which(on: { linked?: LinkedFrom; pullRequest?: number }): string {
+  if (!on.linked) return "the pull request";
+  return `${on.linked.repository}${on.pullRequest === undefined ? "" : `#${on.pullRequest}`}, a pull request linked to this canvas`;
+}
+
+/** What the agent is told of a linked pull request's check or review. */
+const LINKED_NOTE =
+  "It isn't this canvas's own pull request, so you can't push to it. Change the canvas if this calls for it, and say what it means for the work here.";
 
 /**
  * An answer that arrives when nobody is waiting for it, because the run that asked has ended:

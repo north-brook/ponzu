@@ -62,7 +62,11 @@ export function actionBlock(
 /** The pull request icon's state: which glyph, and which color when the mark is active. */
 export type PullRequestIconState = "open" | "draft" | "conflict" | "merged" | "closed";
 
-export function pullRequestIcon(pr: PullRequestSummary): PullRequestIconState {
+/** What a pull request's mark is drawn from: a summary, or a linked one. */
+type Marked = Pick<PullRequestSummary, "state" | "checks" | "mergeable"> &
+  Partial<PullRequestSummary>;
+
+export function pullRequestIcon(pr: Marked): PullRequestIconState {
   if (pr.state === "merged") return "merged";
   if (pr.state === "closed") return "closed";
   if (pr.state === "draft") return "draft";
@@ -72,7 +76,7 @@ export function pullRequestIcon(pr: PullRequestSummary): PullRequestIconState {
 /** The mark after the number: a draft's hollow dot, or how the checks stand. */
 export type ChecksGlyph = "draft" | "running" | "failing" | "passing";
 
-export function checksGlyph(pr: PullRequestSummary): ChecksGlyph | null {
+export function checksGlyph(pr: Marked): ChecksGlyph | null {
   if (pr.state === "merged" || pr.state === "closed") return null;
   if (pr.state === "draft") return "draft";
   return pr.checks === "none" ? null : pr.checks;

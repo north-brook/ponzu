@@ -32,6 +32,7 @@ import { AskStore } from "./ask-store.ts";
 import { hasPictureArea } from "./comment-picture.tsx";
 import { CommentPictures } from "./comment-pictures.ts";
 import type { Host } from "./host.ts";
+import { linkedMark, useLinkedPullRequests } from "./linked-pull-requests.ts";
 import { contributors, pageTabs } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
 import { useWindowFocused } from "./notifications.ts";
@@ -383,6 +384,10 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
   // already says (the same columns), with what the last read of GitHub said of whether it can
   // merge. So a canvas opens with its mark at once, and the head confirms it without a change.
   const pr = head ? prSummary(head) : rowPullRequest(summary, pull.tab);
+  // The mark: the branch's pull request with how many more the canvas links (`#12 +2`), or,
+  // with none from its branch, the first one it links and how many more.
+  const { linked } = useLinkedPullRequests(open.id, head);
+  const mark = pr ?? linkedMark(linked, head);
   // The last answer kept from an earlier opening is offered only while it agrees with what the
   // row and the head say now: a pull request merged, closed or pushed to since doesn't offer
   // what it did (Merge on one already merged) before the read on opening says.
@@ -459,7 +464,9 @@ export const CanvasChromeSlot = memo(function CanvasChromeSlot({
             onResetLinks: resetLinks ? does.askReset : null,
           }
         : null,
-    pullRequest: repo && pr ? { pr, tabOpen: prTab.open, onToggleTab: does.toggleTab } : null,
+    // The branch's needs its repo (Scratch has none); linked ones are in the workspace's repos.
+    pullRequest:
+      mark && (repo || !pr) ? { pr: mark, tabOpen: prTab.open, onToggleTab: does.toggleTab } : null,
     action: kind
       ? {
           kind,

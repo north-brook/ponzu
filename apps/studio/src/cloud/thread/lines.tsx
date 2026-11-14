@@ -457,7 +457,34 @@ function NoticeLine({
         >
           <Icon icon={icon} step="small" className={color} />
           <span className="shrink-0">
-            Pull request <span className="font-mono text-11">#{notice.number}</span> {verb}
+            {notice.repository ? "Linked pull request" : "Pull request"}{" "}
+            <span className="font-mono text-11">
+              {notice.repository ?? ""}#{notice.number}
+            </span>{" "}
+            {verb}
+          </span>
+          <span className="truncate text-faint">{notice.title}</span>
+        </button>
+      );
+    }
+    case "pull_request_linked": {
+      const { icon, color } = PR_ICON[notice.state];
+      return (
+        <button
+          type="button"
+          onClick={handlers.onOpenPullRequest}
+          className={cn(
+            quiet,
+            "-mx-1 -my-0.5 min-w-0 max-w-full cursor-default self-start rounded-6 px-1.5 py-0.5 text-left text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover",
+          )}
+        >
+          <Icon icon={icon} step="small" className={color} />
+          <span className="shrink-0">
+            Linked{" "}
+            <span className="font-mono text-11">
+              {notice.repository}#{notice.number}
+            </span>
+            {notice.via ? ` via ${notice.via}` : ""}
           </span>
           <span className="truncate text-faint">{notice.title}</span>
         </button>

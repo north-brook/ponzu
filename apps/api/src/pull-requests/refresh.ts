@@ -1,7 +1,7 @@
 import { enqueueJob } from "@ponzu/db";
 import { z } from "zod";
 import { type JobDeps, runJob } from "../jobs/run.ts";
-import { refreshPullRequest } from "./sync.ts";
+import { refreshLinkedPullRequest, refreshPullRequest } from "./sync.ts";
 
 /*
  * Reading canvases' pull requests again when GitHub says something about them changed, as jobs
@@ -15,21 +15,46 @@ import { refreshPullRequest } from "./sync.ts";
  * delivered in it.
  */
 
-/** The job that reads a canvas's pull request again. Its key is the canvas's id and a time. */
+/**
+ * The job that reads a canvas's pull request again. Its key is the canvas's id and a time, or,
+ * for a linked one, `link:<canvas>:<repo>:<number>` and a time.
+ */
 export const REFRESH_JOB = "pull_request.refresh";
 export const REFRESH_WINDOW_MS = 2_000;
 /** How many canvases one delivery reads at once (a push to a default branch reads up to 50). */
 const AT_ONCE = 4;
 
-const Request = z.object({ canvasId: z.string(), number: z.number().int().nullable() });
+const Request = z.union([
+  z.object({
+    canvasId: z.string(),
+    number: z.number().int().nullable(),
+    repoId: z.undefined().optional(),
+  }),
+  /** A linked pull request (docs/cloud.md, "Linked pull requests"): the link names it whole. */
+  z.object({ canvasId: z.string(), repoId: z.string(), number: z.number().int().positive() }),
+]);
 
-/** A canvas whose pull request to read again; `number` is the one a webhook named, if any. */
+/**
+ * A canvas whose pull request to read again: its branch's, where `number` is the one a webhook
+ * named, if any; or, with `repoId`, one it links.
+ */
 export type RefreshRequest = z.infer<typeof Request>;
+
+/** The key a request's job is recorded under, before the window's time. */
+export function requestKey(request: RefreshRequest): string {
+  return request.repoId === undefined
+    ? request.canvasId
+    : `link:${request.canvasId}:${request.repoId}:${request.number}`;
+}
 
 /** Runs a recorded read. */
 export async function runRefreshJob(deps: JobDeps, payload: unknown): Promise<void> {
-  const { canvasId, number } = Request.parse(payload);
-  await refreshPullRequest(deps, canvasId, { number });
+  const request = Request.parse(payload);
+  if (request.repoId !== undefined) {
+    await refreshLinkedPullRequest(deps, request);
+    return;
+  }
+  await refreshPullRequest(deps, request.canvasId, { number: request.number });
 }
 
 /**
@@ -43,7 +68,7 @@ export async function refreshSoon(deps: JobDeps, requests: RefreshRequest[]): Pr
   const waiting = [...requests];
   async function readNext(): Promise<void> {
     for (let request = waiting.shift(); request; request = waiting.shift()) {
-      const key = `${request.canvasId}@${at}`;
+      const key = `${requestKey(request)}@${at}`;
       const worker = `${REFRESH_JOB}:${key}`;
       const job = await enqueueJob(db, {
         kind: REFRESH_JOB,
@@ -69,7 +94,7 @@ export async function refreshLater(
   const at = clock.now() + afterMs;
   await enqueueJob(db, {
     kind: REFRESH_JOB,
-    key: `${request.canvasId}@${at}`,
+    key: `${requestKey(request)}@${at}`,
     payload: request,
     runAt: new Date(at),
   });

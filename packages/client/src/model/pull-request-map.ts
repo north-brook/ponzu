@@ -133,7 +133,8 @@ export function bodyForTab(body: string): string {
 type HeadPr = Pick<
   CanvasHeadRow,
   "prNumber" | "prState" | "prChecks" | "prMergeable" | "prAutoMerge"
->;
+> &
+  Partial<Pick<CanvasHeadRow, "prLinkedCount" | "prLinkedOpen">>;
 
 /** The chrome's mark, from the canvas's head: what the sidebar and the chrome watch live. */
 export function prSummary(head: HeadPr | undefined): PullRequestSummary | null {
@@ -144,6 +145,8 @@ export function prSummary(head: HeadPr | undefined): PullRequestSummary | null {
     checks: head.prChecks,
     mergeable: head.prMergeable,
     autoMerge: head.prAutoMerge,
+    linkedCount: head.prLinkedCount ?? 0,
+    linkedOpen: head.prLinkedOpen ?? 0,
   };
 }
 

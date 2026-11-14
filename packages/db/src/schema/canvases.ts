@@ -23,6 +23,7 @@ import {
   EVENT_PRIORITIES,
   OP_KINDS,
   PR_CHECKS,
+  PR_LINK_SOURCES,
   PR_STATES,
   QUESTION_KINDS,
   QUESTION_STATUSES,
@@ -112,6 +113,13 @@ export const canvases = pgTable(
      * here until a pull request is opened, and written into its body whenever they change.
      */
     prSummary: text("pr_summary"),
+    /**
+     * How many pull requests are linked to the canvas (`canvas_pull_requests`), and how many of
+     * them are not yet merged or closed. Kept in step by the link queries, as `needs_you_count`
+     * is by the question queries, so the head carries them: a live query can't count.
+     */
+    prLinkedCount: integer("pr_linked_count").notNull().default(0),
+    prLinkedOpen: integer("pr_linked_open").notNull().default(0),
     agentState: text("agent_state", { enum: AGENT_STATES }).notNull().default("idle"),
     /** One line: what the agent is doing. */
     agentStatus: text("agent_status"),
@@ -168,6 +176,64 @@ export const canvases = pgTable(
     check("canvases_agent_state_check", oneOf(t.agentState, AGENT_STATES)),
     check("canvases_agent_blocker_check", oneOf(t.agentBlocker, AGENT_BLOCKERS)),
     check("canvases_needs_you_count_check", sql`${t.needsYouCount} >= 0`),
+  ],
+);
+
+/**
+ * A pull request linked to a canvas (docs/cloud.md, "Linked pull requests"): one a person or
+ * their agent said is this canvas's work, in any repo of the canvas's workspace, from any branch.
+ * The canvas's own pull request, from its branch, is never one: it lives on `canvases.pr_*`.
+ * Each row keeps what the last read of GitHub said, under the same newest-read rule.
+ */
+export const canvasPullRequests = pgTable(
+  "canvas_pull_requests",
+  {
+    canvasId: text("canvas_id")
+      .notNull()
+      .references(() => canvases.id, { onDelete: "cascade" }),
+    /** A repo of the canvas's workspace. A repo the App lost is marked removed, never deleted. */
+    repoId: text("repo_id")
+      .notNull()
+      .references(() => repos.id, { onDelete: "cascade" }),
+    /** The repo's GitHub id (`repos.github_repo_id`), which a webhook names it by. */
+    githubRepoId: bigint("github_repo_id", { mode: "number" }).notNull(),
+    number: integer("number").notNull(),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    state: text("state", { enum: PR_STATES }).notNull(),
+    checks: text("checks", { enum: PR_CHECKS }).notNull().default("none"),
+    /** False when it conflicts with its base; null while GitHub works it out. */
+    mergeable: boolean("mergeable"),
+    autoMerge: boolean("auto_merge").notNull().default(false),
+    /** GitHub's `updatedAt` for it, as last recorded. */
+    updatedAt: instant("updated_at").notNull(),
+    /** When the API began the read recorded here: only a read that began no earlier replaces it. */
+    readAt: instant("read_at").notNull(),
+    /** When it was first seen merged or closed; null while it is open (or a draft). */
+    finishedAt: instant("finished_at"),
+    source: text("source", { enum: PR_LINK_SOURCES }).notNull(),
+    /** The person, or the person whose grant the agent used. */
+    linkedByUserId: text("linked_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** The agent's name for an `agent` link ("Claude Code"); null for a person's. */
+    linkedVia: text("linked_via"),
+    linkedAt: instant("linked_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.canvasId, t.repoId, t.number] }),
+    // How a webhook finds the canvases that link a pull request.
+    index("canvas_pull_requests_github_repo_id_number_idx").on(t.githubRepoId, t.number),
+    // The sweep: open links read longest ago.
+    index("canvas_pull_requests_open_read_at_idx").on(t.readAt).where(sql`${t.finishedAt} is null`),
+    check("canvas_pull_requests_state_check", oneOf(t.state, PR_STATES)),
+    check("canvas_pull_requests_checks_check", oneOf(t.checks, PR_CHECKS)),
+    check("canvas_pull_requests_source_check", oneOf(t.source, PR_LINK_SOURCES)),
+    check("canvas_pull_requests_number_check", sql`${t.number} > 0`),
+    check(
+      "canvas_pull_requests_finished_at_check",
+      sql`(${t.state} in ('merged', 'closed')) = (${t.finishedAt} is not null)`,
+    ),
   ],
 );
 

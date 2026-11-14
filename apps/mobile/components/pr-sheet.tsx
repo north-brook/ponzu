@@ -14,7 +14,7 @@ import {
   Wrench01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
-import { ApiError, type CanvasHeadRow } from "@ponzu/client";
+import { ApiError, type CanvasHeadRow, type LinkedPullRequest } from "@ponzu/client";
 import {
   ago,
   type CheckRun,
@@ -183,6 +183,22 @@ export function PrSheet({
     enabled: cloud.userId !== null,
   });
   const tab = query.data ?? null;
+  // The pull requests the canvas links: shown, never acted on here (the Mac links and unlinks).
+  const linkedCount = head?.prLinkedCount ?? 0;
+  const links = useQuery({
+    ...cloud.queries.canvasPullRequests(canvasId),
+    enabled: cloud.userId !== null && linkedCount > 0,
+  });
+  const linked = linkedCount > 0 ? (links.data?.linked ?? []) : [];
+  const linkedMoved = `${linkedCount}:${head?.prLinkedOpen ?? 0}`;
+  const linkedFirst = useRef(true);
+  useEffect(() => {
+    if (linkedFirst.current) {
+      linkedFirst.current = false;
+      return;
+    }
+    if (linkedCount > 0) void links.refetch();
+  }, [linkedMoved]);
   // What the foot offers is a read made since the sheet opened, or a kept one the head still
   // agrees with, as on the Mac (`offeredTab`): an answer kept on disk from before a merge or a
   // push elsewhere offers nothing until the read on opening says so.
@@ -327,6 +343,16 @@ export function PrSheet({
               <Details pr={pr} />
               <StatusCard pr={pr} viewerLogin={viewerLogin} onDrill={setDrill} />
               <FilesCard pr={pr} onDrill={setDrill} />
+              <LinkedCard linked={linked} />
+            </ScrollView>
+          ) : linked.length > 0 && tab && !tab.pullRequest ? (
+            // No pull request from the branch, only linked ones.
+            <ScrollView
+              testID="pr-scroll"
+              style={{ flex: 1, minHeight: 0 }}
+              contentContainerStyle={{ paddingTop: 12, paddingBottom: 16, gap: 12 }}
+            >
+              <LinkedCard linked={linked} />
             </ScrollView>
           ) : (
             <Waiting
@@ -715,6 +741,79 @@ function FilesCard({ pr, onDrill }: { pr: PullRequestDetail; onDrill: (drill: Dr
             <Counts additions={file.additions} deletions={file.deletions} />
           </Row>
         ))}
+      </Card>
+    </View>
+  );
+}
+
+/**
+ * The pull requests the canvas links (docs/cloud.md, "Linked pull requests"), read-only: each
+ * one's state, where it is, its title and who linked it, opened on GitHub when pressed.
+ */
+function LinkedCard({ linked }: { linked: readonly LinkedPullRequest[] }) {
+  const { color, scheme } = useTheme();
+  if (!linked.length) return null;
+  const tone = PR_COLOR[scheme];
+  return (
+    <View testID="pr-linked" style={{ gap: 8 }}>
+      <Label>{PR.linked}</Label>
+      <Card>
+        {linked.map((pr, i) => {
+          const state = pullRequestIcon(pr);
+          const mark = {
+            open: { icon: GitPullRequestIcon, tint: tone.open },
+            draft: { icon: GitPullRequestIcon, tint: color.faint },
+            conflict: { icon: GitPullRequestClosedIcon, tint: tone.conflict },
+            merged: { icon: GitMergeIcon, tint: tone.merged },
+            closed: { icon: GitPullRequestClosedIcon, tint: color.muted },
+          }[state];
+          const where = `${pr.repository}#${pr.number}`;
+          const by = pr.source === "agent" ? (pr.via ?? "an agent") : (pr.linkedBy?.name ?? null);
+          return (
+            <Pressable
+              key={`${pr.repoId}#${pr.number}`}
+              testID="pr-linked-row"
+              accessibilityRole="link"
+              accessibilityLabel={`${where}, ${pr.title}${by ? `, ${PR.linkedBy(by)}` : ""}`}
+              onPress={() => {
+                select();
+                openOutside(pr.url);
+              }}
+              style={({ pressed }) => ({
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                paddingVertical: 11,
+                paddingHorizontal: 16,
+                backgroundColor: pressed ? color.chip : "transparent",
+                borderBottomWidth: i === linked.length - 1 ? 0 : 1,
+                borderBottomColor: color.hairline,
+              })}
+            >
+              <HugeiconsIcon icon={mark.icon} size={16} color={mark.tint} strokeWidth={1.8} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text
+                  numberOfLines={1}
+                  style={{ fontFamily: font.sans, fontSize: 15, color: color.ink }}
+                >
+                  {pr.title}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={{ fontFamily: font.mono, fontSize: 12, color: color.muted }}
+                >
+                  {by ? `${where} · ${PR.linkedBy(by)}` : where}
+                </Text>
+              </View>
+              <HugeiconsIcon
+                icon={LinkSquare02Icon}
+                size={15}
+                color={color.faint}
+                strokeWidth={1.8}
+              />
+            </Pressable>
+          );
+        })}
       </Card>
     </View>
   );

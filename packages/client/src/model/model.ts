@@ -61,6 +61,10 @@ export interface PullRequestSummary {
   /** False when the branch conflicts with its base; null until GitHub has worked it out. */
   mergeable: boolean | null;
   autoMerge: boolean;
+  /** How many pull requests the canvas links besides its branch's (docs/cloud.md). */
+  linkedCount: number;
+  /** How many of those are not yet merged or closed. */
+  linkedOpen: number;
 }
 
 /** Light and dark pictures of a canvas's first page, drawn by its sandbox. */
@@ -318,7 +322,25 @@ export type ThreadNotice =
     }
   | { type: "error"; code: RunErrorCode; message: string }
   | { type: "stopped"; by: Person | null }
-  | { type: "pull_request"; number: number; url: string; title: string; state: PrState }
+  | {
+      type: "pull_request";
+      /** `owner/repo` for a pull request the canvas links; absent for its branch's own. */
+      repository?: string;
+      number: number;
+      url: string;
+      title: string;
+      state: PrState;
+    }
+  /** A pull request was linked to the canvas: by a person, or by their agent (`via`). */
+  | {
+      type: "pull_request_linked";
+      repository: string;
+      number: number;
+      url: string;
+      title: string;
+      state: PrState;
+      via: string | null;
+    }
   /** The agent did this to the pull request on GitHub, as `as`. */
   | {
       type: "pull_request_agent";

@@ -174,6 +174,8 @@ describe("getCanvasHead", () => {
       "needsYouCount",
       "prAutoMerge",
       "prChecks",
+      "prLinkedCount",
+      "prLinkedOpen",
       "prMergeable",
       "prNumber",
       "prState",

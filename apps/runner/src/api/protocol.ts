@@ -389,6 +389,19 @@ export interface CheckEvent {
   url: string | null;
   /** The check's own summary, or the end of its log, clipped. */
   summary: string | null;
+  /** The pull request's number. */
+  pullRequest?: number;
+  /** Set for a pull request linked to the canvas, not its branch's own (`LinkedFrom`). */
+  linked?: LinkedFrom;
+}
+
+/**
+ * A check or review on a pull request linked to the canvas (docs/cloud.md, "Linked pull
+ * requests"): someone else's, which the agent can read but not push to.
+ */
+export interface LinkedFrom {
+  /** owner/name */
+  repository: string;
 }
 
 /** Someone reviewed the pull request. */
@@ -400,6 +413,10 @@ export interface ReviewEvent {
   url: string | null;
   /** The line comments that came with it: the first `MAX_REVIEW_COMMENTS`, each body clipped. */
   comments: ReviewComment[];
+  /** The pull request's number. */
+  pullRequest?: number;
+  /** Set for a pull request linked to the canvas, not its branch's own. */
+  linked?: LinkedFrom;
 }
 
 export interface ReviewComment {
@@ -647,13 +664,31 @@ export type Notice =
   | Exclude<RunnerNotice, { type: "stopped" }>
   /** A person stopped the run: the API names them from the stop event the runner wrote. */
   | { type: "stopped"; by: Person | null }
-  /** Written by the API: the canvas's pull request opened, merged or closed. */
+  /**
+   * Written by the API: the canvas's pull request opened, merged or closed; or, with
+   * `repository`, one it links merged or closed.
+   */
   | {
       type: "pull_request";
+      /** `owner/repo`, for a linked pull request; absent for the branch's own. */
+      repository?: string;
       number: number;
       url: string;
       title: string;
       state: "draft" | "open" | "merged" | "closed";
+    }
+  /**
+   * Written by the API: a pull request was linked to the canvas, by a person, or by their agent
+   * through the MCP (`via`, the agent's name).
+   */
+  | {
+      type: "pull_request_linked";
+      repository: string;
+      number: number;
+      url: string;
+      title: string;
+      state: "draft" | "open" | "merged" | "closed";
+      via: string | null;
     }
   /** Written by the API: the agent did this to the pull request, as `as` on GitHub. */
   | {

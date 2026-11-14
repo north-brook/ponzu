@@ -808,7 +808,13 @@ function NoticeLine({
       return said(`Asked: ${notice.text}${notice.answer ? ` → ${notice.answer}` : ""}`);
     case "pull_request":
       return pullRequest(
-        `Pull request #${notice.number} ${PR_VERB[notice.state]}: ${notice.title}`,
+        notice.repository
+          ? `Linked pull request ${notice.repository}#${notice.number} ${PR_VERB[notice.state]}: ${notice.title}`
+          : `Pull request #${notice.number} ${PR_VERB[notice.state]}: ${notice.title}`,
+      );
+    case "pull_request_linked":
+      return pullRequest(
+        `Linked ${notice.repository}#${notice.number}${notice.via ? ` via ${notice.via}` : ""}: ${notice.title}`,
       );
     case "pull_request_agent": {
       const as = notice.as ? (notice.as.id === meId ? "you" : who(notice.as, meId)) : null;

@@ -3,6 +3,7 @@ import { emptyDoc } from "@ponzu/core";
 import { seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { createTestDb } from "../testing.ts";
 import { createCanvas, getCanvas, settleCanvas } from "./canvases.ts";
+import { settleWhenDone } from "./linked-pull-requests.ts";
 import {
   findCanvasByBranch,
   getPullRequestContext,
@@ -111,15 +112,18 @@ test("a later pull request from the same branch replaces an earlier one", async 
   expect(await getCanvas(db, canvas.id)).toMatchObject({ prNumber: 8, prState: "open" });
 });
 
-test("a merge settles the canvas and is the last word on its pull request", async () => {
+test("a merge is the last word on its pull request, and settles it through settleWhenDone", async () => {
   const { canvas } = await canvasOnBranch();
 
   const merged = await recordPullRequestRead(
     db,
     read(canvas.id, 1, { state: "merged", checks: "passing" }),
   );
-  expect(merged).toMatchObject({ status: "settled", prState: "merged" });
-  expect(merged!.settledAt).toEqual(at(1));
+  // Recording alone never settles: it says the pull request finished.
+  expect(merged).toMatchObject({ status: "active", prState: "merged", finished: true });
+  const settled = await settleWhenDone(db, canvas.id, at(1));
+  expect(settled).toMatchObject({ status: "settled" });
+  expect(settled!.settledAt).toEqual(at(1));
 
   // Someone reopens the canvas; a later read of the merged pull request leaves it open.
   await settleCanvas(db, canvas.id, { settled: false, now: at(2) });
