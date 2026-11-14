@@ -23,20 +23,50 @@ export interface MetricInfo {
   means: string;
 }
 
+/**
+ * The target: a ProMotion Mac's 120 frames a second, so 8.3 ms a frame. The harness draws as a
+ * 120 Hz display would (probe.ts), with Chrome never held to 60 (app.ts).
+ */
+export const TARGET_FPS = 120;
+export const BUDGET_MS = 1000 / TARGET_FPS;
+
+/** A gesture holds the target at this frame rate or more (the clock's own overhead aside). */
+export const HOLDS_FPS = TARGET_FPS * 0.95;
+
+/**
+ * Gestures whose frames only scroll (a pan moves the plane by scrolling it). Headless Chrome
+ * draws a frame that only scrolls at about 57 a second however little it costs, so their frame
+ * rate says nothing about 120 there; their main thread and counts still do. The desktop app,
+ * uncapped, has no such limit.
+ */
+export function scrollsOnly(scenario: string): boolean {
+  return /\.pan$/.test(scenario);
+}
+
+/** A frame that takes this much longer than the budget has missed a 120 Hz refresh. */
+const MISSED = BUDGET_MS * 1.5;
+
 export const METRICS: Record<string, MetricInfo> = {
   fps: {
     label: "Frame rate",
     unit: "fps",
     kind: "time",
     better: "higher",
-    means: "Animation frames a second while the gesture played (60 is all of them).",
+    means: `Frames a second while the gesture played, of the ${TARGET_FPS} a ProMotion display shows.`,
+  },
+  missed: {
+    label: "Missed frames",
+    unit: "",
+    kind: "time",
+    better: "lower",
+    means: `Frames of the gesture that took over 1.5 × ${round(BUDGET_MS, 1)} ms: each one misses a 120 Hz refresh.`,
   },
   frameP95: {
     label: "p95 frame",
     unit: "ms",
     kind: "time",
     better: "lower",
-    means: "The 95th percentile time between frames during the gesture.",
+    means: `The 95th percentile time between frames during the gesture; ${round(BUDGET_MS, 1)} ms holds 120 fps.`,
   },
   longFrames: {
     label: "Long frames",
@@ -210,6 +240,7 @@ export function frameStats(
   frames: number;
   fps: number;
   frameP95: number;
+  missed: number;
   longFrames: number;
   maxFrame: number;
 } {
@@ -220,6 +251,7 @@ export function frameStats(
     frames: f.length,
     fps: span > 0 ? round(((f.length - 1) * 1000) / span, 1) : 0,
     frameP95: round(percentile(gaps, 0.95), 1),
+    missed: gaps.filter((g) => g > MISSED).length,
     longFrames: gaps.filter((g) => g > 50).length,
     maxFrame: round(Math.max(0, ...gaps), 1),
   };
@@ -276,7 +308,8 @@ export function compare(name: string, base: Aggregate, head: Aggregate): Verdict
   if (info.kind === "time" && (base.n < 3 || head.n < 3)) return "same";
   const apart = head.min > base.max || head.max < base.min || (base.n === 1 && head.n === 1);
   // A few ms of main thread in a gesture of two seconds is noise however large a share.
-  const floor = info.unit === "ms" ? 10 : 1;
+  // A count wanders by an element or two between rounds when it's tiny: 1 → 2 is no change.
+  const floor = info.unit === "ms" ? 10 : info.kind === "count" ? 5 : 1;
   const real = rel >= (info.kind === "count" ? 0.03 : 0.1) && Math.abs(diff) >= floor && apart;
   if (!real) return "same";
   const up = diff > 0;

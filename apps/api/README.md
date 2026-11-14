@@ -156,7 +156,11 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
    answers at once with `recordReposReachedBy`; a list of repos or canvases (or a live query
    over one) joins the table, after `refreshWorkspaceRepoAccess` where it must be current.
    A webhook that cannot say whose access changed calls `markRepoAccessStale`. Never keep a
-   second copy of who can reach what. The one exception is for show:
+   second copy of who can reach what. A `read` in the table is one GitHub GAVE the person;
+   the read anyone has of a public repo never reaches it (the App's `read` is settled by the
+   person's own list), so a route that reads the table needs no rule of its own for public
+   repos. `auth/public-repo-read.test.ts` runs every canvas route as a stranger and fails for
+   a new route under `/v1/canvases/:id` until it is added there. The one exception is for show:
    `workspace_people.repo_permissions` (`github/people.ts`) is the App's snapshot of who
    GitHub lists in each repo, kept so the team can be shown before people open Ponzu. It is
    never consulted to grant anything, and for anyone with a `repo_access` answer that answer

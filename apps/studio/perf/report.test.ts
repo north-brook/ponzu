@@ -20,6 +20,14 @@ describe("frame numbers", () => {
     expect(s.maxFrame).toBe(100);
   });
 
+  test("at 120 Hz, a frame over 1.5 × 8.3 ms is a missed one", () => {
+    // Four frames on time, one of 13 ms (missed), one of 12 ms (late, not missed).
+    const frames = [0, 8.3, 16.6, 25, 33.3, 46.3, 58.3];
+    const s = frameStats(frames, 0, 100);
+    expect(s.missed).toBe(1);
+    expect(s.longFrames).toBe(0);
+  });
+
   test("percentiles take the value at or above the rank", () => {
     expect(percentile([5, 1, 3, 2, 4], 0.5)).toBe(3);
     expect(percentile([], 0.95)).toBe(0);
@@ -139,7 +147,25 @@ describe("the comment", () => {
       date: "",
       medians: { "website.zoom": { fps: 40 + i * 10 } },
     }));
-    expect(report(results(null, [10]), history)).toContain(`${sparkline([40, 50, 60])} 60 fps`);
+    expect(report(results(null, [10]), history)).toContain(
+      `${sparkline([40, 50, 60])} 60 / 120 fps`,
+    );
+  });
+
+  test("leads with which gestures hold 120 fps, leaving pans to the desktop app", () => {
+    const r = results(null, [10]);
+    r.head.runs["website.zoom"]!.fps = [118];
+    r.head.runs["website.pan"] = { fps: [56], restyledPerFrame: [0] };
+    r.head.runs["dom.zoom"] = { fps: [61] };
+    r.scenarios.push(
+      { id: "website.pan", suite: "website", surface: "canvas", title: "Pan", headline: ["fps"] },
+      { id: "dom.zoom", suite: "dom", surface: "canvas", title: "Pinch zoom", headline: ["fps"] },
+    );
+    expect(report(r)).toContain("**1 of 2 gestures hold 120 fps**");
+    expect(report(r)).toContain("Short of it: `dom.zoom` 61.");
+    // Measured in the desktop app, a pan's frame rate counts too.
+    r.machine = "Electron/44.9.3, M1 Max";
+    expect(report(r)).toContain("**1 of 3 gestures hold 120 fps**");
   });
 
   test("a history line holds each metric's median, and bad lines are skipped", () => {

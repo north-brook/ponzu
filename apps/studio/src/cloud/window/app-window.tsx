@@ -473,11 +473,15 @@ export function AppWindow({
         grip.setPointerCapture(event.pointerId);
         grip.addEventListener("pointermove", move);
         grip.setAttribute("data-held", "");
-        dragging(frame.current, () => {
-          grip.removeEventListener("pointermove", move);
-          grip.removeAttribute("data-held");
-          if (came !== from) onResize.current?.(pane, Math.round(came));
-        });
+        dragging(
+          frame.current,
+          () => {
+            grip.removeEventListener("pointermove", move);
+            grip.removeAttribute("data-held");
+            if (came !== from) onResize.current?.(pane, Math.round(came));
+          },
+          { x: event.clientX, y: event.clientY },
+        );
       },
       onDoubleClick: () => {
         held.current = pane;
@@ -513,15 +517,19 @@ export function AppWindow({
         // begins): an edge already focused from the keyboard keeps it.
         const from = focusedFrom.current;
         const moved = Math.abs(event.timeStamp - from.at) < 100;
-        dragging(frame.current, () => {
-          setStill(null);
-          if (!moved || document.activeElement !== separator) return;
-          if (from.el instanceof HTMLElement && from.el.isConnected) {
-            from.el.focus({ preventScroll: true });
-          } else {
-            separator.blur();
-          }
-        });
+        dragging(
+          frame.current,
+          () => {
+            setStill(null);
+            if (!moved || document.activeElement !== separator) return;
+            if (from.el instanceof HTMLElement && from.el.isConnected) {
+              from.el.focus({ preventScroll: true });
+            } else {
+              separator.blur();
+            }
+          },
+          { x: event.clientX, y: event.clientY },
+        );
       }}
       onDoubleClick={() => {
         if (!open) return;
@@ -681,17 +689,31 @@ export function AppWindow({
   );
 }
 
-/** Marks the window as dragging an edge until the pointer is let go (cloud.css), then `after`. */
-function dragging(frame: HTMLElement | null, after: () => void) {
+/** How far, in px, a pressed edge moves before the window's sheet goes over everything. */
+const DRAG_SLOP = 3;
+
+/**
+ * Marks the window as dragging an edge until the pointer is let go (cloud.css), then `after`.
+ * Once the pointer has moved off the press (`data-pane-drag="moving"`) a sheet covers the
+ * window; not before, so a click or a double click on the edge still lands on the edge.
+ */
+function dragging(frame: HTMLElement | null, after: () => void, from: { x: number; y: number }) {
   if (!frame) return;
   frame.setAttribute("data-pane-drag", "");
+  const move = (e: globalThis.PointerEvent) => {
+    if (Math.hypot(e.clientX - from.x, e.clientY - from.y) < DRAG_SLOP) return;
+    frame.setAttribute("data-pane-drag", "moving");
+    window.removeEventListener("pointermove", move, true);
+  };
   const done = () => {
     frame.removeAttribute("data-pane-drag");
+    window.removeEventListener("pointermove", move, true);
     window.removeEventListener("pointerup", done, true);
     window.removeEventListener("pointercancel", done, true);
     window.removeEventListener("blur", done);
     after();
   };
+  window.addEventListener("pointermove", move, true);
   window.addEventListener("pointerup", done, true);
   window.addEventListener("pointercancel", done, true);
   window.addEventListener("blur", done);

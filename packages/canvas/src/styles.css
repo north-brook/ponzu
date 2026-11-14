@@ -114,6 +114,27 @@
   --shadow-raised: var(--pz-raised-shadow);
 }
 
+/*
+ * A board's corners and hairline (Canvas.tsx), in its own px: they change every quarter octave
+ * of a zoom. Registered as not inherited, so a change restyles the board's sheet alone and not
+ * every element of its content (apps/studio/perf). On the canvas they stop at the sheet, which
+ * contains its paint and so clips the board to its corners: the board's root keeps its own
+ * radius, and a zoom step repaints the sheet, not everything in the board. A host that hands
+ * the radius to a board itself (a comment's picture) has it on the board's host, which the
+ * shadow root takes (Artboard.tsx).
+ */
+@property --pz-board-radius {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --pz-board-edge-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 1px;
+}
+
 /* The only reset: zero specificity, so every utility wins over it. */
 :where(.pz-root) button {
   font: inherit;

@@ -159,7 +159,7 @@ export async function tellCanvases(
 
 /** Whether GitHub says `author` can push to the canvas's repo. */
 async function canPushTo(
-  deps: Pick<Deps, "db" | "github" | "clock">,
+  deps: Pick<Deps, "db" | "github" | "clock" | "vault" | "log">,
   canvas: BranchCanvas,
   author: GithubAuthor,
   userId: string | null,

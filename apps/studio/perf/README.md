@@ -33,6 +33,28 @@ bun apps/studio/perf/run.ts --only website.zoom --profile traces   # keep each t
 | `desktop.sh` | The same on the desktop app, on a Mac's GPU, for spare ("Profiling"). |
 | `../../../.github/workflows/perf.yml` | Measures every pull request against its base, comments, keeps main's history. |
 
+## The target: 120 frames a second
+
+The target is a ProMotion Mac's 120 frames a second, so every frame has 8.3 ms, not 16.7. The comment leads with how
+many gestures hold 120 fps (95% of it, 114, allows for the clock's own overhead) and names the rest.
+
+- **Chrome is never held to 60.** Headless Chrome draws at 60 and spare's display is 60 Hz, so a
+  60 fps reading used to look perfect while being half the target. The harness launches Chrome,
+  and the desktop app, with `--disable-frame-rate-limit --disable-gpu-vsync` (`UNCAPPED`, app.ts).
+- **The page's clock is a 120 Hz display** (`frame()`, probe.ts). A frame is asked for no sooner
+  than 8.3 ms after the last one began, so a frame whose work fits reads as 8.3 ms and one that
+  doesn't reads as long as it took. Nothing spins between gestures: the only frames are the ones
+  something waits on.
+- **One pixel changes each frame.** Uncapped, headless Chrome still draws a frame in which the page
+  changed nothing on its own 60 Hz clock; a nearly clear 1 px dot the clock flips makes every
+  frame one the page asked for. It adds one restyled element per frame, to base and head alike.
+- **A trackpad sends one event a frame**, as a 120 Hz one does, each twice the step it used to be,
+  so the zoom path is what it was.
+- **Pans count only on the desktop app.** In headless Chrome a frame that only scrolls is drawn at
+  about 57 a second however cheap it is, so a pan's frame rate there says nothing about 120; its
+  main thread and counts still do.
+- **Missed frames** are the ones over 1.5 × 8.3 ms: each misses a 120 Hz refresh.
+
 ## The numbers
 
 **Counts** are what Chrome and React did: elements restyled and layout objects laid out per frame

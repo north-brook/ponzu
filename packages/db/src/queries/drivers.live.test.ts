@@ -199,6 +199,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       repoId: repo.id,
       githubRepoId: repo.githubRepoId,
       fullName: repo.fullName,
+      private: true,
       hasCanvas: true,
       permission: "read",
       checkedAt,
@@ -516,6 +517,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
           { githubRepoId: 1, permission: "read" },
         ],
         complete: true,
+        readsPublic: true,
         checkedAt: new Date(),
       }),
     ).toEqual({ missing: [1] });

@@ -149,8 +149,13 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
   test("a root with no radius takes the canvas's few px", async () => {
     await mount("width:320px;height:200px;background:#fff6b3");
     const plain = await drawn();
-    expect(Number.parseFloat(plain.root)).toBeGreaterThan(0);
-    expect(plain.root).toBe(plain.sheet);
+    // The sheet has them and clips the board to them (it contains its paint); the root keeps
+    // its own, so a zoom step that changes the canvas's doesn't repaint all of the board.
+    expect(Number.parseFloat(plain.sheet)).toBeGreaterThan(0);
+    expect(plain.root).toBe("0px");
+    // The very corner is past the curve (its hairline, a px wide, follows it); a few px in, the card.
+    expect(near(await shot(plain.box.x, plain.box.y), YELLOW)).toBe(false);
+    expect(near(await shot(plain.box.x + 6, plain.box.y + 6), YELLOW)).toBe(true);
     await page.close();
   });
 
