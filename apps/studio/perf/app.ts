@@ -3,8 +3,15 @@
  * Chromium, on Ponzu Cloud in memory (fake-host.ts), signed in as someone returning. A canvas is
  * seeded through `window.ponzuFake`, as the agent would draw it, and opened by a link.
  */
+import { type ChildProcess, spawn } from "node:child_process";
 import type { Artboard } from "@ponzu/core";
-import { launchChromium, type Page, type TestChromium } from "@ponzu/render/testing";
+import {
+  attachChromium,
+  type Browser,
+  launchChromium,
+  type Page,
+  type TestChromium,
+} from "@ponzu/render/testing";
 import { serve } from "../src/app/e2e-lib.ts";
 import { PROBE } from "./probe.ts";
 import type { CDPSession } from "./trace.ts";
@@ -48,6 +55,160 @@ export async function openStudio(dir: string, chromium?: string): Promise<Studio
     server.stop();
     throw error;
   }
+}
+
+/*
+ * The desktop app, on a Mac's own GPU and display, instead of headless Chrome (README.md,
+ * "Profiling"). Only a window on Ponzu Cloud in memory is ever measured: a test build or a run
+ * from a checkout, launched with PONZU_FAKE_BACKEND=1 and a debugging port, whose studio was
+ * built with the fake in it. A release opens no debugging port and its studio has no fake, so
+ * it can't be attached to; anything else that answers is refused before the harness touches it.
+ */
+
+/**
+ * Which desktop app: one started for each suite from a checkout's launcher
+ * (`apps/desktop/run-dev.sh`), showing the build in `dir` from the harness's own server
+ * (PONZU_STUDIO_URL); or one already running with a debugging port at `cdp`, showing its own.
+ */
+export type Desktop = { electron: string; dir: string } | { cdp: string };
+
+/** Opens the studio in the desktop app, signed in, with the probe in place; as `openStudio`. */
+export async function openDesktop(desktop: Desktop): Promise<Studio> {
+  const server = "dir" in desktop ? serve(desktop.dir) : null;
+  let app: ChildProcess | null = null;
+  let browser: Browser | undefined;
+  const log: string[] = [];
+  try {
+    let endpoint: string;
+    if ("electron" in desktop) {
+      app = spawn(desktop.electron, ["--remote-debugging-port=0"], {
+        env: { ...process.env, PONZU_FAKE_BACKEND: "1", PONZU_STUDIO_URL: server!.url },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      endpoint = await listening(app, log);
+    } else {
+      endpoint = desktop.cdp;
+    }
+    browser = await attachChromium(onThisComputer(endpoint));
+    const page = await fakeWindow(browser, server?.url ?? null);
+    // Each suite starts as a fresh launch would: the fake's world lives in the page, and the
+    // throwaway profile's storage is cleared, so no canvas a suite left is opened again.
+    await page.evaluate(() => localStorage.clear());
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.addInitScript(PROBE);
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.goto(new URL("/?as=returning", page.url()).href);
+    await page.locator("[data-canvas-row]").first().waitFor({ timeout: 60_000 });
+    if (!(await page.evaluate(() => "ponzuFake" in window))) {
+      throw new Error("The studio isn't on its fake backend: build it with --mode e2e.");
+    }
+    const cdp = await page.context().newCDPSession(page);
+    const b = browser;
+    const a = app;
+    return {
+      page,
+      cdp,
+      close: async () => {
+        await cdp.detach().catch(() => {});
+        // Attached over CDP, close() lets go; the app quits only if the harness started it.
+        await b.close();
+        if (a) await quit(a);
+        server?.stop();
+        if (errors.length) console.warn(`The page threw:\n${errors.slice(0, 5).join("\n")}`);
+      },
+    };
+  } catch (error) {
+    await browser?.close().catch(() => {});
+    if (app) await quit(app);
+    server?.stop();
+    if (log.length) console.error(`The app said:\n${log.join("").slice(-2000)}`);
+    throw error;
+  }
+}
+
+/** The endpoint Electron prints once its debugging port is open (`--remote-debugging-port=0`). */
+function listening(app: ChildProcess, log: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("The app opened no debugging port.")), 60_000);
+    const hear = (chunk: Buffer) => {
+      const text = chunk.toString();
+      log.push(text);
+      const m = text.match(/DevTools listening on (ws:\/\/\S+)/);
+      if (m) {
+        clearTimeout(timer);
+        resolve(m[1]!);
+      }
+    };
+    // Read for as long as it runs: a pipe left full would stall the app.
+    app.stdout!.on("data", hear);
+    app.stderr!.on("data", hear);
+    app.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`The app exited (${code}) before it opened a debugging port.`));
+    });
+  });
+}
+
+/** Only a debugging port on this computer: one elsewhere is nothing the harness should drive. */
+function onThisComputer(endpoint: string): string {
+  const url = URL.canParse(endpoint) ? new URL(endpoint) : null;
+  if (!url || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
+    throw new Error(`--cdp takes a debugging port on this computer, not ${endpoint}.`);
+  }
+  return endpoint;
+}
+
+/**
+ * The app's main window, once it has one, and only if it runs on the fake backend (the shell
+ * says so, `config.fake`, only when launched with PONZU_FAKE_BACKEND=1, which a release
+ * ignores). With `origin`, it must also be showing the harness's build.
+ */
+async function fakeWindow(browser: Browser, origin: string | null): Promise<Page> {
+  const end = Date.now() + 60_000;
+  let seen = "";
+  while (Date.now() < end) {
+    for (const page of browser.contexts().flatMap((c) => c.pages())) {
+      const shell = await page
+        .evaluate(() => {
+          const d = (window as { ponzuDesktop?: { config: { fake?: boolean } } }).ponzuDesktop;
+          return d ? { fake: d.config.fake === true } : null;
+        })
+        .catch(() => null);
+      if (!shell) continue;
+      seen = page.url();
+      if (!shell.fake) {
+        throw new Error(
+          `${seen} is a Ponzu window on the real service, not Ponzu Cloud in memory: launch it with PONZU_FAKE_BACKEND=1.`,
+        );
+      }
+      if (origin && new URL(page.url()).origin !== new URL(origin).origin) {
+        throw new Error(
+          `The app shows ${seen}, not the harness's build at ${origin}: a packaged app shows its own studio (use --cdp).`,
+        );
+      }
+      return page;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`No Ponzu window came up${seen ? ` (last seen: ${seen})` : ""}.`);
+}
+
+/** Quits an app the harness started, and waits until it's gone. */
+async function quit(app: ChildProcess): Promise<void> {
+  if (app.exitCode !== null || app.signalCode !== null) return;
+  const gone = new Promise<void>((resolve) => app.once("exit", () => resolve()));
+  app.kill("SIGTERM");
+  const timer = setTimeout(() => app.kill("SIGKILL"), 10_000);
+  await gone;
+  clearTimeout(timer);
+}
+
+/** The window as measured: its size and density, which a Mac's display decides. */
+export async function windowSize(page: Page): Promise<string> {
+  return page.evaluate(
+    () => `${window.innerWidth}×${window.innerHeight} at ${window.devicePixelRatio}×`,
+  );
 }
 
 export interface Seed {

@@ -7,17 +7,24 @@
  *   bun apps/studio/perf/run.ts --only website.zoom,thread.stream
  *   bun apps/studio/perf/run.ts --only website.zoom --profile traces    keep and explain each trace
  *   bun apps/studio/perf/run.ts --report results.json --history history.jsonl --markdown comment.md
+ *   bun apps/studio/perf/run.ts --electron apps/desktop/run-dev.sh --head <dir> --base <dir>
+ *   bun apps/studio/perf/run.ts --cdp http://127.0.0.1:9222      the desktop app already running
  *
  * `--head` and `--base` are studio builds in e2e mode (`vite build --mode e2e`). With a base, the
  * two run in turn, round by round, the order swapped each round, so whatever the machine does
  * meanwhile falls on both alike. Each round of each build is a fresh browser.
+ *
+ * `--electron` and `--cdp` measure the desktop app on this Mac's GPU and display instead of
+ * headless Chrome (README.md, "Profiling"): only on Ponzu Cloud in memory, and only on spare.
+ * `--electron` starts the checkout's app for each suite, showing `--head` (and `--base`) from
+ * the harness's server; `--cdp` attaches to an app already running and measures its own studio.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { buildApp } from "../src/app/e2e-lib.ts";
-import { openStudio } from "./app.ts";
+import { type Desktop, openDesktop, openStudio, windowSize } from "./app.ts";
 import { parseHistory, type Results, type Runs, report } from "./report.ts";
 import { SUITES } from "./scenarios.ts";
 import { explain, profiling } from "./trace.ts";
@@ -36,6 +43,8 @@ const { values: args } = parseArgs({
     report: { type: "string" },
     machine: { type: "string" },
     profile: { type: "string" },
+    electron: { type: "string" },
+    cdp: { type: "string" },
   },
 });
 
@@ -80,11 +89,22 @@ if (args.profile) {
   };
 }
 
-const head = args.head ?? (await buildApp("e2e"));
+if (args.cdp && (args.electron || args.head || args.base)) {
+  console.error(
+    "--cdp measures the app already running, with its own studio: no --electron, --head or --base.",
+  );
+  process.exit(1);
+}
+const head = args.cdp ? "" : (args.head ?? (await buildApp("e2e")));
 const builds: { name: "head" | "base"; dir: string; runs: Runs }[] = [
   { name: "head", dir: head, runs: {} },
 ];
 if (args.base) builds.push({ name: "base", dir: args.base, runs: {} });
+/** The desktop app showing a build, when the harness measures that instead of headless Chrome. */
+const desktop = (dir: string): Desktop | null =>
+  args.cdp ? { cdp: args.cdp } : args.electron ? { electron: args.electron, dir } : null;
+/** Where the numbers were taken: the desktop's window, as the first suite found it. */
+let where = "";
 
 const rounds = Math.max(1, Number(args.rounds));
 const errors: Results["errors"] = [];
@@ -97,7 +117,14 @@ for (let round = 0; round < rounds; round++) {
       // A browser per suite: one suite's canvases and leftovers never weigh on the next.
       let studio: Awaited<ReturnType<typeof openStudio>> | undefined;
       try {
-        studio = await openStudio(build.dir);
+        const app = desktop(build.dir);
+        studio = app ? await openDesktop(app) : await openStudio(build.dir);
+        if (app && !where) {
+          const ua = await studio.page.evaluate(() => navigator.userAgent);
+          const electron = ua.match(/Electron\/[\d.]+/)?.[0] ?? "the desktop app";
+          where = `${electron}, ${await windowSize(studio.page)}`;
+          console.error(`  measuring ${where}`);
+        }
         const state = await suite.setup(studio);
         for (const sc of suite.scenarios) {
           try {
@@ -127,7 +154,9 @@ console.error(`measured in ${Math.round((Date.now() - started) / 1000)} s`);
 
 const results: Results = {
   date: new Date().toISOString(),
-  machine: args.machine ?? `${process.platform}, ${cpus().length} cores`,
+  machine:
+    args.machine ??
+    [`${process.platform}, ${cpus().length} cores`, where].filter(Boolean).join(", "),
   rounds,
   head: { sha: args["head-sha"] ?? null, runs: builds[0]!.runs },
   base: builds[1] ? { sha: args["base-sha"] ?? null, runs: builds[1].runs } : null,

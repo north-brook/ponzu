@@ -20,7 +20,7 @@ import {
 } from "./app.ts";
 import { BOARDS, type BoardKind, CORPUS_TOKENS } from "./corpus.ts";
 import { frameStats, median, percentile, round } from "./metrics.ts";
-import { summarize, traced } from "./trace.ts";
+import { stamp, summarize, summarizeAfter, traced } from "./trace.ts";
 
 export type Surface = "canvas" | "panes" | "thread" | "sidebar" | "sandbox";
 export type Measured = Record<string, number>;
@@ -80,6 +80,25 @@ function grid(prefix: string, kind: BoardKind, n: number, cols: number): Artboar
   return out;
 }
 
+/** `n` boards of `kinds` in turn, `cols` to a row, each row as tall as its tallest board. */
+function wall(prefix: string, kinds: BoardKind[], n: number, cols: number): Artboard[] {
+  const out: Artboard[] = [];
+  let y = 0;
+  for (let row = 0; row * cols < n; row++) {
+    let x = 0;
+    let tallest = 0;
+    for (let i = row * cols; i < Math.min(n, (row + 1) * cols); i++) {
+      const kind = kinds[i % kinds.length]!;
+      const ab = BOARDS[kind].make({ id: `ab_${prefix}${i}`, name: `${kind} ${i + 1}`, x, y });
+      x += (Number.parseFloat(String(ab.root.style.width)) || 1440) + GAP;
+      tallest = Math.max(tallest, Number.parseFloat(String(ab.root.style.height)) || 4000);
+      out.push(ab);
+    }
+    y += tallest + GAP;
+  }
+  return out;
+}
+
 export const CANVASES: Record<string, { about: string; seed: () => Seed }> = {
   website: {
     about:
@@ -119,6 +138,15 @@ export const CANVASES: Record<string, { about: string; seed: () => Seed }> = {
     about: "Sixty small boards on one page.",
     seed: () => ({ name: "Many", tokens: CORPUS_TOKENS, boards: grid("mn", "tiny-card", 60, 10) }),
   },
+  wall: {
+    about:
+      "Twenty-four landing pages in three rows, the whole canvas fitted: every board on screen at once, small.",
+    seed: () => ({
+      name: "Wall",
+      tokens: CORPUS_TOKENS,
+      boards: wall("wl", ["landing-weft", "landing-kettle", "landing-halon"], 24, 8),
+    }),
+  },
   huge: {
     about: "One 8000 px square board, sparse.",
     seed: () => ({ name: "Huge", tokens: CORPUS_TOKENS, boards: row("hg", ["huge"]) }),
@@ -136,17 +164,25 @@ const REST_MS = 700;
  * Plays `play` (in the page) and the rest after it, traced. The frame numbers are the gesture's;
  * `settleMs` is the worst frame of the rest.
  */
-async function gesture(s: Studio, play: () => Promise<unknown>): Promise<Measured> {
+async function gesture(
+  s: Studio,
+  play: () => Promise<unknown>,
+  restMs = REST_MS,
+): Promise<Measured> {
   const { page, cdp } = s;
   const { value, events } = await traced(cdp, async () => {
     const t0 = await page.evaluate(() => window.__pz.now());
     const commits0 = await page.evaluate(() => window.__pz.commits);
     await play();
-    const t1 = await page.evaluate(() => window.__pz.now());
+    // Marked in the trace too, so what the rest cost can be told from the gesture's.
+    const t1 = await page.evaluate(() => {
+      console.timeStamp("pz-rest");
+      return window.__pz.now();
+    });
     await page.evaluate(async (ms) => {
       const end = window.__pz.now() + ms;
       while (window.__pz.now() < end) await window.__pz.frame();
-    }, REST_MS);
+    }, restMs);
     const t2 = await page.evaluate(() => window.__pz.now());
     const r = await page.evaluate(() => ({
       frames: window.__pz.frames,
@@ -159,6 +195,8 @@ async function gesture(s: Studio, play: () => Promise<unknown>): Promise<Measure
     };
   });
   const t = summarize(events);
+  const rest = stamp(events, "pz-rest");
+  const after = summarizeAfter(events, rest);
   const frames = Math.max(1, value.during.frames);
   return {
     fps: value.during.fps,
@@ -172,6 +210,13 @@ async function gesture(s: Studio, play: () => Promise<unknown>): Promise<Measure
     paintMs: round(t.paintMs),
     rasterMs: round(t.rasterMs),
     gpuMs: round(t.gpuMs),
+    tiles: t.tiles,
+    restTiles: after.tiles,
+    restGpuMs: round(after.gpuMs),
+    restMainMs: round(after.mainMs),
+    // From the gesture's end to the last tile finished anywhere in the trace: a tile begun
+    // during the gesture and finished in the rest still keeps the canvas from being sharp.
+    sharpMs: Math.max(0, round((t.lastTileTs - rest) / 1000)),
     longestTaskMs: round(t.longestTaskMs, 1),
     restyledPerFrame: round(t.restyled / frames),
     laidOutPerFrame: round(t.laidOut / frames),
@@ -274,6 +319,8 @@ function canvasSuite(canvas: string, extra: Scenario[] = [], gestures = true): S
               headline: ["fps", "mainMs", "restyledPerFrame"],
               run: (s: Studio) => pinch(s),
             },
+            // In to about 3.3 times the zoom, and stop: every board on screen drawn again, bigger.
+            zoomAndStop(`${canvas}.zoom-in`, "Pinch in and stop", 40, -1.5),
             {
               id: `${canvas}.pan`,
               title: "Pan",
@@ -354,8 +401,44 @@ async function zoomTo(s: Studio, percent: number): Promise<void> {
   await settled(s.page);
 }
 
+/**
+ * A pinch that stops somewhere else: `frames` frames of `dy` (negative zooms in), from `from`%
+ * if given, then a long rest, so the redraw at the new zoom (the settle) is measured whole.
+ * The zoom is put back as it was, unmeasured.
+ */
+function zoomAndStop(
+  id: string,
+  title: string,
+  frames: number,
+  dy: number,
+  from?: number,
+): Scenario {
+  return {
+    id,
+    title,
+    headline: ["fps", "restTiles", "sharpMs"],
+    run: async (s) => {
+      const back = await zoomPercent(s.page);
+      if (from) await zoomTo(s, from);
+      const m = await gesture(
+        s,
+        () => s.page.evaluate(([n, d]) => window.__pz.wheel(n!, d!, true), [frames, dy]),
+        1500,
+      );
+      await zoomTo(s, back);
+      return m;
+    },
+  };
+}
+
 const website: Suite = {
-  ...canvasSuite("website", [resize("sidebar"), resize("thread"), commitText]),
+  ...canvasSuite("website", [
+    resize("sidebar"),
+    resize("thread"),
+    commitText,
+    // From 100% out to about 16% in one gesture: the bitmap drawn again on the way.
+    zoomAndStop("website.zoom-out", "Pinch out a long way", 60, 1.5, 100),
+  ]),
   // As the person had it: the two pages fitted, about 13%.
   setup: async (s) => {
     const { state } = await openCanvas(s, "website");
@@ -373,6 +456,51 @@ const LINE = [
   "Here's what changed:\n\n- The nav keeps its height on scroll\n- `Pricing` reads first\n- The footer's columns wrap at 960",
   "The mobile board now matches: the cards stack, and the CTA stays in reach.",
 ];
+
+/** A long reply in Markdown: headings, lists, inline code, a table and fenced code. */
+const LONG_REPLY = `## What changed
+
+I rebuilt the **pricing** section so the plans compare at a glance, and moved the FAQ under it.
+
+- The three plans sit in one row from 960 up, and stack below it
+- Each plan lists the same five lines, in the same order, so the eye runs across
+- \`Most popular\` is a quiet badge now, not a second colour
+
+| Plan | Seats | Price |
+| --- | --- | --- |
+| Starter | 1 | $0 |
+| Team | 10 | $49 |
+| Business | 50 | $199 |
+
+The grid is one component, so the mobile board follows it:
+
+\`\`\`tsx
+export function Plans({ plans }: { plans: Plan[] }) {
+  return (
+    <section className="grid gap-6 md:grid-cols-3">
+      {plans.map((plan) => (
+        <article key={plan.id} className="rounded-2xl border p-6">
+          <h3 className="text-lg font-semibold">{plan.name}</h3>
+          <p className="mt-2 text-3xl tabular-nums">{plan.price}</p>
+          <ul className="mt-6 space-y-2 text-sm">
+            {plan.lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </section>
+  );
+}
+\`\`\`
+
+### Still to do
+
+1. The FAQ's answers are placeholder copy
+2. The footer's columns wrap early at 1024
+3. Dark mode needs the badge's ink checked
+
+Say if you'd rather the plans stay as cards.`;
 
 const thread: Suite = {
   id: "thread",
@@ -453,6 +581,29 @@ const thread: Suite = {
         return m;
       },
     },
+    {
+      id: "thread.stream-markdown",
+      title: "Claude streams a long Markdown reply",
+      headline: ["fps", "mainMs", "longestTaskMs"],
+      run: (s, state) =>
+        gesture(s, () =>
+          s.page.evaluate(
+            async ({ canvasId, reply }) => {
+              const agent = window.ponzuFake!.backend.agent(canvasId);
+              const id = agent.say("", { streaming: true });
+              // The whole reply in two seconds, a frame's worth of characters at a time: its
+              // table and its code block grow as they would, token by token.
+              const step = Math.ceil(reply.length / 120);
+              for (let f = 1; f <= 120; f++) {
+                agent.say(reply.slice(0, f * step), { id, streaming: true });
+                await window.__pz.frame();
+              }
+              agent.say(reply, { id, streaming: false });
+            },
+            { canvasId: state.canvasId, reply: LONG_REPLY },
+          ),
+        ),
+    },
   ],
 };
 
@@ -507,6 +658,37 @@ const sidebar: Suite = {
  * is the client's part of "time to first paint": the real sandbox's wake and the model's first
  * token are measured on the real services (live.ts).
  */
+/** One prompt from the create page, timed from Enter to its first board drawn. */
+async function firstBoard(s: Studio, boardId: string): Promise<Measured> {
+  const page = s.page;
+  const board = BOARDS["tiny-card"].make({ id: boardId, name: "Hello", x: 0, y: 0 });
+  await page.evaluate(() => window.ponzuFake!.command("new-canvas"));
+  const field = page.getByPlaceholder(/Describe what you want to make/);
+  await field.waitFor();
+  await field.fill("A hello card");
+  await settled(page);
+  return action(s, async () => {
+    await page.evaluate((artboard) => {
+      const w = window.ponzuFake!;
+      const known = new Set(w.backend.canvases.keys());
+      const watch = () => {
+        const fresh = [...w.backend.canvases.keys()].find((k) => !known.has(k));
+        if (!fresh) return void requestAnimationFrame(watch);
+        const agent = w.backend.agent(fresh);
+        agent.say("On it.");
+        const page = w.backend.canvas(fresh).sequencer.doc.pages[0]!.id;
+        agent.commit([{ op: "artboard.create", page, index: 0, artboard }]);
+        agent.idle();
+      };
+      watch();
+    }, board);
+    await field.press("Enter");
+    await page.locator(`[data-pz-board="${boardId}"] [data-pz-tier="live"]`).waitFor({
+      timeout: 60_000,
+    });
+  });
+}
+
 const sandbox: Suite = {
   id: "sandbox",
   surface: "sandbox",
@@ -519,33 +701,10 @@ const sandbox: Suite = {
       title: "Prompt to first board",
       headline: ["latencyMs", "longestTaskMs", "commits"],
       run: async (s) => {
-        const page = s.page;
-        const board = BOARDS["tiny-card"].make({ id: "ab_first", name: "Hello", x: 0, y: 0 });
-        await page.evaluate(() => window.ponzuFake!.command("new-canvas"));
-        const field = page.getByPlaceholder(/Describe what you want to make/);
-        await field.waitFor();
-        await field.fill("A hello card");
-        await settled(page);
-        return action(s, async () => {
-          await page.evaluate((artboard) => {
-            const w = window.ponzuFake!;
-            const known = new Set(w.backend.canvases.keys());
-            const watch = () => {
-              const fresh = [...w.backend.canvases.keys()].find((k) => !known.has(k));
-              if (!fresh) return void requestAnimationFrame(watch);
-              const agent = w.backend.agent(fresh);
-              agent.say("On it.");
-              const page = w.backend.canvas(fresh).sequencer.doc.pages[0]!.id;
-              agent.commit([{ op: "artboard.create", page, index: 0, artboard }]);
-              agent.idle();
-            };
-            watch();
-          }, board);
-          await field.press("Enter");
-          await page.locator('[data-pz-board="ab_first"] [data-pz-tier="live"]').waitFor({
-            timeout: 60_000,
-          });
-        });
+        let n = 0;
+        // Three prompts, each a new canvas whose board has an id of its own, so the wait never
+        // finds the last one's.
+        return thrice(() => firstBoard(s, `ab_first${n++}`));
       },
     },
     {
@@ -578,6 +737,7 @@ export const SUITES: Suite[] = [
   canvasSuite("paint"),
   canvasSuite("motion"),
   canvasSuite("many"),
+  canvasSuite("wall"),
   canvasSuite("huge"),
   thread,
   sidebar,

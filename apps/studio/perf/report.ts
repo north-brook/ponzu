@@ -128,8 +128,10 @@ export function report(results: Results, history: HistoryEntry[] = []): string {
   const against = results.base
     ? `${short(results.head.sha, "head")} against ${short(results.base.sha, "base")}, ${results.rounds} rounds each, interleaved`
     : `${short(results.head.sha, "head")}, ${results.rounds} rounds`;
+  // run.ts names Electron in the machine when it measured the desktop app (--electron, --cdp).
+  const where = /\bElectron\//.test(results.machine) ? "the desktop app" : "headless Chrome";
   out.push(
-    `<sub>${against} · ${results.machine} · headless Chrome on Ponzu Cloud in memory · reported, never enforced</sub>`,
+    `<sub>${against} · ${results.machine} · ${where} on Ponzu Cloud in memory · reported, never enforced</sub>`,
     "",
   );
 
