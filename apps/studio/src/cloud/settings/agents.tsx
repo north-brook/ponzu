@@ -221,7 +221,7 @@ export function OwnAgent({
     <>
       <Section
         label="Your own agent"
-        caption="Use your canvases from Claude Code, Codex, Cursor or T3 Code: hand work to Ponzu's agent, or drive a canvas yourself."
+        caption="Use your canvases from Claude Code, Codex, Cursor or T3 Code: hand work to Ponzu's agent, or drive a canvas yourself. Add Ponzu to an agent on this computer, then allow it here when it asks."
       >
         <Row>
           <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-1">
