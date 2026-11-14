@@ -103,7 +103,8 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 | `PONZU_RUNNER_TOKEN` | The runner token: the bearer on every call, good for this canvas only. |
 | `PONZU_PORT_TOKEN` | The bearer every request to the runner's port must carry. New at every start. |
 | `PONZU_RUNNER_BUNDLE` | The SHA-256 of the bundle this start runs; the runner names it in `X-Ponzu-Client`. |
-| `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | Exactly one. With both the runner refuses to start: Claude Code would silently use the key and bill its account. |
+| `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | Exactly one. With both the runner refuses to start: Claude Code would silently use the key and bill its account. Neither in tools mode. |
+| `PONZU_RUNNER_MODE` | `claude` (the default) or `tools`: for a canvas a person's own agent drives, no Claude Code, only the canvas and its tools for that agent's calls on `POST /tool` (docs/cloud.md, "Driving a canvas"). Refuses a Claude credential. |
 | `PONZU_RUNNER_PORT` | The port `/poke` and `/health` listen on, on every interface. 4600 by default. |
 | `PONZU_WORK_ROOT` | Where checkouts live. `~/work` by default: the repo in `~/work/<name>`, Scratch in `~/work/scratch`. |
 | `PONZU_STATE_DIR` | What the runner keeps across restarts: usage totals, the turn in flight (`turn.json`), and the marker of the last checkpoint the API confirmed (`checkpoint.json`). `~/.ponzu` by default; `/home/ponzu/.ponzu` in the image. |

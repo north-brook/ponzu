@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { check, index, jsonb, pgTable, text } from "drizzle-orm/pg-core";
 import { AGENT_TOKEN_KINDS } from "../enums.ts";
 import { users } from "./accounts.ts";
+import { canvases } from "./canvases.ts";
 import { createdAt, instant, type Json, oneOf } from "./columns.ts";
 
 /*
@@ -117,5 +118,38 @@ export const agentAuthorizations = pgTable(
       "agent_authorizations_decided_check",
       sql`not (${t.approvedAt} is not null and ${t.deniedAt} is not null)`,
     ),
+  ],
+);
+
+/**
+ * A person's own agent driving a canvas (docs/cloud.md, "Driving a canvas"): Ponzu's agent is off
+ * and the sandbox runs only the canvas, for the agent's tool calls. One per canvas. Each call of
+ * the agent's renews it (`seen_at`); one unseen for 30 minutes is over, read as over at once and
+ * taken away by the sweep. Apart from `canvases` so a renewal never touches the row clients watch;
+ * `canvases.driver` says who it is.
+ */
+export const canvasDrivers = pgTable(
+  "canvas_drivers",
+  {
+    canvasId: text("canvas_id")
+      .primaryKey()
+      .references(() => canvases.id, { onDelete: "cascade" }),
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => agentGrants.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    client: text("client").notNull(),
+    name: text("name").notNull(),
+    host: text("host"),
+    /** What the agent said it is, as in `claude-code/2.1.0`. */
+    version: text("version"),
+    startedAt: instant("started_at").notNull().defaultNow(),
+    seenAt: instant("seen_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("canvas_drivers_seen_at_idx").on(t.seenAt),
+    index("canvas_drivers_grant_id_idx").on(t.grantId),
   ],
 );

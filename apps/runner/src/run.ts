@@ -10,6 +10,8 @@ import {
   type CloudWorkspace,
   cloudTools,
   createCloudWorkspace,
+  getRemoteTool,
+  looks,
   runTool,
   type ToolCaller,
   type ToolDef,
@@ -82,6 +84,7 @@ import { StateReporter } from "./state.ts";
 import { describeStep } from "./steps.ts";
 import type { Telemetry } from "./telemetry.ts";
 import { ThreadWriter } from "./thread.ts";
+import { type ToolAnswer, ToolsModeError, toAnswer } from "./tools-mode.ts";
 import { TurnLog } from "./turn.ts";
 import { UsageMeter } from "./usage.ts";
 
@@ -545,6 +548,26 @@ export class Runner {
     this.watchTimer = setInterval(() => this.watch(), this.timing.watchEveryMs);
     this.watchTimer.unref?.();
     this.claim();
+  }
+
+  /**
+   * A look from a person's own agent that doesn't drive the canvas (docs/cloud.md, "Looking
+   * without driving"): one canvas tool that only looks (`looks`: it reads, or makes a picture or
+   * a file), run on this runner's canvas and renderer beside Ponzu's agent, whose turn it never
+   * touches. The API relays it to `POST /tool` once it has checked the person may read the canvas.
+   */
+  look(name: string, args: unknown, agent: { name: string; client: string }): Promise<ToolAnswer> {
+    const def = getRemoteTool(name);
+    if (!def || !looks(def)) {
+      throw new ToolsModeError(404, `${name} isn't a canvas tool that only looks.`);
+    }
+    if (!this.ws || this.stopping) throw new ToolsModeError(503, "The canvas isn't open here yet.");
+    const caller: ToolCaller = {
+      id: `looker:${agent.client}`,
+      author: { kind: "agent", name: agent.name },
+      client: agent.client,
+    };
+    return runTool(def, args, { ws: this.ws, caller }).then(toAnswer);
   }
 
   /** Something may be waiting to be claimed. What arrives is never trusted: it only starts a claim. */

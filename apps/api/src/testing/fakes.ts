@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import type { Anthropic } from "../deps/anthropic.ts";
-import type { Poke } from "../deps/poke.ts";
+import type { Poke, RunnerTool } from "../deps/poke.ts";
 import type { LiveQuery, RealtimeSealer, SealedQuery } from "../deps/realtime.ts";
 import {
   MAX_DELETE_KEYS,
@@ -234,4 +234,25 @@ export class FakeSealer implements RealtimeSealer {
       expiresAt: this.#clock.now() + 60_000,
     };
   }
+}
+
+/**
+ * A driven canvas's runner, as the API reaches its `POST /tool`: each call recorded, and answered
+ * by `answer` (a tool's text, by default).
+ */
+export class FakeRunnerTool {
+  readonly calls: {
+    url: string;
+    name: string;
+    args: unknown;
+    driver: { name: string; client: string };
+  }[] = [];
+  answer: (name: string, args: unknown) => { status: number; body: unknown } = (name) => ({
+    status: 200,
+    body: { content: [{ type: "text", text: `Ran ${name}.` }], isError: false },
+  });
+  readonly tool: RunnerTool = async (target, call) => {
+    this.calls.push({ url: target.url, ...call });
+    return this.answer(call.name, call.args);
+  };
 }

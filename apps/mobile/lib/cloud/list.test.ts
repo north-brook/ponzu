@@ -46,6 +46,7 @@ function row(over: Partial<CanvasListRow> = {}): CanvasListRow {
     seenSeq: 1,
     seenThreadSeq: null,
     assetKeyRotatedAt: null,
+    driver: null,
     ...over,
   };
 }

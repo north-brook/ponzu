@@ -224,14 +224,18 @@ export const runner = new Hono<AppEnv>()
    * The canvas's events this runner has not been handed, oldest first, and the canvas's head,
    * from one statement. An event goes to each runner once, so a new claim hands out only what
    * is new. Safe to repeat: the same claim id hands out again what it handed out. Only the
-   * kinds `claimableKinds` allows now go out; the rest stay in the feed for a later claim.
+   * kinds `claimableKinds` allows now go out, and of those only the ones the runner asked for
+   * (a runner in tools mode asks for a stop and a push); the rest stay in the feed.
    */
   .post("/events/claim", access.runner, validate("json", Claim), async (c) => {
     const { canvasId, runnerId } = c.var.actor;
-    const { claimId, limit } = c.req.valid("json");
+    const { claimId, limit, kinds: asked } = c.req.valid("json");
     const { deps } = c.var;
     const now = new Date(deps.clock.now());
-    const kinds = await claimableKinds(deps, { canvasId });
+    const allowed = await claimableKinds(deps, { canvasId });
+    const kinds = !asked
+      ? allowed
+      : asked.filter((kind) => allowed === "all" || allowed.includes(kind));
     const claimed = await claimEvents(deps.db, { canvasId, runnerId, claimId, limit, now, kinds });
     if (!claimed) throw new ApiError(404, "not_found", "There is no such canvas.");
     const response: ClaimResponse = {

@@ -297,6 +297,8 @@ const CANVAS_ROUTES: CanvasRoute[] = [
   route("DELETE", "/pull-request/auto-merge", "write"),
   route("POST", "/pull-request/close", "write"),
   route("POST", "/pull-request/update-branch", "write", { body: { headSha: head } }),
+  route("PUT", "/driver", "write", { body: {} }),
+  route("DELETE", "/driver", "write"),
 ];
 
 const LIVE_CANVAS_QUERIES = ["canvas.head", "canvas.thread", "canvas.questions", "canvas.presence"];

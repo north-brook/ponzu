@@ -10,6 +10,13 @@ import type { GitCredentialRequest, GitCredentialResponse } from "./api/protocol
  * this process holds; the agent's environment never has it). Even then nothing that arrives is
  * trusted: `POST /poke` says there may be something to claim, and the runner only claims, from
  * the API, with its own token. `GET /health` says it is up, and whether it has started.
+ *
+ * `POST /tool` runs one canvas tool for a person's own agent: `{ name, args, driver: { name,
+ * client } }`, which only the API sends, relaying the agent's MCP call. It answers the tool's MCP
+ * content. In tools mode (docs/cloud.md, "Driving a canvas") that is any canvas tool, for the
+ * agent driving the canvas or one looking; beside Ponzu's agent, only one that looks ("Looking
+ * without driving"). The bearer is the one door: only the API holds it, and the agent's own
+ * checks (its grant, its lease, which tools it may call) are the API's.
  */
 export function serve(opts: {
   port: number;
@@ -18,6 +25,8 @@ export function serve(opts: {
   hostname?: string;
   poke(): void;
   health(): unknown;
+  /** One canvas tool, for a person's own agent: any in tools mode, else one that looks. */
+  tool?(name: string, args: unknown, driver: { name: string; client: string }): Promise<unknown>;
 }): {
   port: number;
   stop(): void;
@@ -37,6 +46,10 @@ export function serve(opts: {
       if (pathname === "/health") {
         if (request.method !== "GET") return new Response(null, { status: 405 });
         return Response.json(opts.health());
+      }
+      if (pathname === "/tool" && opts.tool) {
+        if (request.method !== "POST") return new Response(null, { status: 405 });
+        return answerTool(request, opts.tool);
       }
       return new Response(null, { status: 404 });
     },
@@ -79,6 +92,37 @@ export function serveCredentials(opts: {
   // Owner and group: the runner and, in the image, the agent's user (the service's group).
   chmodSync(opts.path, 0o660);
   return { stop: () => void server.stop(true) };
+}
+
+/** A `POST /tool`: the call checked for its shape, run, and its answer or refusal as JSON. */
+async function answerTool(
+  request: Request,
+  tool: NonNullable<Parameters<typeof serve>[0]["tool"]>,
+): Promise<Response> {
+  let body: { name?: unknown; args?: unknown; driver?: { name?: unknown; client?: unknown } };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return Response.json({ error: "The call isn't JSON." }, { status: 400 });
+  }
+  const { name, args, driver } = body ?? {};
+  if (
+    typeof name !== "string" ||
+    typeof driver?.name !== "string" ||
+    typeof driver.client !== "string"
+  ) {
+    return Response.json({ error: "Say which tool, and who drives." }, { status: 400 });
+  }
+  try {
+    const answer = await tool(name, args ?? {}, { name: driver.name, client: driver.client });
+    return Response.json(answer);
+  } catch (err) {
+    const status = (err as { status?: unknown }).status;
+    return Response.json(
+      { error: said(err) },
+      { status: typeof status === "number" && status >= 400 ? status : 500 },
+    );
+  }
 }
 
 /** Whether `header` is `Bearer <token>`, compared in constant time. */

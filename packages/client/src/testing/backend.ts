@@ -24,7 +24,7 @@ import { type AnswerBody, type Api, SEARCH_GROUPS, SEARCH_QUERY_MAX } from "../a
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError, abortError, networkError } from "../errors.ts";
 import { createLive, type Live, MAX_LIVE_QUERIES } from "../live/live.ts";
-import { LIVE_COLUMNS, type LiveQueryName, type RawRow } from "../live/rows.ts";
+import { type CanvasDriver, LIVE_COLUMNS, type LiveQueryName, type RawRow } from "../live/rows.ts";
 import type { Profile } from "../rpc.ts";
 import type { Session, SessionState } from "../session.ts";
 import { FakeClaude } from "./claude.ts";
@@ -124,6 +124,8 @@ export interface FakeCanvas {
   /** How many times its file links were reset, and when last: its files' address has it. */
   assetKeyResets: number;
   assetKeyRotatedAt: string | null;
+  /** Someone's own agent driving it (`drive`), or null. */
+  driver?: CanvasDriver | null;
   /** `pz/<topic>`, from the first message; null for Scratch and before it. */
   branch: string | null;
   /** Its branch and pull request on GitHub; null for Scratch. */
@@ -274,6 +276,32 @@ export class FakeBackend {
     const expiresAt = new Date(this.clock.now() + 15 * 60_000).toISOString();
     this.agentAsks.set(id, { name, redirectUri, expiresAt });
     return id;
+  }
+
+  /**
+   * The person's own agent takes the canvas to drive it, as `take_canvas` would: the head shows
+   * it and the thread says so. Null `driver` lets it go.
+   */
+  drive(canvasId: string, driver: Omit<CanvasDriver, "since"> | null): void {
+    const canvas = this.canvases.get(canvasId);
+    if (!canvas) throw new Error(`drive: no canvas ${canvasId}`);
+    const was = canvas.driver;
+    canvas.driver = driver ? { ...driver, since: new Date(this.clock.now()).toISOString() } : null;
+    const shown = driver ?? was;
+    if (shown) {
+      this.append(canvas, {
+        kind: "notice",
+        payload: {
+          type: "driver",
+          action: driver ? "took" : "let_go",
+          agent: shown.name,
+          host: shown.host,
+          owner: null,
+          by: null,
+        },
+      });
+    }
+    this.changed();
   }
 
   addPerson(input: { login: string; name?: string | null }): FakePerson {
@@ -1082,6 +1110,26 @@ export class FakeBackend {
             this.changed();
             return this.view(canvas, person.id);
           }),
+        // As the API's: the drive ends, and the thread says who took it back.
+        takeBack: (id) =>
+          call(() => {
+            const canvas = writable(id);
+            const driver = canvas.driver;
+            if (!driver) return;
+            canvas.driver = null;
+            this.append(canvas, {
+              kind: "notice",
+              payload: {
+                type: "driver",
+                action: "taken_back",
+                agent: driver.name,
+                host: driver.host,
+                owner: null,
+                by: personOf(person),
+              },
+            });
+            this.changed();
+          }),
         // As the API's take-over: only a canvas whose owner is gone from its workspace, by
         // someone who can change it with their own Claude connected.
         takeOver: (id) =>
@@ -1609,6 +1657,7 @@ export class FakeBackend {
             last_activity_at: visible.lastActivityAt,
             created_at: visible.createdAt,
             asset_key_rotated_at: visible.assetKeyRotatedAt,
+            driver: visible.driver ?? null,
             seen_seq: read ? String(read.seq) : null,
             seen_thread_seq: read?.threadSeq === null || !read ? null : String(read.threadSeq),
           };
@@ -1635,6 +1684,7 @@ export class FakeBackend {
           pr_auto_merge: head.prAutoMerge,
           last_activity_at: head.lastActivityAt,
           asset_key_rotated_at: canvas!.assetKeyRotatedAt,
+          driver: canvas!.driver ?? null,
           agent_blocker: head.agentBlocker,
           agent_blocked_until: null,
           sandbox_state: null,

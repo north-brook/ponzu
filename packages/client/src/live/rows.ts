@@ -85,6 +85,7 @@ export const LIVE_COLUMNS = {
     "last_activity_at",
     "created_at",
     "asset_key_rotated_at",
+    "driver",
     "seen_seq",
     "seen_thread_seq",
   ],
@@ -107,6 +108,7 @@ export const LIVE_COLUMNS = {
     "pr_auto_merge",
     "last_activity_at",
     "asset_key_rotated_at",
+    "driver",
     "agent_blocker",
     "agent_blocked_until",
     "sandbox_state",
@@ -251,8 +253,37 @@ export interface CanvasListRow {
   createdAt: string;
   /** When its file links were last reset: its previews' address changed then. */
   assetKeyRotatedAt: string | null;
+  /** The person's own agent driving it in place of Ponzu's agent, or null. */
+  driver: CanvasDriver | null;
   seenSeq: number | null;
   seenThreadSeq: number | null;
+}
+
+/** Who drives a canvas in place of Ponzu's agent: a person's own agent (Claude Code, Codex…). */
+export interface CanvasDriver {
+  /** Which mark to draw: `claude`, `openai` (Codex), `cursor`, `t3` or anything else. */
+  client: string;
+  /** "Claude Code". */
+  name: string;
+  /** The app it runs in, when it said: "T3 Code". */
+  host: string | null;
+  /** Whose agent it is. */
+  userId: string;
+  /** When it took the canvas, as an ISO 8601 time. */
+  since: string;
+}
+
+/** What a live row's `driver` holds, or null for anything that isn't one. */
+export function driverOf(value: unknown): CanvasDriver | null {
+  const d = value as Partial<CanvasDriver> | null | undefined;
+  if (!d || typeof d.name !== "string" || typeof d.client !== "string") return null;
+  return {
+    client: d.client,
+    name: d.name,
+    host: typeof d.host === "string" ? d.host : null,
+    userId: typeof d.userId === "string" ? d.userId : "",
+    since: typeof d.since === "string" ? d.since : "",
+  };
 }
 
 /** A canvas's head: when `seq` moves, there are ops to fetch. */
@@ -279,6 +310,11 @@ export interface CanvasHeadRow {
    * `GET /v1/canvases/:id` names a new `assetsUrl`.
    */
   assetKeyRotatedAt: string | null;
+  /**
+   * The person's own agent driving the canvas in place of Ponzu's agent (docs/cloud.md,
+   * "Driving a canvas"): the thread is off and its mark shows instead. Null when Ponzu's drives.
+   */
+  driver: CanvasDriver | null;
   /** Why the agent cannot run now: "connect Claude", "waiting for a machine". Null when it can. */
   agentBlocker: AgentBlocker | null;
   /** Until when the blocker holds, when that is known (a Claude plan's limit resets then). */
@@ -397,6 +433,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     lastActivityAt: time(r.last_activity_at),
     createdAt: time(r.created_at),
     assetKeyRotatedAt: maybeTime(r.asset_key_rotated_at),
+    driver: driverOf(r.driver),
     seenSeq: maybeNumber(r.seen_seq),
     seenThreadSeq: maybeNumber(r.seen_thread_seq),
   }),
@@ -419,6 +456,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prAutoMerge: Boolean(r.pr_auto_merge),
     lastActivityAt: time(r.last_activity_at),
     assetKeyRotatedAt: maybeTime(r.asset_key_rotated_at),
+    driver: driverOf(r.driver),
     agentBlocker: (r.agent_blocker ?? null) as AgentBlocker | null,
     agentBlockedUntil: maybeTime(r.agent_blocked_until),
     sandboxState: maybeText(r.sandbox_state),

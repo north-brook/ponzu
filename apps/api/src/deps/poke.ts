@@ -38,3 +38,36 @@ export function createPoke({ fetch, clock }: { fetch: Fetch; clock: Clock }): Po
     }
   };
 }
+
+/**
+ * Runs one canvas tool in a driven canvas's runner (docs/cloud.md, "Driving a canvas"): `POST
+ * /tool` on the sandbox's public port, with the port's bearer, for the agent driving it. Answers
+ * the runner's status and its JSON: the tool's MCP content, or `{ error }`.
+ */
+export type RunnerTool = (
+  target: { url: string; token: string },
+  call: { name: string; args: unknown; driver: { name: string; client: string } },
+) => Promise<{ status: number; body: unknown }>;
+
+/** A tool call has this long: a recording runs for up to a minute and a half. */
+const TOOL_TIMEOUT_MS = 150_000;
+
+export function createRunnerTool({ fetch, clock }: { fetch: Fetch; clock: Clock }): RunnerTool {
+  return async ({ url, token }, call) => {
+    const response = await fetch(new URL("/tool", url).toString(), {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(call),
+      redirect: "manual",
+      signal: clock.timeout(TOOL_TIMEOUT_MS),
+    });
+    const text = await response.text();
+    let body: unknown = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = { error: text.slice(0, 200) };
+    }
+    return { status: response.status, body };
+  };
+}

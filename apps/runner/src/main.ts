@@ -25,6 +25,7 @@ import { GitWork, gitIn, ScratchWork } from "./save/work.ts";
 import { agentSecretWriter, localSecretWriter } from "./secret-tool.ts";
 import { serve, serveCredentials } from "./server.ts";
 import { posthogTelemetry } from "./telemetry.ts";
+import { ToolsRunner } from "./tools-mode.ts";
 import { runnerClient } from "./version.ts";
 
 /**
@@ -78,6 +79,56 @@ try {
 }
 
 const client = runnerClient();
+
+/*
+ * Tools mode (docs/cloud.md, "Driving a canvas"): a person's own agent drives the canvas, so no
+ * Claude Code, no checkout and no agent's side; only the canvas, its renderer and its tools for
+ * the agent's calls, which the API relays to `POST /tool`.
+ */
+if (env.mode === "tools") {
+  const tools = new ToolsRunner({
+    api: new HttpRunnerApi({
+      baseUrl: env.apiUrl,
+      canvasId: env.canvasId,
+      token: env.token,
+      client,
+    }),
+    renderer: new ChromiumRenderer({
+      loopback: true,
+      ...(env.chromium ? { executablePath: env.chromium } : {}),
+    }),
+    log,
+    onFatal: () => {
+      toolServer.stop();
+      process.exit(EXIT_CONFIG);
+    },
+  });
+  const toolServer = serve({
+    port: env.port,
+    portToken: env.portToken,
+    poke: () => tools.poke(),
+    health: () => tools.health(),
+    tool: (name, args, driver) => tools.call(name, args, driver),
+  });
+  log(`listening on ${toolServer.port}, in tools mode`);
+  const stopTools = async (signal: string) => {
+    log(`${signal}: stopping`);
+    await tools.stop();
+    toolServer.stop();
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => void stopTools("SIGTERM"));
+  process.once("SIGINT", () => void stopTools("SIGINT"));
+  try {
+    await tools.start();
+    log("started, in tools mode");
+  } catch (err) {
+    log(`could not start: ${err instanceof Error ? err.message : err}`);
+    process.exit(fatal(err) ? EXIT_CONFIG : 1);
+  }
+  // Everything below is the Claude runner's.
+  await new Promise<never>(() => {});
+}
 const here = dirname(fileURLToPath(import.meta.url));
 // Beside this file: the source in a checkout, the bundle in the image.
 const helperFile = join(
@@ -185,6 +236,8 @@ const server = serve({
   portToken: env.portToken,
   poke: () => runner.poke(),
   health: () => runner.health(),
+  // A look from an agent that doesn't drive the canvas: only the tools that change nothing.
+  tool: (name, args, agent) => runner.look(name, args, agent),
 });
 log(`listening on ${server.port}`);
 mkdirSync(dirname(env.gitSocket), { recursive: true });

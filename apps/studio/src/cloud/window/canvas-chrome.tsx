@@ -10,7 +10,7 @@ import { PageTabs } from "./page-tabs.tsx";
 import { Presence } from "./presence.tsx";
 import { PullRequestTab } from "./pull-request-mark.tsx";
 import { SharePopover } from "./share-popover.tsx";
-import { ThreadToggle } from "./thread-toggle.tsx";
+import { ThreadToggle, type ToggleDriver } from "./thread-toggle.tsx";
 
 export interface CanvasChromeProps {
   name: string;
@@ -40,7 +40,11 @@ export interface CanvasChromeProps {
     blocked?: string | null;
     onRun: (action: NextAction) => void;
   } | null;
-  rail: { open: boolean; signal: RailSignal; onToggle: () => void };
+  /**
+   * The thread rail's toggle. `driver`: the person's own agent drives the canvas, so the rail is
+   * closed and the toggle is its mark (thread-toggle.tsx).
+   */
+  rail: { open: boolean; signal: RailSignal; onToggle: () => void; driver?: ToggleDriver | null };
   /**
    * The action the canvas is expected to offer while its own answer is on its way (from what
    * the sidebar's row says of its pull request): its room is held, unseen, from the first frame.
@@ -201,7 +205,12 @@ export function CanvasChrome({
         >
           <ChromeDivider pane="rail" />
           <span className="min-w-3 flex-1" />
-          <ThreadToggle open={rail.open} signal={rail.signal} onToggle={rail.onToggle} />
+          <ThreadToggle
+            open={rail.open}
+            signal={rail.signal}
+            onToggle={rail.onToggle}
+            driver={rail.driver ?? null}
+          />
           <span className="w-1 shrink-0" />
         </div>
       </div>

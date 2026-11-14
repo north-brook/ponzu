@@ -6,7 +6,7 @@ import { type ReactNode, useState } from "react";
 import type { ClaudeConnection, ClaudeLimit } from "../claude.ts";
 import type { Effort, Repo, Workspace } from "../model.ts";
 import { AccountSection } from "../settings/account.tsx";
-import { AgentsSection } from "../settings/agents.tsx";
+import { AgentsSection, type ConnectedAgent } from "../settings/agents.tsx";
 import type { PersonUsage, Usage } from "../settings/billing.ts";
 import type { RepoEnvironment } from "../settings/environments.ts";
 import { EnvironmentsSection } from "../settings/environments.tsx";
@@ -188,6 +188,11 @@ export interface SettingsData {
   teamAvailable?: boolean;
   /** The API's billing switch is "on": Plan and usage shows dollars and the cap. Shown unless false. */
   billingOn?: boolean;
+  /**
+   * The person's own agents connected through Ponzu's MCP: Agents shows "Your own agent" and
+   * "Connected agents" with them. Left out, as the drawn references were, it shows neither.
+   */
+  ownAgents?: ConnectedAgent[];
 }
 
 export const TEAM_SETTINGS: SettingsData = {
@@ -263,6 +268,18 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
         efforts={["low", "medium", "high", "xhigh", "max"]}
         onDefaultsChange={setDefaults}
         limits={data.connection?.method === "api_key" ? null : data.limits}
+        own={
+          data.ownAgents
+            ? {
+                mcpUrl: "https://api.ponzu.design/v1/mcp",
+                agents: data.ownAgents,
+                onCopy: ignore,
+                onOpenLink: ignore,
+                onRevoke: (agent) =>
+                  set({ ownAgents: data.ownAgents?.filter((a) => a.id !== agent.id) }),
+              }
+            : null
+        }
       />
     ),
     notifications: () => (

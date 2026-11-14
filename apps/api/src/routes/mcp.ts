@@ -3,9 +3,13 @@ import { Hono } from "hono";
 import { access } from "../auth/access.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
+import { driveTools, relayedTools } from "../mcp/drive.ts";
 import { personApi } from "../mcp/internal.ts";
 import { handleMcp } from "../mcp/server.ts";
-import { delegateTools } from "../mcp/tools.ts";
+import { delegateTools, type McpTool } from "../mcp/tools.ts";
+
+/** Every tool, in the order an agent should find them: delegating, then driving. */
+const TOOLS: McpTool[] = [...delegateTools, ...driveTools, ...relayedTools()];
 
 /*
  * `/v1/mcp`: Ponzu's MCP for a person's own agent (docs/cloud.md, "Your own agent"), over
@@ -53,12 +57,12 @@ export const mcp = new Hono<AppEnv>()
       await touchAgentGrant(deps.db, { grantId: actor.agent.grantId, client });
     }
     return handleMcp(c.req.raw, {
-      tools: delegateTools,
+      tools: TOOLS,
       version: deps.config.build.version,
       parsedBody: body,
       context: {
         api: personApi(c, actor, self),
-        deps,
+        deps: { ...deps, log: c.var.log },
         signal: c.req.raw.signal,
       },
     });

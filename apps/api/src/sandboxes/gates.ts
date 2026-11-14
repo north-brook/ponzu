@@ -1,4 +1,10 @@
-import { type AgentBlocker, claudeLimitedUntil, type EventKind, type WakeContext } from "@ponzu/db";
+import {
+  type AgentBlocker,
+  claudeLimitedUntil,
+  type EventKind,
+  isCanvasDriven,
+  type WakeContext,
+} from "@ponzu/db";
 import { wakesPaused } from "../http/maintenance.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { claudeProblem } from "./environment.ts";
@@ -44,10 +50,12 @@ export type WakeGate = (ctx: WakeContext, now: Date, ask: WakeAsk) => WakeRefusa
  * state, as the wake always has.
  */
 export const ownerGate: WakeGate = (ctx) =>
-  ctx.ownerMember ? null : { blocker: "claude_owner_left" };
+  ctx.ownerMember || ctx.driven ? null : { blocker: "claude_owner_left" };
 
 /** The Claude it runs on is not connected, or has expired. */
 export const claudeGate: WakeGate = (ctx, now) => {
+  // A driven canvas's sandbox runs no Claude (docs/cloud.md, "Driving a canvas").
+  if (ctx.driven) return null;
   const blocker = claudeProblem(ctx.claude, now.getTime());
   return blocker ? { blocker } : null;
 };
@@ -82,6 +90,7 @@ export const LIMIT_GRACE_MS = 30_000;
  * what a runner on its current credential reported, and cleared when a person connects again.
  */
 export const claudeLimitGate: WakeGate = (ctx, now) => {
+  if (ctx.driven) return null;
   const until = ctx.claude?.limitedUntil;
   if (!until || until.getTime() <= now.getTime()) return null;
   return { blocker: "claude_limited", retryAt: new Date(until.getTime() + LIMIT_GRACE_MS) };
@@ -147,6 +156,9 @@ export async function claimableKinds(
   ctx: ClaimContext,
 ): Promise<readonly EventKind[] | "all"> {
   const now = new Date(deps.clock.now());
+  // Driven by a person's own agent, the runner runs no Claude: what would begin a turn waits in
+  // the feed for the agent's `wait_for_activity`, or for Ponzu's agent once the drive ends.
+  if (await isCanvasDriven(deps.db, ctx.canvasId)) return WHILE_DRIVEN;
   if (await claudeLimitedUntil(deps.db, { canvasId: ctx.canvasId, now })) return AT_A_CLAUDE_LIMIT;
   return "all";
 }
@@ -158,3 +170,10 @@ export async function claimableKinds(
  * goes in once the plan resets, as the people who sent it were told.
  */
 export const AT_A_CLAUDE_LIMIT: readonly EventKind[] = ["stop", "edit", "push"];
+
+/**
+ * What a driven canvas's runner, which runs no Claude, may take: a stop and a push. People's
+ * messages, comments, answers and edits are for the agent driving it (`takeDriverEvents`),
+ * and what GitHub says waits for Ponzu's agent.
+ */
+export const WHILE_DRIVEN: readonly EventKind[] = ["stop", "push"];

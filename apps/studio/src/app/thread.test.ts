@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { ApiError, type CanvasHeadRow, type MeRow } from "@ponzu/client";
+import { driverNoticeLine } from "@ponzu/client/model/driver";
 import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@ponzu/client/testing";
 import { gateMessage } from "../cloud/gate.ts";
 import type { Person } from "../cloud/model.ts";
@@ -778,4 +779,45 @@ test("someone who may only read sees the thread and is told so, and can't send o
   const refused = await ines.api.canvases.stop(w.canvas.id).catch((error) => error);
   expect(refused.code).toBe("forbidden");
   store.close();
+});
+
+test("the person's own agent drives the canvas: the head names it, the thread says so, and Take back ends it", async () => {
+  const w = await world();
+  const store = w.thread();
+  const heads: (CanvasHeadRow | undefined)[] = [];
+  const stop = w.client.live.subscribe("canvas.head", { canvasId: w.canvas.id }, (snapshot) =>
+    heads.push(snapshot.rows?.[0]),
+  );
+  await settle();
+  expect(heads.at(-1)?.driver).toBeNull();
+
+  w.backend.drive(w.canvas.id, {
+    client: "claude",
+    name: "Claude Code",
+    host: "T3 Code",
+    userId: w.maya.id,
+  });
+  await settle();
+  expect(heads.at(-1)?.driver).toMatchObject({
+    client: "claude",
+    name: "Claude Code",
+    host: "T3 Code",
+    userId: w.maya.id,
+  });
+  const took = toThreadItem(store.getSnapshot().items!.at(-1)!, ctx(w.people));
+  expect(took).toMatchObject({ kind: "notice", payload: { type: "driver", action: "took" } });
+  if (took?.kind !== "notice" || took.payload.type !== "driver") throw new Error("no notice");
+  expect(driverNoticeLine(took.payload, w.sam.id)).toBe(
+    "Claude Code is driving this canvas (in T3 Code)",
+  );
+
+  await w.client.api.canvases.takeBack(w.canvas.id);
+  await settle();
+  expect(heads.at(-1)?.driver).toBeNull();
+  const back = toThreadItem(store.getSnapshot().items!.at(-1)!, ctx(w.people));
+  if (back?.kind !== "notice" || back.payload.type !== "driver") throw new Error("no notice");
+  expect(back.payload.action).toBe("taken_back");
+  expect(driverNoticeLine(back.payload, w.sam.id)).toBe("Maya took the canvas back");
+  expect(driverNoticeLine(back.payload, w.maya.id)).toBe("You took the canvas back");
+  stop();
 });

@@ -19,7 +19,7 @@ import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
 import { createResendMail, type Mail, noMail } from "./mail.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
-import { createPoke, type Poke } from "./poke.ts";
+import { createPoke, createRunnerTool, type Poke, type RunnerTool } from "./poke.ts";
 import { createExpoPush, noPush, type Push } from "./push.ts";
 import { type RateLimit, selectRateLimit } from "./rate-limit.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
@@ -64,6 +64,8 @@ export interface Deps {
   archives: ObjectStorage;
   /** Tells an awake runner there may be events to claim. */
   poke: Poke;
+  /** One canvas tool in a driven canvas's runner (`POST /tool`), for the agent driving it. */
+  runnerTool: RunnerTool;
   realtime: RealtimeSealer;
   /** Claude Haiku, through the AI SDK on Ponzu's own key, for what the API asks itself (repo ideas). */
   model: Model;
@@ -185,6 +187,7 @@ export function createDeps(env: Env): Deps {
       ? createR2Storage({ ...env.r2, bucket: env.r2PrivateBucket, fetch: outbound, clock })
       : storage,
     poke: createPoke({ fetch: outbound, clock }),
+    runnerTool: createRunnerTool({ fetch: outbound, clock }),
     realtime: createRealtimeSealer({
       ...env.realtime,
       database: new URL(env.databaseUrl).pathname.slice(1),

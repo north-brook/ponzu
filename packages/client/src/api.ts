@@ -248,6 +248,13 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
       takeOver: async (id: string) =>
         (await v1.canvases[":id"]["take-over"].$post(canvas(id))).json(),
       /**
+       * Take the canvas back from the person's own agent driving it: Ponzu's agent drives again
+       * and takes up what people sent meanwhile.
+       */
+      takeBack: async (id: string): Promise<void> => {
+        await v1.canvases[":id"].driver.$delete(canvas(id));
+      },
+      /**
        * Resets the canvas's file links: its files move under a new address, and links to the
        * old one stop working. Its owner or a workspace admin may (403 `forbidden` otherwise).
        * Answers the canvas with its new `assetsUrl`.

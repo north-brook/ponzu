@@ -57,8 +57,14 @@ export type StartEnv = {
   /** The repo's secrets (`REPO_SECRETS_VARIABLE`), at most 64 KB: our own cap. */
   PONZU_REPO_SECRETS?: string;
 } & (
-  | { ANTHROPIC_API_KEY: string; CLAUDE_CODE_OAUTH_TOKEN?: never }
-  | { CLAUDE_CODE_OAUTH_TOKEN: string; ANTHROPIC_API_KEY?: never }
+  | { ANTHROPIC_API_KEY: string; CLAUDE_CODE_OAUTH_TOKEN?: never; PONZU_RUNNER_MODE?: never }
+  | { CLAUDE_CODE_OAUTH_TOKEN: string; ANTHROPIC_API_KEY?: never; PONZU_RUNNER_MODE?: never }
+  /**
+   * Tools mode, for a canvas a person's own agent drives (docs/cloud.md, "Driving a canvas"):
+   * the canvas, its renderer and its tools for that agent's calls (`POST /tool`), and no Claude
+   * at all, so no Claude credential.
+   */
+  | { PONZU_RUNNER_MODE: "tools"; ANTHROPIC_API_KEY?: never; CLAUDE_CODE_OAUTH_TOKEN?: never }
 );
 
 /* ------------------------------------------------------------------ */
@@ -416,7 +422,15 @@ export interface ClaimRequest {
   claimId: string;
   /** At most this many, oldest first. `CLAIM_LIMIT` when absent, and never more. */
   limit?: number;
+  /**
+   * Only these kinds, whatever else waits: a runner in tools mode, which runs no agent, takes
+   * only a stop and a push (`TOOLS_MODE_KINDS`), and leaves the rest for whoever answers them.
+   */
+  kinds?: RunnerEvent["kind"][];
 }
+
+/** What a runner in tools mode claims: nothing that would begin a turn. */
+export const TOOLS_MODE_KINDS: RunnerEvent["kind"][] = ["stop", "push"];
 
 export const CLAIM_LIMIT = 100;
 
@@ -655,6 +669,19 @@ export type Notice =
    * deleted their account. It runs on their Claude from then on.
    */
   | { type: "owner_changed"; by: Person }
+  /**
+   * A person's own agent began or ended driving the canvas (docs/cloud.md, "Driving a canvas"):
+   * `took`, or how it ended: `let_go` (it let go), `taken_back` (`by` took it back), `lapsed`
+   * (30 minutes without a call), `revoked` (its owner disconnected it).
+   */
+  | {
+      type: "driver";
+      action: "took" | "let_go" | "taken_back" | "lapsed" | "revoked";
+      agent: string;
+      host: string | null;
+      owner: Person | null;
+      by: Person | null;
+    }
   /**
    * Written by the API, once per change, as a runner session starts: the model the canvas was
    * made with is no longer one the Claude account offers, so it runs on `to` in its place

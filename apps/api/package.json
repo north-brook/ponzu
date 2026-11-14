@@ -37,6 +37,7 @@
     "@ponzu/email": "workspace:*",
     "@ponzu/runner": "workspace:*",
     "@ponzu/sandbox": "workspace:*",
+    "@ponzu/tools": "workspace:*",
     "@posthog/ai": "^8.19.2",
     "@vercel/firewall": "1.2.6",
     "ai": "^7.0.169",

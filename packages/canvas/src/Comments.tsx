@@ -41,11 +41,13 @@ export function sameAuthor(a: Author, b: Author): boolean {
 }
 
 /** The product behind an agent author, for its logo. Agents are named after their client. */
-function agentClient(author: Author): "claude" | "openai" | null {
+function agentClient(author: Author): "claude" | "openai" | "cursor" | "t3" | null {
   if (author.kind !== "agent") return null;
   const n = author.name.toLowerCase();
   if (n.includes("claude")) return "claude";
   if (n.includes("codex") || n.includes("openai") || n.includes("chatgpt")) return "openai";
+  if (n.includes("cursor")) return "cursor";
+  if (n.includes("t3 code")) return "t3";
   return null;
 }
 

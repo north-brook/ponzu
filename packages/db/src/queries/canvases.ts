@@ -215,6 +215,7 @@ export const head = {
   prAutoMerge: canvases.prAutoMerge,
   lastActivityAt: canvases.lastActivityAt,
   assetKeyRotatedAt: canvases.assetKeyRotatedAt,
+  driver: canvases.driver,
 };
 
 export async function getCanvasHead(db: Db, canvasId: string): Promise<CanvasHead | null> {

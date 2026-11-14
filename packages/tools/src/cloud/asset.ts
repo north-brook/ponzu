@@ -1,6 +1,7 @@
 import { basename, extname } from "node:path";
 import { z } from "zod";
-import { ToolError, tool } from "../define.ts";
+import type { ToolContext } from "../context.ts";
+import { ToolError, type ToolResult, tool } from "../define.ts";
 import { fileSize, localFiles, readGiven } from "../disk.ts";
 import { canvasOf } from "../util.ts";
 
@@ -8,7 +9,7 @@ import { canvasOf } from "../util.ts";
 export const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 
 /** A kind of file a canvas can hold as an asset. */
-interface AssetType {
+export interface AssetType {
   mime: string;
   /** In a sentence: "a PNG image". */
   called: string;
@@ -109,37 +110,54 @@ export const addAsset = tool({
       ),
   },
   async handler(args, ctx) {
-    const { ws } = ctx;
-    if (!ws.storeAsset) throw new ToolError("Assets can't be added here.");
-    const { key } = await canvasOf(ctx);
     // A file's own name may have spaces and the like; a name the agent chose has to be right.
     const name = args.name ?? basename(args.path).replace(/[^A-Za-z0-9._-]+/g, "-");
-    if (!ASSET_NAME.test(name))
-      throw new ToolError(
-        `"${name}" can't be an asset's name. Use letters, numbers, dots, dashes and underscores, starting with a letter or number, like hero-photo.jpg.`,
-      );
-    const type = ASSET_TYPES[extname(name).slice(1).toLowerCase()];
-    if (!type)
-      throw new ToolError(
-        `${name} isn't a kind of file a canvas can hold. Assets are images, fonts and video: ${Object.keys(ASSET_TYPES).join(", ")}.`,
-      );
+    const type = assetType(name);
     const bytes = await readGiven(
-      ws.files ?? localFiles,
+      ctx.ws.files ?? localFiles,
       args.path,
       MAX_ASSET_BYTES,
       "Make it smaller first: resize or compress an image, shorten or re-encode a video.",
     );
-    if (!bytes.length) throw new ToolError(`${args.path} is empty.`);
-    // The name alone would let any file in the sandbox out under an image's name, and would
-    // keep the error page a failed download saved as hero.jpg.
-    if (!type.is(bytes.subarray(0, HEAD_BYTES)))
-      throw new ToolError(
-        `${args.path} isn't ${type.called}, whatever its name: it doesn't start the way one does. If you downloaded it, look at what came back. If it is another kind of image, font or video, name it with that kind's extension.`,
-      );
-    const ref = await ws.storeAsset(key, { name, bytes, mime: type.mime });
-    return {
-      text: `Added ${ref} (${fileSize(bytes.length)}). Use it as src="${ref}" in markup, or url(${ref}) in styles and tokens.`,
-      data: { ref },
-    };
+    return storeAsset(ctx, { name, type, bytes, from: args.path });
   },
 });
+
+/** What an asset named `name` must be, or a refusal the agent can act on. */
+export function assetType(name: string): AssetType {
+  if (!ASSET_NAME.test(name))
+    throw new ToolError(
+      `"${name}" can't be an asset's name. Use letters, numbers, dots, dashes and underscores, starting with a letter or number, like hero-photo.jpg.`,
+    );
+  const type = ASSET_TYPES[extname(name).slice(1).toLowerCase()];
+  if (!type)
+    throw new ToolError(
+      `${name} isn't a kind of file a canvas can hold. Assets are images, fonts and video: ${Object.keys(ASSET_TYPES).join(", ")}.`,
+    );
+  return type;
+}
+
+/**
+ * Keep `bytes` as the canvas's asset `name`, once they are what the name says. `from` names
+ * where they came from, for the refusal: a path, an address, "the data".
+ */
+export async function storeAsset(
+  ctx: ToolContext,
+  { name, type, bytes, from }: { name: string; type: AssetType; bytes: Uint8Array; from: string },
+): Promise<ToolResult> {
+  const { ws } = ctx;
+  if (!ws.storeAsset) throw new ToolError("Assets can't be added here.");
+  const { key } = await canvasOf(ctx);
+  if (!bytes.length) throw new ToolError(`${from} is empty.`);
+  // The name alone would let any file out under an image's name, and would keep the error page
+  // a failed download saved as hero.jpg.
+  if (!type.is(bytes.subarray(0, HEAD_BYTES)))
+    throw new ToolError(
+      `${from} isn't ${type.called}, whatever its name: it doesn't start the way one does. If you downloaded it, look at what came back. If it is another kind of image, font or video, name it with that kind's extension.`,
+    );
+  const ref = await ws.storeAsset(key, { name, bytes, mime: type.mime });
+  return {
+    text: `Added ${ref} (${fileSize(bytes.length)}). Use it as src="${ref}" in markup, or url(${ref}) in styles and tokens.`,
+    data: { ref },
+  };
+}

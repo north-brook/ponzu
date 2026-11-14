@@ -1,4 +1,4 @@
-import type { Session, SessionState } from "@ponzu/client";
+import type { CanvasDriver, Session, SessionState } from "@ponzu/client";
 import { createFakeBackend, type FakeBackend, type FakePerson } from "@ponzu/client/testing";
 import { type Artboard, newId, newOpId, type Op } from "@ponzu/core";
 import type { DeepLink, MacNotice, MenuCommand, PonzuDesktop } from "@ponzu/desktop/bridge";
@@ -23,6 +23,11 @@ import type { PictureBridge } from "./picture-drawer.ts";
  * their account set up, Claude not yet connected; `iphone`: Claude connected too) or past it
  * (`returning`). `beat=held` holds the beat after a send from the create page until the test
  * ends it (`beats`).
+ *
+ * For seeing the person's own agent (docs/cloud.md, "Your own agent"): `driven` has one drive
+ * the seeded canvas, as `take_canvas` would (`1` or `claude`: Claude Code in T3 Code; `codex`,
+ * `cursor` or `t3`), and `agents=1` (or `driven`) connects a few to Settings › Agents. Letting
+ * go from the console: `ponzuFake.backend.drive(id, null)`.
  */
 
 /** The ideas Maya's own repo gets, once they have been made. */
@@ -225,7 +230,11 @@ export function fakeHost(opts: { shell?: PonzuDesktop } = {}): Host {
     return id;
   };
 
-  void seed(backend, client.api, workspace.id, workspace.repos[0]!.id, drawBoard, teammate);
+  const driven = params.get("driven");
+  if (driven || params.get("agents") === "1") connectAgents(backend, me);
+  void seed(backend, client.api, workspace.id, workspace.repos[0]!.id, drawBoard, teammate, {
+    driver: driven ? { ...drivenBy(driven), userId: me.id } : null,
+  });
   const teammateApi = backend.connect(teammate).api;
   const sendLink = (link: DeepLink) => {
     for (const listener of links) listener(link);
@@ -417,12 +426,46 @@ async function seed(
   repoId: string,
   drawBoard: FakeWorld["drawBoard"],
   teammate: FakePerson,
+  { driver }: { driver: Omit<CanvasDriver, "since"> | null },
 ) {
   const canvas = await api.canvases.create({ workspaceId, repoId, name: "Onboarding flow" });
   drawBoard(canvas.id, "Welcome");
   drawBoard(canvas.id, "Pick a repo", "#f4f3ef");
   backend.agent(canvas.id).say("I drew the welcome screen and the repo picker.");
   await backend.connect(teammate).api.canvases.presence(canvas.id);
+  if (driver) backend.drive(canvas.id, driver);
+}
+
+/** The agent `?driven=` names, as its `take_canvas` would say it. */
+function drivenBy(name: string): Omit<CanvasDriver, "since" | "userId"> {
+  switch (name) {
+    case "codex":
+      return { client: "openai", name: "Codex", host: null };
+    case "cursor":
+      return { client: "cursor", name: "Cursor", host: null };
+    case "t3":
+      return { client: "t3", name: "T3 Code", host: null };
+    default:
+      return { client: "claude", name: "Claude Code", host: "T3 Code" };
+  }
+}
+
+/** A few of the person's own agents, connected as Settings › Agents lists them. */
+function connectAgents(backend: FakeBackend, me: FakePerson) {
+  const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+  for (const [id, name, client, connected, used] of [
+    ["agt_dev_claude", "Claude Code", "claude-code/2.1.0", 72, 1],
+    ["agt_dev_codex", "Codex", "codex-mcp-client/0.167.0", 30, null],
+  ] as const) {
+    backend.agentGrants.set(id, {
+      id,
+      userId: me.id,
+      name,
+      client,
+      createdAt: at(connected),
+      lastUsedAt: used === null ? null : at(used),
+    });
+  }
 }
 
 /**

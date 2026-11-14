@@ -8,6 +8,7 @@ export * from "./claude.ts";
 export * from "./claude-entry.ts";
 export * from "./create.ts";
 export * from "./diff.ts";
+export * from "./driver.ts";
 export * from "./filter.ts";
 export * from "./gate.ts";
 export * from "./map.ts";

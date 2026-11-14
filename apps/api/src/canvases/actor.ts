@@ -1,14 +1,20 @@
 import type { Actor, CommittedOp } from "@ponzu/core";
-import type { StoredOp, User } from "@ponzu/db";
+import type { CanvasDriverView, StoredOp, User } from "@ponzu/db";
 import type { Person } from "@ponzu/runner/protocol";
 import type { Actor as Caller } from "../auth/actor.ts";
 
 /** The agent, as a canvas's ops and comments name it. A runner acts as it, on its one canvas. */
 export const AGENT: Actor = { kind: "agent", id: "claude", name: "Claude" };
 
-/** Who the caller is in a canvas's history: a person by their user id, or the agent. */
-export function actorOf(caller: Caller): Actor {
-  if (caller.kind === "runner") return AGENT;
+/**
+ * Who the caller is in a canvas's history: a person by their user id, or the agent. While a
+ * person's own agent drives the canvas (docs/cloud.md, "Driving a canvas"), its runner runs that
+ * agent's calls, so what the runner commits is that agent's: "Claude Code", not Ponzu's Claude.
+ */
+export function actorOf(caller: Caller, driver: CanvasDriverView | null = null): Actor {
+  if (caller.kind === "runner") {
+    return driver ? { kind: "agent", id: `driver:${driver.client}`, name: driver.name } : AGENT;
+  }
   const { user } = caller;
   return {
     kind: "user",

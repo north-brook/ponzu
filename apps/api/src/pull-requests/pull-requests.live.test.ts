@@ -772,6 +772,9 @@ describe.skipIf(!configured)("the agent's pull request, for real", () => {
       realtime: refuse("Realtime"),
       // Nothing is awake to poke: the runner here is the test.
       poke: async () => {},
+      runnerTool: async () => {
+        throw new Error("The live test relays no canvas tools.");
+      },
       docs: new DocCache(),
       gitTokens: new GitTokens(),
       analytics: noAnalytics,

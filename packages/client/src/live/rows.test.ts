@@ -35,6 +35,7 @@ test("a row as Realtime sends it becomes one the apps read", () => {
     agent_state: "working",
     agent_status: "Drawing",
     agent_artboards: ["ab_1"],
+    driver: null,
     needs_you_count: 0,
     pr_number: 7,
     pr_state: "open",
