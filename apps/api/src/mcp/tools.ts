@@ -2,7 +2,7 @@ import { listOpenQuestions } from "@ponzu/db";
 import { z } from "zod";
 import type { Deps } from "../deps/index.ts";
 import type { Logger } from "../http/log.ts";
-import { waitAsDriver } from "./drive.ts";
+import { DRIVE_GUIDE, waitAsDriver } from "./drive.ts";
 import { type PersonApi, Refusal } from "./internal.ts";
 import {
   type CanvasRowLike,
@@ -302,7 +302,7 @@ export const delegateTools: McpTool[] = [
     name: "create_canvas",
     title: "Create canvas",
     description:
-      "Start a canvas: in one of the person's repositories (Ponzu's agent works on its own branch there and can open a pull request), or Scratch when you leave out repository. With message, Ponzu's agent starts on it at once, as if the person had asked; follow it with wait_for_activity.",
+      "Start a canvas: in one of the person's repositories (Ponzu's agent works on its own branch there and can open a pull request), or Scratch when you leave out repository. With message, Ponzu's agent starts on it at once, as if the person had asked; follow it with wait_for_activity. With drive, you take it yourself instead, as take_canvas does.",
     input: {
       repository: z
         .string()
@@ -319,8 +319,26 @@ export const delegateTools: McpTool[] = [
         .max(20_000)
         .optional()
         .describe("What to ask Ponzu's agent for: the brief, as the person would write it."),
+      drive: z
+        .boolean()
+        .optional()
+        .describe(
+          "Take the new canvas yourself (take_canvas), rather than leave it to Ponzu's agent.",
+        ),
+      host: z
+        .string()
+        .max(40)
+        .optional()
+        .describe('With drive: the app you run in, when it isn\'t you yourself: "T3 Code".'),
     },
     async run(args, { api }) {
+      if (args.drive && args.message) {
+        throw new Refusal(
+          400,
+          "invalid_request",
+          "Pass message to hand the canvas to Ponzu's agent, or drive to take it yourself, not both.",
+        );
+      }
       let workspaceId: string;
       let repoId: string | null = null;
       if (args.repository) {
@@ -344,6 +362,22 @@ export const delegateTools: McpTool[] = [
         ...(args.message ? { message: { text: args.message } } : {}),
         createKey: `mcp_${crypto.randomUUID().replaceAll("-", "")}`,
       });
+      if (args.drive) {
+        await api.call(
+          "PUT",
+          `/v1/canvases/${created.id}/driver`,
+          args.host ? { host: args.host } : {},
+        );
+        // Its name and repo, and its link: what else it would say is Ponzu's agent's.
+        const lines = canvasLines({ ...created, repo: created.repo?.fullName ?? null });
+        return [
+          `Created ${created.id}, and you're driving it.`,
+          lines[0],
+          lines.at(-1),
+          "",
+          DRIVE_GUIDE,
+        ].join("\n");
+      }
       return [
         `Created ${created.id}.`,
         ...canvasLines({ ...created, repo: created.repo?.fullName ?? null }),

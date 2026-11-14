@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appendEvent, getCanvas, getSandbox } from "@ponzu/db";
+import { appendEvent, getCanvas, getSandbox, moveSandbox, settleCanvas } from "@ponzu/db";
 import { driversStep } from "../cron/steps/drivers.ts";
 import { call, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
@@ -384,7 +384,7 @@ describe("driving a canvas", () => {
     const back = await call(t, await as("maya"), "DELETE", `/v1/canvases/${canvasId}/driver`);
     expect(back.status).toBe(204);
     expect((await getCanvas(t.db, canvasId))?.driver).toBeNull();
-    const refused = await tool(token, "get_tree", { canvas: canvasId });
+    const refused = await tool(token, "write_html", { canvas: canvasId, html: "<p>Hi</p>" });
     expect(refused.isError).toBe(true);
     expect(refused.text).toContain("You aren't driving this canvas");
     await t.backgroundDone();
@@ -416,7 +416,7 @@ describe("driving a canvas", () => {
       ended: 1,
     });
     expect((await getCanvas(t.db, canvasId))?.driver).toBeNull();
-    const refused = await tool(token, "get_tree", { canvas: canvasId });
+    const refused = await tool(token, "write_html", { canvas: canvasId, html: "<p>Hi</p>" });
     expect(refused.text).toContain("You aren't driving this canvas");
     await t.backgroundDone();
   });
@@ -447,5 +447,120 @@ describe("pull requests", () => {
 
     const unlinked = await tool(access_token, "unlink_pull_request", { canvas: canvasId, url });
     expect(unlinked.text).toBe(`Unlinked ${ws.repo.fullName}#${pull.number}.`);
+  });
+});
+
+describe("looking without driving", () => {
+  async function agentOf(login: string, name = "Claude Code") {
+    const { access_token } = await connect(login, name);
+    await mcp(access_token, "initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: name === "Codex" ? "codex-mcp-client" : "claude-code", version: "1" },
+    });
+    return access_token;
+  }
+  async function canvasOf(token: string) {
+    const created = await tool(token, "create_canvas", { repository: ws.repo.fullName });
+    return /Created (cnv_[0-9a-z]+)/.exec(created.text)![1]!;
+  }
+
+  test("an agent looks at a canvas it doesn't drive: a sleeping one wakes with only the canvas", async () => {
+    const token = await agentOf("maya");
+    const canvasId = await canvasOf(token);
+    const before = t.runnerTool.calls.length;
+    const looked = await tool(token, "screenshot", { canvas: canvasId, target: "ab_1" });
+    expect(looked).toEqual({ text: "Ran screenshot.", isError: false });
+    expect(t.runnerTool.calls.slice(before)).toEqual([
+      expect.objectContaining({ name: "screenshot", args: { target: "ab_1" } }),
+    ]);
+    expect(await getSandbox(t.db, canvasId)).toMatchObject({
+      state: "awake",
+      claudeCredential: "tools",
+    });
+    // Looking took nothing: Ponzu's agent still has the canvas.
+    expect((await getCanvas(t.db, canvasId))?.driver).toBeNull();
+
+    // A tool that changes it wants the canvas taken first, and says what works without that.
+    const wrote = await tool(token, "write_html", { canvas: canvasId, html: "<p>Hi</p>" });
+    expect(wrote.isError).toBe(true);
+    expect(wrote.text).toContain("Call take_canvas to change it.");
+    expect(wrote.text).toContain("screenshot, ");
+    expect(t.runnerTool.calls.at(-1)?.name).toBe("screenshot");
+    await t.backgroundDone();
+  });
+
+  test("a look uses the runner that is up, Ponzu's agent's too, without restarting it", async () => {
+    const token = await agentOf("maya");
+    const canvasId = await canvasOf(token);
+    await tool(token, "get_tree", { canvas: canvasId });
+    await t.backgroundDone();
+    // As if Ponzu's agent had woken it on the owner's Claude since.
+    const claude = "cla_test@2026-11-13T00:00:00.000Z";
+    const moved = await moveSandbox(t.db, {
+      canvasId,
+      from: ["awake"],
+      to: "awake",
+      now: new Date(t.clock.now()),
+      changes: { claudeCredential: claude },
+    });
+    expect(moved?.claudeCredential).toBe(claude);
+    const looked = await tool(token, "export", { canvas: canvasId, target: "ab_1" });
+    expect(looked.isError).toBe(false);
+    expect(t.runnerTool.calls.at(-1)?.name).toBe("export");
+    expect(await getSandbox(t.db, canvasId)).toMatchObject({
+      state: "awake",
+      claudeCredential: claude,
+    });
+  });
+
+  test("while someone else's agent drives it, and for someone who can only read it, looking works", async () => {
+    const token = await agentOf("maya");
+    const canvasId = await canvasOf(token);
+    expect((await tool(token, "take_canvas", { canvas: canvasId })).isError).toBe(false);
+
+    const reader = await agentOf("omar", "Codex");
+    const looked = await tool(reader, "get_html", { canvas: canvasId, target: "ab_1" });
+    expect(looked).toEqual({ text: "Ran get_html.", isError: false });
+    expect(t.runnerTool.calls.at(-1)).toMatchObject({
+      name: "get_html",
+      driver: { name: "Codex" },
+    });
+    // The drive goes on, and the reader's agent can't change the canvas.
+    expect((await getCanvas(t.db, canvasId))?.driver).toMatchObject({ name: "Claude Code" });
+    const wrote = await tool(reader, "set_text", { canvas: canvasId, target: "n_1", text: "x" });
+    expect(wrote).toEqual({
+      text: "The person can look at this canvas but not change it.",
+      isError: true,
+    });
+    await t.backgroundDone();
+  });
+
+  test("create_canvas with drive starts a canvas the agent holds", async () => {
+    const token = await agentOf("maya");
+    const created = await tool(token, "create_canvas", {
+      repository: ws.repo.fullName,
+      drive: true,
+      host: "T3 Code",
+    });
+    expect(created.isError).toBe(false);
+    expect(created.text).toContain("and you're driving it.");
+    expect(created.text).toContain("Every canvas tool takes the canvas");
+    const canvasId = /Created (cnv_[0-9a-z]+)/.exec(created.text)![1]!;
+    expect((await getCanvas(t.db, canvasId))?.driver).toMatchObject({ client: "t3" });
+    const both = await tool(token, "create_canvas", { drive: true, message: "Draw it" });
+    expect(both).toMatchObject({ isError: true });
+    expect(both.text).toContain("not both");
+  });
+
+  test("a settled canvas has no sandbox to look with, and says so", async () => {
+    const token = await agentOf("maya");
+    const canvasId = await canvasOf(token);
+    await settleCanvas(t.db, canvasId, { settled: true, now: new Date(t.clock.now()) });
+    const before = t.runnerTool.calls.length;
+    const looked = await tool(token, "screenshot", { canvas: canvasId, target: "ab_1" });
+    expect(looked.isError).toBe(true);
+    expect(looked.text).toContain("This canvas is settled");
+    expect(t.runnerTool.calls.length).toBe(before);
   });
 });

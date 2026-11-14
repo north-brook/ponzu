@@ -9,7 +9,7 @@ import {
   type ToolResult,
 } from "@ponzu/tools";
 import { fatal, type RunnerApi, retryable, watchFatal } from "./api/api.ts";
-import { CLAIM_LIMIT, HEARTBEAT_MS, type RunnerSession } from "./api/protocol.ts";
+import { CLAIM_LIMIT, HEARTBEAT_MS, type RunnerSession, TOOLS_MODE_KINDS } from "./api/protocol.ts";
 import { randomId } from "./ids.ts";
 import { StateReporter } from "./state.ts";
 
@@ -21,9 +21,10 @@ import { StateReporter } from "./state.ts";
  *
  * It keeps the runner protocol a Claude runner keeps, as far as a canvas with no agent needs:
  * the session and its lease, the heartbeat (a state report every `HEARTBEAT_MS`, always idle),
- * and claims. The API hands a driven canvas's runner only what begins no turn (a stop, an edit,
- * a push: `claimableKinds`), which it acknowledges and has nothing to do with: the branch never
- * moves here, and an edit reaches the driving agent through its own `wait_for_activity`.
+ * and claims. It claims only what begins no turn (a stop and a push, `TOOLS_MODE_KINDS`), which it
+ * acknowledges and has nothing to do with: the branch never moves here. The rest waits in the
+ * feed: for the driving agent's `wait_for_activity`, or, on a canvas woken only for a look
+ * (docs/cloud.md, "Looking without driving"), for Ponzu's agent, whose wake restarts the runner.
  * Nothing in the sandbox changes but the canvas, which lives at the API, so there is nothing to
  * checkpoint.
  */
@@ -173,6 +174,7 @@ export class ToolsRunner {
           const { events, seq } = await this.api.claim({
             claimId: this.claimId,
             limit: CLAIM_LIMIT,
+            kinds: TOOLS_MODE_KINDS,
           });
           this.claimId = null;
           this.replica.notify(seq);

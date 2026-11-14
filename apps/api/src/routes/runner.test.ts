@@ -47,7 +47,7 @@ const sample = (repo: "repo" | "scratch" = "repo") =>
 const send = (runner: StartedRunner, method: string, path: string, body?: unknown) =>
   call(t, runner.headers, method, `/v1/runner${path}`, body);
 /** A claim's body: a new claim each time unless an id is given. */
-const claim = (body: { claimId?: string; limit?: number } = {}) => ({
+const claim = (body: { claimId?: string; limit?: number; kinds?: string[] } = {}) => ({
   claimId: newId("clm"),
   ...body,
 });
@@ -311,6 +311,26 @@ describe("events", () => {
     const next = await startRunner(t, canvas.id);
     expect(next.session.claudeSessionId).toBe("sess-1");
     expect((await send(next, "POST", "/events/claim", claim())).body.events).toEqual([]);
+  });
+
+  test("a runner that asks for some kinds gets only those; the rest wait for the next claim", async () => {
+    const { canvas, runner } = await sample();
+    const message = await say(canvas.id, "Hello?");
+    const stop = await appendEvent(t.db, {
+      canvasId: canvas.id,
+      kind: "stop",
+      priority: "now",
+      payload: {},
+      userId: ws.people.maya!.userId,
+    });
+    // A runner in tools mode, which runs no agent.
+    const quiet = await send(runner, "POST", "/events/claim", claim({ kinds: ["stop", "push"] }));
+    expect(quiet.body.events.map((e: { id: string }) => e.id)).toEqual([stop.id]);
+    const next = await startRunner(t, canvas.id);
+    const all = await send(next, "POST", "/events/claim", claim());
+    expect(all.body.events.map((e: { id: string }) => e.id)).toEqual([message.id, stop.id]);
+    const unknown = await send(next, "POST", "/events/claim", claim({ kinds: ["nap"] }));
+    expect(unknown.status).toBe(400);
   });
 
   test("a limit past the protocol's is refused", async () => {

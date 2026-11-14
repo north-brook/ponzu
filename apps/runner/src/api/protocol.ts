@@ -422,7 +422,15 @@ export interface ClaimRequest {
   claimId: string;
   /** At most this many, oldest first. `CLAIM_LIMIT` when absent, and never more. */
   limit?: number;
+  /**
+   * Only these kinds, whatever else waits: a runner in tools mode, which runs no agent, takes
+   * only a stop and a push (`TOOLS_MODE_KINDS`), and leaves the rest for whoever answers them.
+   */
+  kinds?: RunnerEvent["kind"][];
 }
+
+/** What a runner in tools mode claims: nothing that would begin a turn. */
+export const TOOLS_MODE_KINDS: RunnerEvent["kind"][] = ["stop", "push"];
 
 export const CLAIM_LIMIT = 100;
 

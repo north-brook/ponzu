@@ -125,6 +125,15 @@ export function getRemoteTool(name: string): ToolDef<any> | undefined {
   return remoteTools.find((def) => def.name === name);
 }
 
+/**
+ * Whether a tool only looks at the canvas: it reads, or makes a picture or a file of it
+ * (screenshot, record, export), and changes nothing on it. Any agent of a person who can read the
+ * canvas calls these without driving it, whoever has the canvas then.
+ */
+export function looks(def: ToolDef<any>): boolean {
+  return Boolean(def.readOnly) || def.group === "see";
+}
+
 /** A tool as an MCP lists it: what the API offers without loading the tools themselves. */
 export interface RemoteToolEntry {
   name: string;
@@ -134,6 +143,8 @@ export interface RemoteToolEntry {
   inputSchema: Record<string, unknown>;
   readOnly: boolean;
   destructive: boolean;
+  /** It only looks (`looks`): callable on a canvas the agent doesn't drive. */
+  look: boolean;
 }
 
 /** The catalogue of `remoteTools`, which `remote-catalog.json` holds for the API. */
@@ -148,5 +159,6 @@ export function remoteCatalog(): RemoteToolEntry[] {
     >,
     readOnly: def.readOnly ?? false,
     destructive: def.destructive ?? false,
+    look: looks(def),
   }));
 }

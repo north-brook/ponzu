@@ -11,6 +11,7 @@ import remoteCatalog from "@ponzu/tools/remote-catalog" with { type: "json" };
 import { z } from "zod";
 import type { JobDeps } from "../jobs/run.ts";
 import { runnerTarget, TOOLS_MARK } from "../sandboxes/environment.ts";
+import { LOOK_WAKE } from "../sandboxes/orchestrate.ts";
 import { startWake } from "../sandboxes/wake.ts";
 import { Refusal } from "./internal.ts";
 import { type McpTool, mcpTool, type ToolAnswer, type ToolContext } from "./tools.ts";
@@ -22,6 +23,11 @@ import { canvasRef } from "./words.ts";
  * relayed to the canvas's runner, which runs in tools mode while the canvas is driven: the API
  * checks the person may still steer the canvas and the agent still holds it, wakes the sandbox
  * when it sleeps, and hands the call to the runner's `POST /tool`, whose answer is the tool's.
+ *
+ * A tool that only looks (`look` in the catalogue: it reads, or makes a picture or a file) needs
+ * no lease ("Looking without driving"): any agent of a person who can read the canvas calls it,
+ * whoever has the canvas, on the runner that is up, in either mode, or on one woken for it in
+ * tools mode.
  */
 
 /** A canvas tool as `@ponzu/tools` lists it for an MCP (`RemoteToolEntry`). */
@@ -32,7 +38,15 @@ interface RemoteToolEntry {
   inputSchema: Record<string, unknown>;
   readOnly: boolean;
   destructive: boolean;
+  look: boolean;
 }
+
+const CATALOG = remoteCatalog as RemoteToolEntry[];
+
+/** The tools that only look, by name, as an agent is told them. */
+const LOOK_NAMES = CATALOG.filter((entry) => entry.look)
+  .map((entry) => entry.name)
+  .join(", ");
 
 /** The tools' own guide to drawing on a canvas, which `take_canvas` hands the agent. */
 export const DRIVE_GUIDE = `You hold this canvas now: Ponzu's agent is off, and what you do with the canvas tools shows on it live for everyone who has it open. Every canvas tool takes the canvas as \`canvas\`.
@@ -43,53 +57,83 @@ People steer you with comments pinned on the canvas: wait_for_activity hands you
 
 Your hold lasts while you call: 30 minutes without a call and Ponzu's agent gets the canvas back. Let go with release_canvas when you're done. Link every pull request you open for this canvas's work with link_pull_request.`;
 
-/** The longest a call waits for a sleeping sandbox to come up in tools mode. */
+/** The longest a call waits for a sleeping sandbox to come up. */
 const WAKE_WAIT_MS = 90_000;
 const WAKE_POLL_MS = 1_000;
 /** How long a call is tried again while the runner is still opening the canvas. */
 const START_WAIT_MS = 30_000;
 
-/** The canvas a drive tool names, its lease held by this agent, renewed; else a refusal. */
-async function heldCanvas(ctx: ToolContext, ref: string): Promise<string> {
+/** The canvas a tool names, as its route answers it. */
+interface CanvasSeen {
+  id: string;
+  access: "read" | "write";
+  status: "active" | "settled";
+}
+
+/**
+ * The canvas a canvas tool names, and whether this agent drives it (its lease renewed, so a look
+ * while driving keeps the hold too). A tool that changes the canvas needs the lease; one that
+ * only looks needs only that the person can read it. Else a refusal that says what to do.
+ */
+async function canvasFor(
+  ctx: ToolContext,
+  ref: string,
+  look: boolean,
+): Promise<{ id: string; drives: boolean }> {
   const { api, deps } = ctx;
   const agent = api.actor.agent!;
-  const canvas = await api.call<{ id: string; access: "read" | "write" }>(
-    "GET",
-    `/v1/canvases/${canvasRef(ref)}`,
-  );
+  const canvas = await api.call<CanvasSeen>("GET", `/v1/canvases/${canvasRef(ref)}`);
+  if (canvas.access === "write") {
+    if (await touchCanvasDriver(deps.db, { canvasId: canvas.id, grantId: agent.grantId })) {
+      return { id: canvas.id, drives: true };
+    }
+  }
+  if (look) {
+    if (canvas.status === "settled") {
+      throw new Refusal(
+        409,
+        "canvas_settled",
+        "This canvas is settled (its work landed), so it has no sandbox to look at it with. get_canvas outlines its pages and boards; the person can reopen it in Ponzu to look closer.",
+      );
+    }
+    return { id: canvas.id, drives: false };
+  }
   if (canvas.access !== "write") {
     throw new Refusal(403, "forbidden", "The person can look at this canvas but not change it.");
   }
-  if (await touchCanvasDriver(deps.db, { canvasId: canvas.id, grantId: agent.grantId })) {
-    return canvas.id;
-  }
   const holder = await getCanvasDriver(deps.db, canvas.id);
+  const lookInstead = ` Without driving it you can still look at it: ${LOOK_NAMES}.`;
   throw new Refusal(
     409,
     "not_driving",
     holder
-      ? `${holder.name} is driving this canvas now, not you. Call take_canvas to take it back, if the person wants you to.`
-      : "You aren't driving this canvas: you never took it, it was taken back, or 30 minutes passed without a call. Call take_canvas to drive it.",
+      ? `${holder.name} is driving this canvas now, not you. Call take_canvas to take it back, if the person wants you to.${lookInstead}`
+      : `You aren't driving this canvas: you never took it, it was taken back, or 30 minutes passed without a call. Call take_canvas to change it.${lookInstead}`,
   );
 }
 
-/** The canvas's runner, awake in tools mode: woken, and waited for, when it isn't. */
-async function toolsRunner(
+/**
+ * The canvas's runner, awake: woken, and waited for, when it isn't. Driving needs it in tools
+ * mode (a wake restarts one running Ponzu's agent); a look takes it in whichever mode it is up,
+ * and wakes a sleeping one in tools mode (`LOOK_WAKE`).
+ */
+async function canvasRunner(
   deps: JobDeps,
   canvasId: string,
+  { drives }: { drives: boolean },
 ): Promise<{ url: string; token: string }> {
   const until = deps.clock.now() + WAKE_WAIT_MS;
   let woke = false;
   for (;;) {
     const row = await getSandbox(deps.db, canvasId);
-    if (row?.state === "awake" && row.claudeCredential === TOOLS_MARK) {
+    if (row?.state === "awake" && (!drives || row.claudeCredential === TOOLS_MARK)) {
       const target = await runnerTarget(deps, row);
       if (target) return target;
     }
     if (!woke) {
       woke = true;
       // Runs this attempt of the wake here, and resolves once it is over.
-      await startWake(deps, canvasId, "drive");
+      await startWake(deps, canvasId, drives ? "drive" : LOOK_WAKE);
       continue;
     }
     if (deps.clock.now() >= until) {
@@ -103,23 +147,27 @@ async function toolsRunner(
   }
 }
 
-/** Relay one canvas tool to the driven canvas's runner, for the agent holding it. */
+/**
+ * Relay one canvas tool to the canvas's runner: for the agent holding the canvas, or, for a tool
+ * that only looks (`look`), for any agent of a person who can read it.
+ */
 export async function relay(
   ctx: ToolContext,
   name: string,
   args: Record<string, unknown>,
+  { look = false }: { look?: boolean } = {},
 ): Promise<ToolAnswer> {
   const { canvas, ...rest } = args;
   if (typeof canvas !== "string") {
     throw new Refusal(400, "invalid_request", "Say which canvas, as `canvas`.");
   }
-  const canvasId = await heldCanvas(ctx, canvas);
+  const { id: canvasId, drives } = await canvasFor(ctx, canvas, look);
   const { deps } = ctx;
   const agent = ctx.api.actor.agent!;
   const driver = { name: agent.name, client: agent.client ?? "other" };
   const until = deps.clock.now() + START_WAIT_MS;
   for (;;) {
-    const target = await toolsRunner(deps, canvasId);
+    const target = await canvasRunner(deps, canvasId, { drives });
     // A call keeps the sandbox awake, as a person working on the canvas would.
     await touchSandbox(deps.db, { canvasId, now: new Date(deps.clock.now()) });
     let answered: { status: number; body: unknown };
@@ -143,21 +191,27 @@ export async function relay(
   }
 }
 
-/** The canvas tools, as the agent driving a canvas calls them: relayed, each with `canvas`. */
+/**
+ * The canvas tools, relayed, each with `canvas`: every one for the agent driving the canvas, and
+ * those that only look for any agent of a person who can read it.
+ */
 export function relayedTools(): McpTool[] {
-  return (remoteCatalog as RemoteToolEntry[]).map((entry) => ({
+  return CATALOG.map((entry) => ({
     name: entry.name,
     title: entry.title,
-    description: entry.description,
+    description: entry.look
+      ? `${entry.description} Works on any canvas the person can see, without driving it.`
+      : entry.description,
     input: {},
-    jsonSchema: withCanvas(entry.inputSchema),
+    jsonSchema: withCanvas(entry.inputSchema, entry.look),
     readOnly: entry.readOnly,
-    run: (args, ctx) => relay(ctx, entry.name, args as Record<string, unknown>),
+    run: (args, ctx) =>
+      relay(ctx, entry.name, args as Record<string, unknown>, { look: entry.look }),
   }));
 }
 
 /** A tool's input schema with `canvas` first among its properties, and required. */
-function withCanvas(schema: Record<string, unknown>): Record<string, unknown> {
+function withCanvas(schema: Record<string, unknown>, look: boolean): Record<string, unknown> {
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
   const required = (schema.required ?? []) as string[];
   return {
@@ -166,8 +220,9 @@ function withCanvas(schema: Record<string, unknown>): Record<string, unknown> {
     properties: {
       canvas: {
         type: "string",
-        description:
-          "The canvas you're driving: its id (cnv_…) or its link. Take it with take_canvas first.",
+        description: look
+          ? "The canvas: its id (cnv_…) or its link."
+          : "The canvas you're driving: its id (cnv_…) or its link. Take it with take_canvas first.",
       },
       ...properties,
     },

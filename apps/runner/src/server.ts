@@ -11,10 +11,12 @@ import type { GitCredentialRequest, GitCredentialResponse } from "./api/protocol
  * trusted: `POST /poke` says there may be something to claim, and the runner only claims, from
  * the API, with its own token. `GET /health` says it is up, and whether it has started.
  *
- * In tools mode (docs/cloud.md, "Driving a canvas") `POST /tool` runs one canvas tool for the
- * agent driving the canvas: `{ name, args, driver: { name, client } }`, which only the API sends,
- * relaying the agent's MCP call. It answers the tool's MCP content. The bearer is the one door:
- * only the API holds it, and the agent's own checks (its grant, its lease) are the API's.
+ * `POST /tool` runs one canvas tool for a person's own agent: `{ name, args, driver: { name,
+ * client } }`, which only the API sends, relaying the agent's MCP call. It answers the tool's MCP
+ * content. In tools mode (docs/cloud.md, "Driving a canvas") that is any canvas tool, for the
+ * agent driving the canvas or one looking; beside Ponzu's agent, only one that looks ("Looking
+ * without driving"). The bearer is the one door: only the API holds it, and the agent's own
+ * checks (its grant, its lease, which tools it may call) are the API's.
  */
 export function serve(opts: {
   port: number;
@@ -23,7 +25,7 @@ export function serve(opts: {
   hostname?: string;
   poke(): void;
   health(): unknown;
-  /** Tools mode only: one canvas tool, for the agent driving the canvas. */
+  /** One canvas tool, for a person's own agent: any in tools mode, else one that looks. */
   tool?(name: string, args: unknown, driver: { name: string; client: string }): Promise<unknown>;
 }): {
   port: number;

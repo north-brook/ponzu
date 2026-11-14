@@ -236,6 +236,8 @@ const server = serve({
   portToken: env.portToken,
   poke: () => runner.poke(),
   health: () => runner.health(),
+  // A look from an agent that doesn't drive the canvas: only the tools that change nothing.
+  tool: (name, args, agent) => runner.look(name, args, agent),
 });
 log(`listening on ${server.port}`);
 mkdirSync(dirname(env.gitSocket), { recursive: true });

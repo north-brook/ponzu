@@ -1,4 +1,4 @@
-import { isId } from "@ponzu/db";
+import { EVENT_KINDS, isId } from "@ponzu/db";
 import {
   type AckRequest,
   type CheckpointRequest,
@@ -54,6 +54,7 @@ const Artboards = z.array(ShortId).max(200);
 export const Claim: z.ZodType<ClaimRequest> = z.object({
   claimId: chosenId("clm"),
   limit: z.number().int().min(1).max(CLAIM_LIMIT).optional(),
+  kinds: z.array(z.enum(EVENT_KINDS)).max(EVENT_KINDS.length).optional(),
 });
 
 export const Ack: z.ZodType<AckRequest> = z.object({

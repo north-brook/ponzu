@@ -3736,7 +3736,7 @@ to read; a refusal is the route's own sentence, as a tool error.
 | `list_workspaces` | none | the person's workspaces with Ponzu installed, and the repositories they can push to in each |
 | `list_canvases` | `workspace?`, `repository?`, `query?`, `include_settled?`, `limit?` | canvases most recently active first: id, name, repo, Ponzu's agent's state and status, open questions, pull request, link |
 | `get_canvas` | `canvas` | the same, the open questions with their options, and every page and board with its id and link |
-| `create_canvas` | `repository?`, `workspace?`, `name?`, `message?` | `POST /v1/canvases` (Scratch without a repository); a message starts Ponzu's agent |
+| `create_canvas` | `repository?`, `workspace?`, `name?`, `message?`, `drive?`, `host?` | `POST /v1/canvases` (Scratch without a repository); a message starts Ponzu's agent, `drive` takes it as `take_canvas` does (not both) |
 | `send_message` | `canvas`, `text` | the person's message, via the agent |
 | `read_thread` | `canvas`, `after?` | the thread as text, oldest first, with the cursor to pass next |
 | `answer_question` | `canvas`, `question`, `answers?`, `approved?`, `note?` | answers one of the agent's questions; a secret stays the person's to give in the app |
@@ -3787,7 +3787,8 @@ answers that the agent isn't driving it, and why when it can.
   records `claude_credential = 'tools'`, so a wake that finds the mode changed (a drive begun on
   an awake sandbox, or ended) restarts it in place as for a changed credential. The sweep's
   `stop` step leaves a tools runner alone whatever the owner's Claude says.
-- The runner's claim hands out only a stop and a push (`WHILE_DRIVEN`). People's messages,
+- The runner's claim hands out only a stop and a push (`WHILE_DRIVEN`; a tools runner also asks
+  for only those, `TOOLS_MODE_KINDS`, so it never takes what Ponzu's agent owes). People's messages,
   comments, answers and edits wait in the feed for the agent's `wait_for_activity`, which takes
   them once (`takeDriverEvents`: delivered to `driver:<grant>`), oldest first, as text naming who
   sent them and where; what GitHub says (a check, a review) waits for Ponzu's agent.
@@ -3798,7 +3799,8 @@ answers that the agent isn't driving it, and why when it can.
   ("Claude Code"), not Ponzu's Claude.
 
 **The tools-only runner** keeps the runner protocol a canvas with no agent needs: the session and
-its lease, an idle state report every heartbeat, claims (each acknowledged at once), and nothing
+its lease, an idle state report every heartbeat, claims of a stop and a push (`kinds` on the
+claim; each acknowledged at once), and nothing
 to checkpoint, since only the canvas changes and it lives at the API. Its port also takes
 `POST /tool` (the port's bearer, as `/poke`): `{ name, args, driver: { name, client } }`, one
 canvas tool, run on its workspace one call at a time, answered as MCP content. Only the API holds
@@ -3816,6 +3818,25 @@ tools mode (woken and waited for, up to 90 seconds, when it isn't), the call kee
 person working on it would, and `POST /tool` runs it (tried again for up to 30 seconds while the
 runner is still opening the canvas). The tool's own refusal is the agent's to read; a runner
 that never came up says to try again in a moment.
+
+### Looking without driving
+
+The canvas tools that only look (`looks` in `packages/tools/src/cloud/remote.ts`, `look` in the
+catalogue: the read-only ones, and `screenshot`, `record` and `export`, which make a picture or
+a file and change nothing) need no lease. Any agent of a person who can read the canvas calls
+them, whoever has the canvas (Ponzu's agent, another agent driving it, nobody), so an agent can
+study one canvas while it builds from it in code or on another. A tool that changes the canvas
+without the lease is refused with the looks it can use instead; a reader's agent is refused
+every change.
+
+A look runs on whichever runner is up. One running Ponzu's agent answers `POST /tool` for a look
+alone (`Runner.look`), on its workspace and renderer beside the agent's turn, which it never
+touches; the API has already checked the person may read the canvas. A sleeping sandbox wakes
+for a look in tools mode (the wake reason `look`, as a driven one: no Claude gates, no account
+pinned), and a wake that finds it awake in either mode leaves it as it is. A message to Ponzu's
+agent later wakes it again on Claude, which restarts the runner in place. A settled canvas is
+refused (409 `canvas_settled`): the sweep retires its sandbox, so there is none to look with,
+and `get_canvas` still outlines it.
 
 Not proven: a real Vercel sandbox in tools mode (the tests run the runner on its fake API and
 the API on fake sandboxes), and the time a first call waits on a sleeping sandbox.
