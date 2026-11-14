@@ -67,7 +67,7 @@ export function routeOf(link: AppLink): Route | null {
       // Billing is the Mac's: the phone never adds a card.
       return null;
     case "agent_connect":
-      // Connecting a person's own agent is the Mac's: its sign-in opens the Mac app.
+      // Connecting a person's own agent is the desktop app's; a phone's browser is told so first.
       return null;
   }
 }

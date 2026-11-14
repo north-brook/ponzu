@@ -168,6 +168,32 @@ describe("signing in", () => {
     expect((await mcp(refreshed.body.access_token, "tools/list")).status).toBe(401);
   });
 
+  test("a phone's browser is told to connect from the computer, and nothing is asked", async () => {
+    const registered = await call(t, {}, "POST", "/v1/oauth/register", {
+      client_name: "Claude Code",
+      redirect_uris: [REDIRECT],
+      token_endpoint_auth_method: "none",
+    });
+    const { challenge } = await pkce();
+    const query = new URLSearchParams({
+      response_type: "code",
+      client_id: registered.body.client_id,
+      redirect_uri: REDIRECT,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    });
+    const page = await t.app.request(`/v1/oauth/authorize?${query}`, {
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+      },
+    });
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain("Connect Claude Code from your computer");
+    expect(html).not.toContain("agents/connect");
+  });
+
   test("a refused agent goes back with access_denied and no tokens", async () => {
     const registered = await call(t, {}, "POST", "/v1/oauth/register", {
       client_name: "Codex",

@@ -3702,8 +3702,13 @@ in place of Ponzu's agent. The name is the agent's own word, which nothing check
 answer goes anywhere but a loopback address the dialog says where, and to allow it only if they
 started this. Allow (`POST …/approve`) or Don't allow (`…/deny`) answers the agent's redirect
 with its `code` and `state`, or `error=access_denied`, which the app opens in the browser, as the
-agent's own sign-in page would have. An ask lasts fifteen minutes and is decided once. The
-iPhone takes no such link.
+agent's own sign-in page would have. An ask lasts fifteen minutes and is decided once.
+
+Connecting an agent is the desktop app's alone, on the computer the agent runs on: the agent's
+answer usually goes to a port there, which a phone couldn't reach. So the iPhone takes no such
+link, and a phone's browser (an iPhone, iPad or Android user agent) reaching the authorize
+endpoint records no ask and gets a page saying to connect from the computer instead. If nothing
+takes the link, the page says to open Ponzu on this computer, or get it.
 
 **Grants and tokens** (`agent_clients`, `agent_authorizations`, `agent_grants`, `agent_tokens`;
 every token and code kept only as its SHA-256): allowing makes a grant, the person's, named as
