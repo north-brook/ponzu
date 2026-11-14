@@ -395,8 +395,8 @@ export class FakeGithub {
       const installation = this.#installation(Number(repositories[1]));
       if (!installation || !this.#reaches(user, installation)) return notFound(method, url);
       if (installation.suspendedAt) return suspended();
-      const reachable = installation.repositories.filter(
-        (repository) => repository.access[user.id],
+      const reachable = installation.repositories.filter((repository) =>
+        given(installation, repository, user.id),
       );
       return paged(url, reachable.length, {
         total_count: reachable.length,
@@ -406,7 +406,10 @@ export class FakeGithub {
           default_branch: repository.defaultBranch ?? "main",
           private: repository.private ?? true,
           pushed_at: repository.pushedAt?.toISOString() ?? null,
-          permissions: { pull: true, push: repository.access[user.id] === "write" },
+          permissions: {
+            pull: true,
+            push: given(installation, repository, user.id) === "write",
+          },
         })),
       });
     }
@@ -447,7 +450,19 @@ export class FakeGithub {
       pathname,
     );
     if (method === "GET" && permission) {
-      return this.#permission(repositories, permission[1]!, decodeURIComponent(permission[2]!));
+      return this.#permission(
+        installation,
+        repositories,
+        permission[1]!,
+        decodeURIComponent(permission[2]!),
+      );
+    }
+    // A repository by id, for a token that reaches it.
+    const byId = /^\/repositories\/(\d+)$/.exec(pathname);
+    if (method === "GET" && byId) {
+      const repository = repositories.find(({ id }) => id === Number(byId[1]));
+      if (!repository) return Response.json({ message: "Not Found" }, { status: 404 });
+      return Response.json(repositoryJson(repository));
     }
     const contents = this.#serveContents(token, repositories, method, url);
     if (contents) return contents;
@@ -576,7 +591,7 @@ export class FakeGithub {
   #reaches(user: FakeGithubUser, installation: FakeInstallation): boolean {
     return (
       installation.account.id === user.id ||
-      installation.repositories.some((repository) => repository.access[user.id])
+      installation.repositories.some((repository) => given(installation, repository, user.id))
     );
   }
 
@@ -695,15 +710,20 @@ export class FakeGithub {
    * token that reaches the repository. A login GitHub does not know is a 404; someone it knows
    * without access is `none`, or `read` on a public repository, which anyone can read.
    */
-  #permission(reachable: FakeRepository[], fullName: string, login: string): Response {
+  #permission(
+    installation: FakeInstallation,
+    reachable: FakeRepository[],
+    fullName: string,
+    login: string,
+  ): Response {
     const repository = reachable.find((candidate) => candidate.fullName === fullName);
     if (!repository) return Response.json({ message: "Not Found" }, { status: 404 });
     const user = [...this.#users.values()].find((candidate) => candidate.login === login);
     if (!user) return Response.json({ message: "Not Found" }, { status: 404 });
     this.permissionRequests.push(`${fullName} ${login}`);
-    // Anyone may read a public repository, collaborator or not.
+    // Anyone may read a public repository, collaborator or not: GitHub answers `read` for them.
     const permission =
-      repository.access[user.id] ?? (repository.private === false ? "read" : "none");
+      given(installation, repository, user.id) ?? (repository.private === false ? "read" : "none");
     return Response.json({
       permission,
       role_name: permission,
@@ -810,6 +830,24 @@ function page<T>(items: T[], params: URLSearchParams): T[] {
 }
 
 /** One page of a list of `total`, with GitHub's `Link` to the next page while there is one. */
+/**
+ * What GitHub has given a person in a repository: what its `access` says, and otherwise push
+ * for the personal account that owns it and for an owner of the organization that does (GitHub
+ * gives an organization's owners admin on every repository of it). Undefined: nothing, though
+ * anyone may still read it if it is public.
+ */
+function given(
+  installation: FakeInstallation,
+  repository: FakeRepository,
+  userId: number,
+): "read" | "write" | undefined {
+  const explicit = repository.access[userId];
+  if (explicit) return explicit;
+  const { account } = installation;
+  if (account.id === userId || account.owners?.includes(userId)) return "write";
+  return undefined;
+}
+
 function paged(url: string, total: number, body: unknown): Response {
   const next = new URL(url);
   const size = Number(next.searchParams.get("per_page") ?? 30);

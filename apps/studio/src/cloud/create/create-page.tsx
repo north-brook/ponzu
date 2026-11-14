@@ -25,7 +25,7 @@ export interface CreatePageProps {
   sending?: boolean;
   /**
    * A send has gone: the hero leaves and the composer is away (travelling to the thread, then
-   * there), leaving the dotted ground for the new canvas's boards. Back to false, a send that
+   * there), leaving the plain ground for the new canvas's boards. Back to false, a send that
    * failed finds everything where it was, the caret in the field.
    */
   launched?: boolean;
@@ -58,7 +58,7 @@ export interface CreatePageProps {
 }
 
 /**
- * Starting a canvas, in the main pane, on the same dotted ground its boards will sit on. The hero
+ * Starting a canvas, in the main pane, on the same plain ground its boards will sit on. The hero
  * (Ponzu's mark over one statement that ends in the project selector) is centred in the pane, a
  * little high (`HERO_RISE`); the composer is docked at the
  * pane's foot, where the thread's composer sits in its rail, and grows upward with what is typed
@@ -144,7 +144,7 @@ export function CreatePage({
       ref={pane}
       data-create-composer
       data-launched={launched || undefined}
-      className="canvas-dots absolute inset-0 flex flex-col overflow-y-auto"
+      className="absolute inset-0 flex flex-col overflow-y-auto"
     >
       <div
         data-create-hero

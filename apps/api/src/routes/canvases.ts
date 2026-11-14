@@ -677,6 +677,8 @@ export const canvases = new Hono<AppEnv>()
     validate("json", DriveBody),
     async (c) => {
       const { deps, actor } = c.var;
+      // The access check first, so someone who can't see the canvas can't tell it exists.
+      const { canvas } = await requireCanvas(c, c.req.valid("param").id, "write");
       const agent = actor.agent;
       if (!agent) {
         throw new ApiError(
@@ -685,7 +687,6 @@ export const canvases = new Hono<AppEnv>()
           "Only your own agent can drive a canvas, through Ponzu's MCP.",
         );
       }
-      const { canvas } = await requireCanvas(c, c.req.valid("param").id, "write");
       if (canvas.status === "settled") {
         throw new ApiError(
           409,
