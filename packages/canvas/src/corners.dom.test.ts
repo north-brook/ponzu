@@ -122,6 +122,26 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
     expect(near(await shot(d.box.x + 1, d.box.y + 1), YELLOW)).toBe(false);
     expect(near(await shot(d.box.x + inset, d.box.y + inset), YELLOW)).toBe(true);
     expect(near(await shot(d.box.x + d.box.w - 2, d.box.y + d.box.h - 2), YELLOW)).toBe(false);
+    // The arrival's outlines are clipped to the same corners, and the board's own elements
+    // inherit nothing from the rounding (a property there restyles every one of them).
+    const arrival = await page.evaluate(() => {
+      const root = document.querySelector("[data-pz-board] [data-artboard-host]")!.shadowRoot!;
+      let layer = root.querySelector<HTMLElement>(":host > [data-pz-arrive]");
+      if (!layer) {
+        layer = document.createElement("div");
+        layer.dataset.pzArrive = "";
+        layer.style.cssText =
+          "all:initial;position:absolute;inset:0;border-radius:var(--pz-board-corners,var(--pz-board-radius,0))";
+        root.append(layer);
+      }
+      const board = root.querySelector<HTMLElement>("[data-artboard]")!;
+      return {
+        layer: getComputedStyle(layer).borderTopLeftRadius,
+        inherited: getComputedStyle(board).getPropertyValue("--pz-board-corners"),
+      };
+    });
+    expect(arrival.layer).toBe("16px");
+    expect(arrival.inherited).toBe("");
     await page.close();
   });
 

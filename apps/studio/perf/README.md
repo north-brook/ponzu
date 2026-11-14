@@ -107,5 +107,10 @@ Rules each bought with a measured regression. Keep them, or change them with num
 - **The camera stays out of React.** A gesture fires dozens of events a second; the camera writes
   the boards' transform and scroll directly (`useCameraLayers`), and React renders only when a
   board's tier inputs change (`useCameraView`).
+- **Nothing that draws measures.** A `getBoundingClientRect` (or `getComputedStyle`) in a render,
+  a selector or a thaw tick lays out whatever the last commit built, there and then: the canvas
+  read the viewport's size in its render, and every board going live was laid out inside the
+  commit that built it (a quarter of `website.open`'s script, and most of its longest task).
+  What draws reads sizes a ResizeObserver kept; what acts on a press or a key measures then.
 - **A pan is a scroll.** Chrome moves a scroll on the compositor without restyling, laying out or
   painting anything: `website.pan` restyles nothing, and should stay that way.
