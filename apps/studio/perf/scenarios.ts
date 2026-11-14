@@ -656,6 +656,37 @@ const sidebar: Suite = {
  * is the client's part of "time to first paint": the real sandbox's wake and the model's first
  * token are measured on the real services (live.ts).
  */
+/** One prompt from the create page, timed from Enter to its first board drawn. */
+async function firstBoard(s: Studio, boardId: string): Promise<Measured> {
+  const page = s.page;
+  const board = BOARDS["tiny-card"].make({ id: boardId, name: "Hello", x: 0, y: 0 });
+  await page.evaluate(() => window.ponzuFake!.command("new-canvas"));
+  const field = page.getByPlaceholder(/Describe what you want to make/);
+  await field.waitFor();
+  await field.fill("A hello card");
+  await settled(page);
+  return action(s, async () => {
+    await page.evaluate((artboard) => {
+      const w = window.ponzuFake!;
+      const known = new Set(w.backend.canvases.keys());
+      const watch = () => {
+        const fresh = [...w.backend.canvases.keys()].find((k) => !known.has(k));
+        if (!fresh) return void requestAnimationFrame(watch);
+        const agent = w.backend.agent(fresh);
+        agent.say("On it.");
+        const page = w.backend.canvas(fresh).sequencer.doc.pages[0]!.id;
+        agent.commit([{ op: "artboard.create", page, index: 0, artboard }]);
+        agent.idle();
+      };
+      watch();
+    }, board);
+    await field.press("Enter");
+    await page.locator(`[data-pz-board="${boardId}"] [data-pz-tier="live"]`).waitFor({
+      timeout: 60_000,
+    });
+  });
+}
+
 const sandbox: Suite = {
   id: "sandbox",
   surface: "sandbox",
@@ -668,33 +699,10 @@ const sandbox: Suite = {
       title: "Prompt to first board",
       headline: ["latencyMs", "longestTaskMs", "commits"],
       run: async (s) => {
-        const page = s.page;
-        const board = BOARDS["tiny-card"].make({ id: "ab_first", name: "Hello", x: 0, y: 0 });
-        await page.evaluate(() => window.ponzuFake!.command("new-canvas"));
-        const field = page.getByPlaceholder(/Describe what you want to make/);
-        await field.waitFor();
-        await field.fill("A hello card");
-        await settled(page);
-        return action(s, async () => {
-          await page.evaluate((artboard) => {
-            const w = window.ponzuFake!;
-            const known = new Set(w.backend.canvases.keys());
-            const watch = () => {
-              const fresh = [...w.backend.canvases.keys()].find((k) => !known.has(k));
-              if (!fresh) return void requestAnimationFrame(watch);
-              const agent = w.backend.agent(fresh);
-              agent.say("On it.");
-              const page = w.backend.canvas(fresh).sequencer.doc.pages[0]!.id;
-              agent.commit([{ op: "artboard.create", page, index: 0, artboard }]);
-              agent.idle();
-            };
-            watch();
-          }, board);
-          await field.press("Enter");
-          await page.locator('[data-pz-board="ab_first"] [data-pz-tier="live"]').waitFor({
-            timeout: 60_000,
-          });
-        });
+        let n = 0;
+        // Three prompts, each a new canvas whose board has an id of its own, so the wait never
+        // finds the last one's.
+        return thrice(() => firstBoard(s, `ab_first${n++}`));
       },
     },
     {
