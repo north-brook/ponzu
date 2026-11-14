@@ -60,7 +60,6 @@ import {
   useKeyHeld,
   useModifierHint,
   useSource,
-  useZoomPercent,
 } from "./useCanvas.ts";
 import { Juice, useDelayed, useLingering } from "./working.tsx";
 
@@ -1454,6 +1453,7 @@ export function Canvas({
     const ab = t && boards.find((b) => b.id === id);
     return ab ? { dx: t.x - ab.x, dy: t.y - ab.y } : null;
   };
+  const plate = plateBox(boardBoxes, ghostFor);
   const rectsFor = (ids: string[]) => selectionRects(ids, boards, boardHeight, ghostFor, boxes);
   const selectedRects = rectsFor(selection);
   const vpSize = drawnSize();
@@ -1500,55 +1500,71 @@ export function Canvas({
         >
           {/* The plane's size: nothing drawn, only room to scroll. */}
           <div aria-hidden style={{ width: PLANE, height: PLANE }} />
-          <div ref={layer} className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left">
-            {boards.map((ab) => {
-              const g = ghostFor(ab.id);
-              const r = { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) };
-              const band = visibleBand(r, view, vpSize);
-              return (
-                <Board
-                  key={ab.id}
-                  artboard={ab}
-                  dx={g?.dx ?? 0}
-                  dy={g?.dy ?? 0}
-                  h={r.h}
-                  tokens={doc.tokens}
-                  source={source}
-                  colorScheme={themed(doc.tokens, ab) ? theme : "light"}
-                  zoom={view.zoom * dpr}
-                  scale={scale}
-                  onScreen={onScreen(r, view, vpSize)}
-                  moving={view.moving}
-                  y0={band?.y0}
-                  y1={band?.y1}
-                  // Dragged, selected, renamed, worked on or an agent's work arriving: live,
-                  // wherever it is.
-                  attention={
-                    !!g ||
-                    selection.includes(ab.id) ||
-                    working.has(ab.id) ||
-                    renaming === ab.id ||
-                    arriving.has(ab.id)
-                  }
-                  cheap={cold.has(ab.id)}
-                  skeleton={skeletons.has(ab.id)}
-                  onBuilt={boardBuilt}
-                  rankOf={rankOf}
-                  arrivals={arrivals}
-                  // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
-                  radius={(BOARD_RADIUS * dpr) / scale}
-                  // Its edge, one px on screen at any zoom, the same way: zoomed out, a board the
-                  // canvas's own colour is held by its hairline alone.
-                  edge={dpr / scale}
-                  corners={rounding.get(ab.id)}
-                  onCorners={reportCorners}
-                  hold={
-                    crowd ||
-                    outOfSight({ ...r, x: r.x + (g?.dx ?? 0), y: r.y + (g?.dy ?? 0) }, view, vpSize)
-                  }
-                />
-              );
-            })}
+          <div
+            ref={layer}
+            data-pz-layer
+            className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left"
+          >
+            {/*
+             * The boards' plate: a box round all of them, containing their layout, style and
+             * paint (see plateBox). The boards inside keep their page coordinates.
+             */}
+            <div style={plateStyle(plate)}>
+              <div className="pz:absolute" style={{ left: -plate.x, top: -plate.y }}>
+                {boards.map((ab) => {
+                  const g = ghostFor(ab.id);
+                  const r = { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) };
+                  const band = visibleBand(r, view, vpSize);
+                  return (
+                    <Board
+                      key={ab.id}
+                      artboard={ab}
+                      dx={g?.dx ?? 0}
+                      dy={g?.dy ?? 0}
+                      h={r.h}
+                      tokens={doc.tokens}
+                      source={source}
+                      colorScheme={themed(doc.tokens, ab) ? theme : "light"}
+                      zoom={view.zoom * dpr}
+                      scale={scale}
+                      onScreen={onScreen(r, view, vpSize)}
+                      moving={view.moving}
+                      y0={band?.y0}
+                      y1={band?.y1}
+                      // Dragged, selected, renamed, worked on or an agent's work arriving: live,
+                      // wherever it is.
+                      attention={
+                        !!g ||
+                        selection.includes(ab.id) ||
+                        working.has(ab.id) ||
+                        renaming === ab.id ||
+                        arriving.has(ab.id)
+                      }
+                      cheap={cold.has(ab.id)}
+                      skeleton={skeletons.has(ab.id)}
+                      onBuilt={boardBuilt}
+                      rankOf={rankOf}
+                      arrivals={arrivals}
+                      // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
+                      radius={(BOARD_RADIUS * dpr) / scale}
+                      // Its edge, one px on screen at any zoom, the same way: zoomed out, a board the
+                      // canvas's own colour is held by its hairline alone.
+                      edge={dpr / scale}
+                      corners={rounding.get(ab.id)}
+                      onCorners={reportCorners}
+                      hold={
+                        crowd ||
+                        outOfSight(
+                          { ...r, x: r.x + (g?.dx ?? 0), y: r.y + (g?.dy ?? 0) },
+                          view,
+                          vpSize,
+                        )
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {/*
@@ -2460,6 +2476,7 @@ const Board = memo(function Board({
           width: w,
           height: fixed ?? undefined,
           borderRadius: corners,
+          contain: fixed === null ? "layout paint style" : "strict",
           "--pz-board-radius": `${radius}px`,
           "--pz-board-edge-width": `${edge}px`,
         } as CSSProperties
@@ -2682,6 +2699,50 @@ function moveKeys(e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }):
   return { shift: e.shiftKey, free: e.metaKey || e.ctrlKey };
 }
 
+/** The plate reaches this far past the boards, in page px, and snaps out to a multiple of it. */
+const PLATE_MARGIN = 2048;
+
+/**
+ * The boards' plate: a box round every board where it's drawn now (a dragged one where it's
+ * dragged to), grown by {@link PLATE_MARGIN} for their shadows and snapped out to it, so a drag
+ * only changes it now and then.
+ *
+ * It contains its boards (`contain: strict`), which is what keeps a zoom from repainting them.
+ * The boards' layer sits on the scroll plane, so Chromium paints what's in it only within a
+ * window round the view, mapped through the zoom: a window that moves with every frame of a
+ * zoom, and with it every board was painted again, every frame (apps/studio/perf,
+ * website.zoom). Within a bounded box that is in view whole, the window is the box, and it
+ * holds still. A box much bigger than the boards (a fixed huge one) doesn't do it.
+ */
+export function plateBox(
+  boxes: { id: string; x: number; y: number; w: number; h: number }[],
+  offset: (id: string) => { dx: number; dy: number } | null,
+): { x: number; y: number; w: number; h: number } {
+  if (!boxes.length) return { x: 0, y: 0, w: 0, h: 0 };
+  let x0 = Number.POSITIVE_INFINITY;
+  let y0 = Number.POSITIVE_INFINITY;
+  let x1 = Number.NEGATIVE_INFINITY;
+  let y1 = Number.NEGATIVE_INFINITY;
+  for (const b of boxes) {
+    const g = offset(b.id);
+    const x = b.x + (g?.dx ?? 0);
+    const y = b.y + (g?.dy ?? 0);
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x + b.w);
+    y1 = Math.max(y1, y + b.h);
+  }
+  const down = (n: number) => Math.floor(n / PLATE_MARGIN) * PLATE_MARGIN - PLATE_MARGIN;
+  const up = (n: number) => Math.ceil(n / PLATE_MARGIN) * PLATE_MARGIN + PLATE_MARGIN;
+  const x = down(x0);
+  const y = down(y0);
+  return { x, y, w: up(x1) - x, h: up(y1) - y };
+}
+
+function plateStyle(p: { x: number; y: number; w: number; h: number }): CSSProperties {
+  return { position: "absolute", left: p.x, top: p.y, width: p.w, height: p.h, contain: "strict" };
+}
+
 /**
  * A length in page px as screen px, for the overlay layer: it follows the
  * camera's translation and carries its zoom as --z (see useCameraLayers).
@@ -2704,9 +2765,24 @@ function ringBox(r: { x: number; y: number; w: number; h: number }) {
   };
 }
 
-/** The zoom label, the only text that changes with the camera; it renders on its own. */
+/**
+ * The zoom label, the only text that changes with the camera. Written as the camera moves,
+ * like the boards' transform (useCameraLayers), not rendered: through React, every frame of a
+ * zoom was a commit of its own.
+ */
 function ZoomPercent({ camera }: { camera: CameraStore }) {
-  return <>{useZoomPercent(camera)}%</>;
+  const label = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = label.current;
+    if (!el) return;
+    const show = (c: { zoom: number }) => {
+      const text = `${Math.round(c.zoom * 100)}%`;
+      if (el.textContent !== text) el.textContent = text;
+    };
+    show(camera.get());
+    return camera.subscribe(show);
+  }, [camera]);
+  return <span ref={label} />;
 }
 
 /** A node's box in its artboard's px, and which artboard it was found in. */

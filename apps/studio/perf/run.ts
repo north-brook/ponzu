@@ -125,6 +125,9 @@ for (let round = 0; round < rounds; round++) {
           where = `${electron}, ${await windowSize(studio.page)}`;
           console.error(`  measuring ${where}`);
         }
+        // A suite's setup is traced too (a canvas's open is measured there): its trace is
+        // named for the scenario that reports it, not the one before it.
+        current = suite.scenarios.find((sc) => sc.id === `${suite.id}.open`)?.id ?? "";
         const state = await suite.setup(studio);
         for (const sc of suite.scenarios) {
           try {

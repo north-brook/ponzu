@@ -140,7 +140,7 @@ const expectPinOnNode = async (page: Page) => {
     const node = host.shadowRoot!.querySelector('[data-id="n_target"]')!.getBoundingClientRect();
     const pin = document.querySelector('button[title="Drag to move"]')!.parentElement!;
     const p = pin.getBoundingClientRect();
-    const layer = document.querySelector("[data-pz-board]")!.parentElement!;
+    const layer = document.querySelector("[data-pz-layer]")!;
     const zoom = new DOMMatrix(getComputedStyle(layer).transform).a;
     return { node: { x: node.left, y: node.top }, pin: { x: p.left, y: p.top }, zoom };
   });

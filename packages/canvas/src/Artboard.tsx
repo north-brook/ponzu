@@ -267,11 +267,13 @@ function roundRoot(root: ShadowRoot, artboard: AB, report?: (corners: Radii) => 
   const css = cornersCss(corners, "var(--pz-board-radius)");
   const style = root.ownerDocument.createElement("style");
   style.dataset.pzRound = "";
-  // Each rule on the one element that uses it, never a custom property on :host: every element
-  // of the board inherits one, so writing it there (after the measure above has styled the board)
-  // restyled the whole board a second time. The arrival's layer reads the corners; nothing in
-  // the board does.
-  style.textContent = `[data-artboard]{border-radius:${css}!important}:host>[data-pz-arrive]{--pz-board-corners:${css}}`;
+  // Each rule on the one element that uses it, never a custom property for the content to
+  // inherit: written on :host (after the measure above has styled the board) one restyled the
+  // whole board a second time. The canvas's radius is registered as not inherited (styles.css),
+  // so it's handed down to the root and the arrival layer by name, and a zoom step that changes
+  // it restyles those two and not every element of the board. The arrival's layer reads the
+  // corners; nothing in the board does.
+  style.textContent = `:host{--pz-board-radius:inherit}[data-artboard]{--pz-board-radius:inherit;border-radius:${css}!important}:host>[data-pz-arrive]{--pz-board-radius:inherit;--pz-board-corners:${css}}`;
   root.prepend(style);
   if (measured) report?.(measured);
 }
