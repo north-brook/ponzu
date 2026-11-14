@@ -383,11 +383,13 @@ export class FakeRunnerApi {
 
   async claim(
     runner: string,
-    { claimId, limit = CLAIM_LIMIT }: ClaimRequest,
+    { claimId, limit = CLAIM_LIMIT, kinds }: ClaimRequest,
   ): Promise<ClaimResponse> {
     await this.enter("claim", runner);
     this.claimIds.push(claimId);
-    const pending = this.events.filter((e) => e.deliveredAt === undefined);
+    const pending = this.events.filter(
+      (e) => e.deliveredAt === undefined && (!kinds || kinds.includes(e.event.kind)),
+    );
     const repeated = pending.filter((e) => e.claimedBy === runner && e.claimId === claimId);
     const waiting = (
       repeated.length > 0 ? repeated : pending.filter((e) => e.claimedBy !== runner)

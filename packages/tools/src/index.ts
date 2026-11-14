@@ -5,6 +5,7 @@ export { MAX_ASSET_BYTES } from "./cloud/asset.ts";
 export { CLOUD_INSTRUCTIONS, type CloudGuideTopic, cloudGuides } from "./cloud/guides.ts";
 export {
   getRemoteTool,
+  looks,
   type RemoteToolEntry,
   remoteCatalog,
   remoteTools,

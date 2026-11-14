@@ -76,6 +76,7 @@ test("only the scheduler's secret runs it", async () => {
   expect(await response.json()).toEqual({
     steps: {
       jobs: { ran: 0, abandoned: 0 },
+      drivers: { ended: 0 },
       installations: { swept: 0 },
       sandboxes: {
         retire: 0,

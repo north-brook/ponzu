@@ -254,6 +254,20 @@ test("a runner with nothing to claim goes from waking to idle once its claim is 
   expect(said.indexOf("idle")).toBeGreaterThan(said.indexOf("working"));
 });
 
+test("a person's own agent looks at the canvas beside Ponzu's agent, and only looks", async () => {
+  const s = await setup({ doc: pricing() });
+  await until(() => s.api.states.at(-1)?.state === "idle");
+  const agent = { name: "Codex", client: "openai" };
+  const tree = await s.runner.look("get_tree", {}, agent);
+  expect(tree.isError).toBe(false);
+  expect((tree.content[0] as { text: string }).text).toContain("Pricing");
+  // A tool that changes the canvas is never run here, whatever the call says.
+  expect(() => s.runner.look("write_html", { target: "x", html: "<p/>" }, agent)).toThrow(
+    "isn't a canvas tool that only looks",
+  );
+  expect(() => s.runner.look("open_pull_request", {}, agent)).toThrow("only looks");
+});
+
 test("a canvas with a session resumes it, and what an earlier run asked stays open", async () => {
   const agent = new ScriptedAgent();
   agent.sessions.set("sess_old", { messages: new Set(), toolResults: new Set() });

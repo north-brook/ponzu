@@ -10,7 +10,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "get_tree",
@@ -34,7 +35,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "get_node",
@@ -52,7 +54,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "get_html",
@@ -74,7 +77,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "find_nodes",
@@ -126,7 +130,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "create_artboard",
@@ -177,7 +182,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "write_html",
@@ -204,7 +210,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "update_styles",
@@ -247,7 +254,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "set_text",
@@ -279,7 +287,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "set_attributes",
@@ -306,7 +315,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "duplicate",
@@ -347,7 +357,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "move_nodes",
@@ -391,7 +402,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "delete",
@@ -413,7 +425,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": true
+    "destructive": true,
+    "look": false
   },
   {
     "name": "rename",
@@ -445,7 +458,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "update_artboard",
@@ -482,7 +496,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "add_asset",
@@ -509,7 +524,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "screenshot",
@@ -555,7 +571,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "record",
@@ -612,7 +629,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "export",
@@ -646,7 +664,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "update_canvas",
@@ -880,7 +899,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "create_page",
@@ -1113,7 +1133,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "update_page",
@@ -1359,7 +1380,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "archive",
@@ -1381,7 +1403,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "get_tokens",
@@ -1394,7 +1417,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "set_tokens",
@@ -1420,7 +1444,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "list_comments",
@@ -1441,7 +1466,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "get_comment",
@@ -1459,7 +1485,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "create_comment",
@@ -1482,7 +1509,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "reply",
@@ -1507,7 +1535,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "set_comment_status",
@@ -1529,7 +1558,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "send_feedback",
@@ -1567,7 +1597,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "set_status",
@@ -1600,7 +1631,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "write_note",
@@ -1624,7 +1656,8 @@
       "additionalProperties": false
     },
     "readOnly": false,
-    "destructive": false
+    "destructive": false,
+    "look": false
   },
   {
     "name": "read_notes",
@@ -1641,7 +1674,8 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   },
   {
     "name": "get_guide",
@@ -1672,6 +1706,7 @@
       "additionalProperties": false
     },
     "readOnly": true,
-    "destructive": false
+    "destructive": false,
+    "look": true
   }
 ]

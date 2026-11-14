@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { emptyDoc } from "@ponzu/core";
 import { runTool } from "../define.ts";
-import { getRemoteTool, remoteCatalog, remoteTools } from "./remote.ts";
+import { getRemoteTool, looks, remoteCatalog, remoteTools } from "./remote.ts";
 import { type MemoryCloud, memoryCloud } from "./testing.ts";
 import { cloudTools } from "./tools.ts";
 
@@ -27,6 +27,24 @@ function setup() {
 test("they are the cloud's tools, in the cloud's order, and none takes a path", () => {
   expect(remoteTools.map((def) => def.name)).toEqual(cloudTools.map((def) => def.name));
   for (const def of remoteTools) expect(Object.keys(def.input)).not.toContain("path");
+});
+
+test("the tools that only look are the ones that read, and those that make a picture or a file", () => {
+  expect(remoteTools.filter(looks).map((def) => def.name)).toEqual([
+    "get_basic_info",
+    "get_tree",
+    "get_node",
+    "get_html",
+    "find_nodes",
+    "screenshot",
+    "record",
+    "export",
+    "get_tokens",
+    "list_comments",
+    "get_comment",
+    "read_notes",
+    "get_guide",
+  ]);
 });
 
 test("the catalogue the API lists them from is the tools as they are", () => {

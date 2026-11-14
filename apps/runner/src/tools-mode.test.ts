@@ -60,11 +60,16 @@ test("a comment it leaves reaches the canvas (the API names its author: the driv
   expect(api.doc.snapshot().doc.threads[0]?.messages[0]?.text).toBe("Which blue?");
 });
 
-test("what it claims it takes, so nothing waits on it", async () => {
+test("it claims only a stop and a push, and leaves what would begin a turn for whoever answers it", async () => {
   const api = new FakeRunnerApi();
   api.push({ kind: "edit", payload: {} } as never, { priority: "later" });
+  api.push({ kind: "message", payload: { text: "Hello?" } });
+  api.push({ kind: "push", payload: {} } as never);
   await started(api);
-  await until(() => api.events.every((held) => held.deliveredAt !== undefined));
+  const taken = (kind: string) =>
+    api.events.find((held) => held.event.kind === kind)?.deliveredAt !== undefined;
+  await until(() => taken("push"));
+  expect([taken("edit"), taken("message")]).toEqual([false, false]);
 });
 
 test("a tool that doesn't exist is refused before anything runs", async () => {

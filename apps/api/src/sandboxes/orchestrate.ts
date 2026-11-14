@@ -103,6 +103,12 @@ export function sandboxSpec(image: string): SandboxSpec {
   };
 }
 
+/**
+ * The reason a person's own agent wakes a canvas to look at it (docs/cloud.md, "Looking without
+ * driving"): in tools mode, when it isn't awake already.
+ */
+export const LOOK_WAKE = "look";
+
 export async function runWakeJob(
   deps: JobDeps,
   payload: RunningJob["payload"],
@@ -128,8 +134,13 @@ export async function wakeCanvas(
 ): Promise<void> {
   const { db, clock, log } = deps;
   const began = clock.now();
-  const context = await getWakeContext(db, canvasId);
-  if (!context || context.status === "settled") return;
+  const read = await getWakeContext(db, canvasId);
+  if (!read || read.status === "settled") return;
+  // A wake for a look (docs/cloud.md, "Looking without driving") brings the canvas up as a
+  // driven one is, in tools mode, with nothing of Claude's: a look needs only the canvas. A
+  // sandbox already awake, in either mode, is left as it is (`claim`).
+  const looking = reason === LOOK_WAKE && !read.driven;
+  const context: WakeContext = looking ? { ...read, driven: true } : read;
 
   // Something outside the canvas must change first. The event waits in the feed; what it waits
   // on wakes it once it has changed, or the next message does, or (when the gate said when)
@@ -163,7 +174,7 @@ export async function wakeCanvas(
   }
 
   try {
-    const waking = await claim(deps, context, job.id);
+    const waking = await claim(deps, context, job.id, looking);
     if (!waking) return;
     const woke = await bringUp(deps, context, waking, job.id);
     if (!woke) return;
@@ -214,7 +225,12 @@ export async function wakeCanvas(
  * The canvas's row, now `waking` and held by the wake `by`; null when there is nothing for this
  * wake to do (another holds it, or it is awake on the credential it should be).
  */
-async function claim(deps: JobDeps, context: WakeContext, by: string): Promise<SandboxRow | null> {
+async function claim(
+  deps: JobDeps,
+  context: WakeContext,
+  by: string,
+  looking = false,
+): Promise<SandboxRow | null> {
   const { db, clock } = deps;
   const { limits } = deps.config.sandbox;
   const { canvasId } = context;
@@ -224,7 +240,7 @@ async function claim(deps: JobDeps, context: WakeContext, by: string): Promise<S
   if (row.state === "stopping") {
     await showAgentWaiting(db, { canvasId, waking: true, blocker: null });
     row = await afterStop(deps, canvasId);
-    if (!row) return claim(deps, { ...context, sandbox: null }, by);
+    if (!row) return claim(deps, { ...context, sandbox: null }, by, looking);
   }
   switch (row.state) {
     case "asleep":
@@ -233,7 +249,8 @@ async function claim(deps: JobDeps, context: WakeContext, by: string): Promise<S
       );
     case "awake":
       // On the credential it should be (or in tools mode, driven): the request's poke reached it.
-      if (row.claudeCredential === startMark(context)) return null;
+      // A look uses it in whichever mode it is.
+      if (looking || row.claudeCredential === startMark(context)) return null;
       // A restart in place, on the owner's new credential.
       return claimed(await claimSandbox(db, { canvasId, from: ["awake"], now: now(), by, limits }));
     case "waking":
