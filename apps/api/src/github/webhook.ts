@@ -380,10 +380,13 @@ export function planDelivery(event: string, payload: unknown): Plan {
             author: { githubUserId: user.id, login: user.login },
             payload: (pr: PullRequestRef) => ({
               state: review.state.toLowerCase(),
-              reviewer: user.login,
+              // As the runner reads a review (`ReviewEvent`). Its line comments are left to
+              // read_pull_request, which has those still open.
+              reviewer: { login: user.login },
               reviewerAssociation: review.author_association,
               body: (review.body ?? "").slice(0, REVIEW_BODY_CHARS),
               url: review.html_url,
+              comments: [],
               pullRequest: pr.number,
             }),
             ...(review.state.toLowerCase() === "approved" && review.id !== undefined
