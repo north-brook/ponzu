@@ -11,7 +11,7 @@ The canvas is the spec; this checkout is where it gets built. Every Ponzu tool t
 
 1. `get_canvas` for its repository, pages, boards, open questions and pull requests. The canvas's repository should be this checkout's; if it isn't, say so before building.
 2. `screenshot` the boards you'll build, to see them.
-3. For exact values, `take_canvas` and read: `read_notes` (the brief and decisions), `get_tokens`, `get_tree` and `get_html` for each board (sizes, colors, spacing, type, `data-name` for each part), `list_comments` for requirements left in threads, and `get_guide('code')`. Check `get_canvas` first: if Ponzu's agent is working, ask the user before taking the canvas from it. `release_canvas` once you've read what you need.
+3. For exact values, read: `read_notes` (the brief and decisions), `get_tokens`, `get_tree` and `get_html` for each board (sizes, colors, spacing, type, `data-name` for each part), `list_comments` for requirements left in threads, and `get_guide('code')`. These only look, so they work without taking the canvas, whoever is working on it: leave it with Ponzu's agent or whoever has it.
 
 Read it this way:
 - Tokens map into the codebase's theme (CSS variables, Tailwind `@theme`, a tokens file). Keep the names.
@@ -27,7 +27,7 @@ When something can't be built as drawn, leave a `create_comment` on that board s
 
 ## 3. Open the pull request and link it
 
-1. Commit on a branch and open the pull request the way this repo does (`gh pr create`, say). For a picture of a board in its description, `export` it (while holding the canvas) and use the link it answers.
+1. Commit on a branch and open the pull request the way this repo does (`gh pr create`, say). For a picture of a board in its description, `export` it and use the link it answers.
 2. Right away, `link_pull_request` with the canvas and the pull request's URL (`link_pull_requests` for several). Link every pull request you open for this canvas's work.
 
 The canvas settles once every linked pull request is merged or closed and at least one merged. A pull request in a repository outside the canvas's workspace is refused; the refusal says what to do. Tell the user the link, and which pull requests are linked (`list_pull_requests`).
