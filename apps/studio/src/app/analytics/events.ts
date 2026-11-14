@@ -38,6 +38,7 @@ export type NoticeName =
   | "session_file"
   | "install_requested"
   | "install_failed"
+  | "agent_connected"
   | "canvas_not_made"
   | "first_message_not_sent"
   | "maintenance";

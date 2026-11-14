@@ -88,6 +88,12 @@ export interface ServerEvents {
    */
   "canvas taken over": { canvas_id: string; woke: boolean };
 
+  // Your own agent (docs/cloud.md, "Your own agent")
+  /** The person allowed an agent of theirs (Claude Code, Codex…) to use Ponzu as them. */
+  "agent connected": Record<string, never>;
+  /** The person disconnected one of their agents in settings. */
+  "agent disconnected": Record<string, never>;
+
   // The thread
   "message sent": {
     canvas_id: string;

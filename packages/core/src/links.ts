@@ -6,6 +6,7 @@
  *   <scheme>://auth/callback?code=<code>&state=<state>
  *   <scheme>://billing/card?setup=<setup id>&result=added|cancelled
  *   <scheme>://settings?section=usage|notifications|account&workspace=&n=
+ *   <scheme>://agents/connect?request=<agent authorization id>
  *
  * `n` is the notification a link came from (a canvas's, or a workspace's billing ping, which
  * opens Plan and usage), so opening it can mark it read. A settings link's `workspace` is the
@@ -75,6 +76,11 @@ export type AppLink =
   | { kind: "github_setup"; result: GithubSetupResult; workspaceId?: string }
   | { kind: "auth_callback"; code: string; state: string }
   | { kind: "card_setup"; setupId: string; result: CardSetupResult }
+  /**
+   * A person's own agent asks to be allowed (docs/cloud.md, "Your own agent"): the app shows who
+   * is asking and lets the person allow or refuse it. The link only opens that question.
+   */
+  | { kind: "agent_connect"; requestId: string }
   | {
       kind: "settings";
       section?: SettingsSection;
@@ -158,6 +164,10 @@ export function parseAppLink(url: string, scheme: string): AppLink | null {
     if (!setupId || !result) return null;
     return { kind: "card_setup", setupId, result };
   }
+  if (route === "agents/connect") {
+    const requestId = id("request");
+    return requestId ? { kind: "agent_connect", requestId } : null;
+  }
   if (route === "settings") {
     const section = oneOf(SETTINGS_SECTIONS, one("section"));
     const workspaceId = id("workspace");
@@ -225,6 +235,10 @@ export function appLink(link: AppLink, scheme: LinkScheme): string {
       route = "billing/card";
       put("setup", link.setupId, LINK_ID);
       putOneOf("result", CARD_SETUP_RESULTS, link.result);
+      break;
+    case "agent_connect":
+      route = "agents/connect";
+      put("request", link.requestId, LINK_ID);
       break;
     case "settings":
       route = "settings";

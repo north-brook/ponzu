@@ -1,4 +1,4 @@
-import { type Context, Hono } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { analyticsScope } from "./analytics/middleware.ts";
 import { denyUndeclared } from "./auth/access.ts";
 import type { Deps } from "./deps/index.ts";
@@ -9,6 +9,7 @@ import { ApiError, toApiError } from "./http/errors.ts";
 import { readOnlyGate } from "./http/maintenance.ts";
 import { requestContext } from "./http/request.ts";
 import { v1 } from "./routes/index.ts";
+import { wellKnown } from "./routes/oauth.ts";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
@@ -23,8 +24,14 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
  * sets its own `onError`.
  */
 export function createApp(deps: Deps) {
+  // The MCP calls the app itself, as the person (mcp/internal.ts).
+  const self: MiddlewareHandler<AppEnv> = (c, next) => {
+    c.set("self", (request) => app.fetch(request));
+    return next();
+  };
   const infrastructure = [
     requestContext(deps),
+    self,
     analyticsScope,
     cors,
     clientVersionGate(deps.config.minimumClientVersions),
@@ -33,7 +40,7 @@ export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
   for (const middleware of infrastructure) app.use(middleware);
   app.use(denyUndeclared(infrastructure));
-
+  app.route("/.well-known", wellKnown);
   const routed = app.route("/v1", v1);
 
   app.notFound((c) => {

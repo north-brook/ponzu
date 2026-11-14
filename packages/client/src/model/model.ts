@@ -361,6 +361,8 @@ export type ThreadItem = {
         text: string;
         from: Person;
         attachments: Attachment[];
+        /** Sent by the person's own agent through Ponzu's MCP: its name, shown "via <name>". */
+        via?: string;
         /** The viewer's own message on its way, or one that didn't arrive; absent once it has. */
         delivery?: "sending" | "failed";
       };

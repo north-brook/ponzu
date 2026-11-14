@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http/context.ts";
 import { account } from "./account.ts";
+import { agentConnections } from "./agent-connections.ts";
 import { auth } from "./auth.ts";
 import { canvasPullRequest } from "./canvas-pull-request.ts";
 import { canvasThread } from "./canvas-thread.ts";
@@ -12,8 +13,10 @@ import { environments } from "./environments.ts";
 import { github } from "./github.ts";
 import { health } from "./health.ts";
 import { live } from "./live.ts";
+import { mcp } from "./mcp.ts";
 import { me } from "./me.ts";
 import { notifications } from "./notifications.ts";
+import { oauth } from "./oauth.ts";
 import { repoIdeas } from "./repo-ideas.ts";
 import { runner } from "./runner.ts";
 import { runnerPullRequest } from "./runner-pull-request.ts";
@@ -41,6 +44,9 @@ export const v1 = new Hono<AppEnv>()
   .route("/", usage)
   .route("/runner", runner)
   .route("/runner", runnerPullRequest)
+  .route("/agent-connections", agentConnections)
+  .route("/oauth", oauth)
+  .route("/mcp", mcp)
   .route("/live", live)
   .route("/cron", cron)
   .route("/email", email);

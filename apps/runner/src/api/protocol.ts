@@ -472,7 +472,18 @@ export type ThreadItem = {
 
 export type ThreadContent =
   /** Written by the API when a person sends a message. */
-  | { kind: "message"; payload: { text: string; from: Person } }
+  | {
+      kind: "message";
+      payload: {
+        text: string;
+        from: Person;
+        /**
+         * Sent by the person's own agent (Claude Code, Codex…) through Ponzu's MCP, as them:
+         * shown "via <name>". Absent for what the person sent themselves.
+         */
+        via?: { name: string };
+      };
+    }
   /**
    * Written by the API when a comment reaches the agent: shown with a picture of where it was
    * left, once its author's app has attached one.

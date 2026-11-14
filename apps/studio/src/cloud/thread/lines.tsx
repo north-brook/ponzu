@@ -191,6 +191,9 @@ function PersonLine({
         </p>
         {avatar ? <Stamp person={from} /> : null}
       </div>
+      {item.kind === "message" && item.payload.via ? (
+        <span className="text-11 text-faint">via {item.payload.via}</span>
+      ) : null}
       {delivery === "failed" ? <Undelivered id={item.id} handlers={handlers} /> : null}
     </div>
   );

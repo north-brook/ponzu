@@ -20,6 +20,7 @@ export const STUDIO_ORIGIN = "ponzu-studio://app";
  *   ponzu://github/setup?result=requested | pending | sign_in | failed
  *   ponzu://billing/card?setup=<setup id>&result=added | cancelled
  *   ponzu://settings?section=usage | notifications | account&n=
+ *   ponzu://agents/connect?request=<agent authorization id>
  *
  * `n` names the notification a link came from (a banner clicked), so opening it reads it.
  * A canvas's link from before canvases had their name (`design/<id>`) opens the same way. A
