@@ -214,7 +214,9 @@ async function gesture(
     restTiles: after.tiles,
     restGpuMs: round(after.gpuMs),
     restMainMs: round(after.mainMs),
-    sharpMs: after.tiles ? round((after.lastTileTs - rest) / 1000) : 0,
+    // From the gesture's end to the last tile finished anywhere in the trace: a tile begun
+    // during the gesture and finished in the rest still keeps the canvas from being sharp.
+    sharpMs: Math.max(0, round((t.lastTileTs - rest) / 1000)),
     longestTaskMs: round(t.longestTaskMs, 1),
     restyledPerFrame: round(t.restyled / frames),
     laidOutPerFrame: round(t.laidOut / frames),
