@@ -1,6 +1,6 @@
 {
-  "id": "49db1983-10b2-4a12-92a0-13a632effae9",
-  "prevId": "b279db66-7c53-4fe7-96af-6c87c185c3f0",
+  "id": "f1dfbc12-1201-4c1a-be67-58f724fed23b",
+  "prevId": "7df503a1-4b78-42a7-aa98-39a90008ab9a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2087,146 +2087,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.canvas_drivers": {
-      "name": "canvas_drivers",
-      "schema": "",
-      "columns": {
-        "canvas_id": {
-          "name": "canvas_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client": {
-          "name": "client",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "host": {
-          "name": "host",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "seen_at": {
-          "name": "seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "canvas_drivers_seen_at_idx": {
-          "name": "canvas_drivers_seen_at_idx",
-          "columns": [
-            {
-              "expression": "seen_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "canvas_drivers_grant_id_idx": {
-          "name": "canvas_drivers_grant_id_idx",
-          "columns": [
-            {
-              "expression": "grant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "canvas_drivers_canvas_id_canvases_id_fk": {
-          "name": "canvas_drivers_canvas_id_canvases_id_fk",
-          "tableFrom": "canvas_drivers",
-          "tableTo": "canvases",
-          "columnsFrom": [
-            "canvas_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "canvas_drivers_grant_id_agent_grants_id_fk": {
-          "name": "canvas_drivers_grant_id_agent_grants_id_fk",
-          "tableFrom": "canvas_drivers",
-          "tableTo": "agent_grants",
-          "columnsFrom": [
-            "grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "canvas_drivers_user_id_users_id_fk": {
-          "name": "canvas_drivers_user_id_users_id_fk",
-          "tableFrom": "canvas_drivers",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.credit_ledger": {
       "name": "credit_ledger",
       "schema": "",
@@ -3422,12 +3282,6 @@
         "agent_blocked_until": {
           "name": "agent_blocked_until",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "driver": {
-          "name": "driver",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

@@ -39,7 +39,7 @@ export interface QuestionLike {
   payload: unknown;
 }
 
-const CANVAS_ID = /^(?:cnv|des)_[0-9a-z]{16}$/;
+const CANVAS_ID = /^cnv_[0-9a-z]{16}$/;
 
 /**
  * The canvas id a tool was given: an id, or a canvas link (with or without a page or board in
@@ -47,7 +47,7 @@ const CANVAS_ID = /^(?:cnv|des)_[0-9a-z]{16}$/;
  */
 export function canvasRef(ref: string): string {
   const trimmed = ref.trim();
-  const match = /\/canvases\/((?:cnv|des)_[0-9a-z]{16})/.exec(trimmed);
+  const match = /\/canvases\/(cnv_[0-9a-z]{16})/.exec(trimmed);
   if (match) return match[1]!;
   if (CANVAS_ID.test(trimmed)) return trimmed;
   return encodeURIComponent(trimmed);

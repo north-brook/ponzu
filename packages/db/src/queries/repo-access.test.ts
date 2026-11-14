@@ -88,6 +88,7 @@ describe("listWorkspaceRepoAccess", () => {
         repoId: withCanvas.id,
         githubRepoId: withCanvas.githubRepoId,
         fullName: "acme/site",
+        private: true,
         hasCanvas: true,
         permission: null,
         checkedAt: null,
@@ -96,6 +97,7 @@ describe("listWorkspaceRepoAccess", () => {
         repoId: asked.id,
         githubRepoId: asked.githubRepoId,
         fullName: "acme/app",
+        private: true,
         hasCanvas: true,
         permission: "write",
         checkedAt: at("12:00:00"),
@@ -104,6 +106,7 @@ describe("listWorkspaceRepoAccess", () => {
         repoId: empty.id,
         githubRepoId: empty.githubRepoId,
         fullName: "acme/empty",
+        private: true,
         hasCanvas: false,
         permission: "read",
         checkedAt: at("12:00:00"),
@@ -164,13 +167,18 @@ describe("recordReachableRepos", () => {
     const idOf = (n: number) => rows.find((row) => row.githubRepoId === base + n)!.id;
     const record = (
       listed: [number, "write" | "read"][],
-      { complete = true, time = "12:00:00" }: { complete?: boolean; time?: string } = {},
+      {
+        complete = true,
+        time = "12:00:00",
+        readsPublic = false,
+      }: { complete?: boolean; time?: string; readsPublic?: boolean } = {},
     ) =>
       recordReachableRepos(db, {
         workspaceId: workspace.id,
         userId: user.id,
         repos: listed.map(([n, permission]) => ({ githubRepoId: base + n, permission })),
         complete,
+        readsPublic,
         checkedAt: at(time),
       });
     const held = async () =>
@@ -203,13 +211,23 @@ describe("recordReachableRepos", () => {
     expect(await held()).toEqual({ [idOf(1)]: "none", [idOf(2)]: "none", [idOf(3)]: "none" });
   });
 
-  test("a public repo it leaves out is one they can read, as GitHub says of anyone", async () => {
+  test("a public repo it leaves out is none: anyone may read it on GitHub, but nobody gave it them", async () => {
     const { idOf, record, held } = await reacher({ publicRepo: 3 });
 
     await record([[1, "write"]]);
-    expect(await held()).toEqual({ [idOf(1)]: "write", [idOf(2)]: "none", [idOf(3)]: "read" });
+    expect(await held()).toEqual({ [idOf(1)]: "write", [idOf(2)]: "none", [idOf(3)]: "none" });
     await record([[3, "write"]], { time: "12:01:00" });
     expect(await held()).toEqual({ [idOf(1)]: "none", [idOf(2)]: "none", [idOf(3)]: "write" });
+  });
+
+  test("a member of the organization reads every public repo of it, listed or not, and no private one", async () => {
+    const { idOf, record, held } = await reacher({ publicRepo: 3 });
+
+    await record([[1, "write"]], { readsPublic: true });
+    expect(await held()).toEqual({ [idOf(1)]: "write", [idOf(2)]: "none", [idOf(3)]: "read" });
+    // They left the organization: the public repo goes with it.
+    await record([[1, "write"]], { time: "12:01:00" });
+    expect(await held()).toEqual({ [idOf(1)]: "write", [idOf(2)]: "none", [idOf(3)]: "none" });
   });
 
   test("a list cut short only adds, and nothing replaces a newer answer", async () => {

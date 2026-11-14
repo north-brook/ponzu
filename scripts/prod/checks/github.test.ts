@@ -58,14 +58,11 @@ function afterD12(): GithubAnswers {
         protection_rules: [{ type: "branch_policy", reviewers: [] }],
         deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
         branch_policies: [{ name: "main", type: "branch" }],
-        secrets: ["VERCEL_TOKEN"],
+        secrets: ["CANARY_SESSION_WRITER", "CRON_SECRET", "VERCEL_TOKEN"],
       },
       {
         name: "production",
-        protection_rules: [
-          { type: "required_reviewers", reviewers: [{}] },
-          { type: "branch_policy", reviewers: [] },
-        ],
+        protection_rules: [{ type: "branch_policy", reviewers: [] }],
         deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
         branch_policies: [{ name: "main", type: "branch" }],
         secrets: ["NEON_API_KEY", "VERCEL_AUTOMATION_BYPASS_SECRET", "VERCEL_TOKEN_PRODUCTION"],
@@ -226,7 +223,7 @@ describe("evaluate on dev's recorded answers", () => {
         id: "github.secrets",
         area: "github",
         status: "pending",
-        says: "2 of the 5 repository secrets the workflows read are not set: NEON_API_KEY and PONZU_APP_POSTHOG_CLI_API_KEY",
+        says: "3 of the 6 repository secrets the workflows read are not set: CANARY_SESSION, NEON_API_KEY and PONZU_APP_POSTHOG_CLI_API_KEY",
         fix: "gh secret set <NAME> --repo north-brook/ponzu (docs/production.md › Env and secrets; production's are founder step D12)",
       },
       {
@@ -248,7 +245,7 @@ describe("evaluate on dev's recorded answers", () => {
     );
     expect(lines.filter((l) => l.status !== "ok")).toEqual([]);
     expect(byId(lines)["github.environment.production"]?.says).toBe(
-      'the environment "production" deploys only from main, with a required reviewer, and holds its 3 secrets',
+      'the environment "production" deploys only from main and holds its 3 secrets',
     );
     expect(byId(lines)["github.release-token"]?.says).toBe(
       "RELEASE_TOKEN expires on 2027-03-01, in 108 days",
@@ -423,11 +420,12 @@ describe("the repository", () => {
     ).toBe("ok");
   });
 
-  test("production's environment without a reviewer, or open to any branch, fails", () => {
+  test("production's environment with a reviewer, or open to any branch, fails", () => {
     const answers = afterD12();
     const production = answers.environments.find((e) => e.name === "production");
     if (!production) throw new Error("no production");
-    production.protection_rules = [];
+    // Deploys are automatic once dev has passed: a reviewer would hold the whole queue.
+    production.protection_rules = [{ type: "required_reviewers", reviewers: [{}] }];
     production.deployment_branch_policy = null;
     production.secrets = ["VERCEL_TOKEN"];
     const f = byId(evaluateGithub(desired("dev"), observed(answers)));
@@ -435,7 +433,7 @@ describe("the repository", () => {
       id: "github.environment.production",
       area: "github",
       status: "fail",
-      says: 'the environment "production": any branch may deploy to it, no one has to approve a run and it lacks the secrets NEON_API_KEY, VERCEL_AUTOMATION_BYPASS_SECRET and VERCEL_TOKEN_PRODUCTION',
+      says: 'the environment "production": any branch may deploy to it, a reviewer is required, which infra does not ask for and it lacks the secrets NEON_API_KEY, VERCEL_AUTOMATION_BYPASS_SECRET and VERCEL_TOKEN_PRODUCTION',
       fix: "GitHub › the repository › Settings › Environments › production",
     });
   });

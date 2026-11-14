@@ -122,6 +122,26 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
     expect(near(await shot(d.box.x + 1, d.box.y + 1), YELLOW)).toBe(false);
     expect(near(await shot(d.box.x + inset, d.box.y + inset), YELLOW)).toBe(true);
     expect(near(await shot(d.box.x + d.box.w - 2, d.box.y + d.box.h - 2), YELLOW)).toBe(false);
+    // The arrival's outlines are clipped to the same corners, and the board's own elements
+    // inherit nothing from the rounding (a property there restyles every one of them).
+    const arrival = await page.evaluate(() => {
+      const root = document.querySelector("[data-pz-board] [data-artboard-host]")!.shadowRoot!;
+      let layer = root.querySelector<HTMLElement>(":host > [data-pz-arrive]");
+      if (!layer) {
+        layer = document.createElement("div");
+        layer.dataset.pzArrive = "";
+        layer.style.cssText =
+          "all:initial;position:absolute;inset:0;border-radius:var(--pz-board-corners,var(--pz-board-radius,0))";
+        root.append(layer);
+      }
+      const board = root.querySelector<HTMLElement>("[data-artboard]")!;
+      return {
+        layer: getComputedStyle(layer).borderTopLeftRadius,
+        inherited: getComputedStyle(board).getPropertyValue("--pz-board-corners"),
+      };
+    });
+    expect(arrival.layer).toBe("16px");
+    expect(arrival.inherited).toBe("");
     await page.close();
   });
 
@@ -129,8 +149,13 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
   test("a root with no radius takes the canvas's few px", async () => {
     await mount("width:320px;height:200px;background:#fff6b3");
     const plain = await drawn();
-    expect(Number.parseFloat(plain.root)).toBeGreaterThan(0);
-    expect(plain.root).toBe(plain.sheet);
+    // The sheet has them and clips the board to them (it contains its paint); the root keeps
+    // its own, so a zoom step that changes the canvas's doesn't repaint all of the board.
+    expect(Number.parseFloat(plain.sheet)).toBeGreaterThan(0);
+    expect(plain.root).toBe("0px");
+    // The very corner is past the curve (its hairline, a px wide, follows it); a few px in, the card.
+    expect(near(await shot(plain.box.x, plain.box.y), YELLOW)).toBe(false);
+    expect(near(await shot(plain.box.x + 6, plain.box.y + 6), YELLOW)).toBe(true);
     await page.close();
   });
 
