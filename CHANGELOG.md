@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/north-brook/ponzu/compare/v2.4.2...v2.5.0) (2026-11-14)
+
+
+### Features
+
+* **canvas:** the canvas and the create page sit on a plain ground, without dots ([#647](https://github.com/north-brook/ponzu/issues/647)) ([20571be](https://github.com/north-brook/ponzu/commit/20571be634ffb1d5b1ecb3a7f22a85a7cc065cc9))
+
 ## [2.4.2](https://github.com/north-brook/ponzu/compare/v2.4.1...v2.4.2) (2026-11-14)
 
 
