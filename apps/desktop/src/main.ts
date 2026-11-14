@@ -42,6 +42,7 @@ import {
   bundleMismatch,
   claimsScheme,
   configFor,
+  letThrough,
   testBuild,
 } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
@@ -60,6 +61,8 @@ import {
   type NotificationClass,
   type Notifier,
 } from "./notifications.ts";
+import { createPictureWindow } from "./picture-window.ts";
+import { Pictures, pictureAnswer, pictureRequest } from "./pictures.ts";
 import { clientPlatform, type MainSession, mainSession } from "./session.ts";
 import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
@@ -106,12 +109,21 @@ if (mismatch) {
   process.exit(1);
 }
 if (app.name !== config.appName) app.setName(config.appName);
-const userData = dataFolder(app.getPath("appData"), config.appName, { smoke });
+/*
+ * A test build or a checkout run given PONZU_FAKE_BACKEND=1 (config.ts) runs the studio on Ponzu
+ * Cloud in memory, for spare to measure: apart from the person like the smoke check (a
+ * throwaway folder, no keychain, no links, no network), but with a window that shows and stays.
+ */
+const fake = config.fakeBackend;
+/** Whether this launch touches nothing of the person's: the smoke check, or the fake backend. */
+const apart = smoke || fake;
+const userData = dataFolder(app.getPath("appData"), config.appName, { smoke: apart });
 app.setPath("userData", userData);
 app.setPath("sessionData", userData);
 // Removed by a shell once this process is gone, however the check ends: a verdict, a crash or
 // the caller's timeout (data-folder.ts).
-if (smoke) removeOnceExited(userData);
+if (apart) removeOnceExited(userData);
+if (fake) console.warn("PONZU_FAKE_BACKEND: the studio runs on Ponzu Cloud in memory.");
 
 /*
  * The first launch after the rename (carry-over.ts): Ponzu Dev takes what it safely can from
@@ -120,7 +132,7 @@ if (smoke) removeOnceExited(userData);
  * smoke check, which touches nobody's folders. A failure is logged and the app starts as new.
  */
 const carryOverHost = { appData: app.getPath("appData"), running: lockHeld, now: () => new Date() };
-const asPonzuDev = !smoke && app.isPackaged && config.appName === APP_NAMES.dev;
+const asPonzuDev = !apart && app.isPackaged && config.appName === APP_NAMES.dev;
 if (asPonzuDev && checkoutRunOpen(carryOverHost)) {
   // It would share Ponzu Dev's lock, folder and session; quitting it is the person's call.
   dialog.showErrorBox(
@@ -131,7 +143,7 @@ if (asPonzuDev && checkoutRunOpen(carryOverHost)) {
 }
 /** Ponzu Preview was open at the first launch: its window state waits on the person (below). */
 let previewOpen = false;
-if (!smoke) {
+if (!apart) {
   try {
     if (!app.isPackaged) {
       const adopted = adoptCheckoutFolder(carryOverHost);
@@ -146,7 +158,7 @@ if (!smoke) {
   }
 }
 /** Window state carried over from Ponzu Preview, kept while signed out until the first sign-in. */
-let keepCarriedOver = !smoke && awaitingSignIn(userData);
+let keepCarriedOver = !apart && awaitingSignIn(userData);
 
 /**
  * Ponzu Preview is open, so its window state can't be copied mid-write: the person quits it and
@@ -206,7 +218,7 @@ const studioOrigins = [STUDIO_ORIGIN, ...(config.studioDevUrl ? [config.studioDe
  * Otherwise nothing of PostHog loads here or in the studio, and the policy reaches none of it.
  */
 const offBecause = telemetryOffBecause(process.env, homedir());
-const posthog = config.posthog && !smoke && !offBecause ? config.posthog : null;
+const posthog = config.posthog && !apart && !offBecause ? config.posthog : null;
 if (config.posthog && offBecause && !smoke) console.log(`Usage analytics off: ${offBecause}.`);
 const csp = contentSecurityPolicy({ ...config, posthog });
 /** This launch's facts, handed to the first window only (`launchOnce`). */
@@ -286,6 +298,31 @@ function computerName(): string {
 }
 
 let mainWindow: BrowserWindow | null = null;
+/** The hidden window comments' pictures are drawn in, while one is open (pictures.ts). */
+let pictureWindow: BrowserWindow | null = null;
+/** Tells `pictures` the open picture window's studio is listening. */
+let pictureReady: (() => void) | null = null;
+const pictures = new Pictures({
+  open: (events) => {
+    const made = createPictureWindow({
+      url: config.studioDevUrl ?? `${STUDIO_ORIGIN}/`,
+      preload: join(here, "picture-preload.cjs"),
+      studio: studioOrigins,
+      devTools: config.remoteDebugging,
+      scheme: config.studioDevUrl ? null : { name: STUDIO_SCHEME, serve: serveStudio },
+      events: {
+        ready: events.ready,
+        gone: () => {
+          if (pictureWindow === made.window) pictureWindow = null;
+          events.gone();
+        },
+      },
+    });
+    pictureWindow = made.window;
+    pictureReady = events.ready;
+    return made.handle;
+  },
+});
 /** Links that arrived before the studio listened for them. */
 const pendingLinks: DeepLink[] = [];
 /** The studio's listeners for links: none while signed out, when links wait here. */
@@ -344,14 +381,18 @@ function showWindow() {
         scheme: config.linkScheme ?? "",
         ...(analytics ? { analytics: encodeURIComponent(JSON.stringify(analytics)) } : {}),
         // The Mac's own notifications: whether the system shows any, and this install.
-        notify: !smoke && Notification.isSupported() ? "1" : "0",
+        notify: !apart && Notification.isSupported() ? "1" : "0",
         install: deviceFacts().installId,
         device: encodeURIComponent(deviceFacts().name ?? ""),
+        // The studio runs on its fake backend only when it was built with one (apps/studio).
+        ...(fake ? { fake: "1" } : {}),
       },
     });
     const win = mainWindow;
     win.on("closed", () => {
       if (mainWindow === win) mainWindow = null;
+      // Nothing is left to show a picture to; and a hidden window must not keep Ponzu running.
+      pictures.close();
     });
     // A reload or a crash starts the studio again; it asks for queued links when it listens.
     win.webContents.on("did-start-navigation", ({ isMainFrame, isSameDocument }) => {
@@ -406,7 +447,7 @@ function notifications(): Notifier {
   notifier ??= createNotifier({
     Notification: Notification satisfies NotificationClass,
     setBadge: (count) => {
-      if (!smoke) app.setBadgeCount(count);
+      if (!apart) app.setBadgeCount(count);
     },
     open: (link) => {
       comeForward();
@@ -428,6 +469,21 @@ function fromStudio(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
     !!mainWindow &&
     !mainWindow.isDestroyed() &&
     event.sender.id === mainWindow.webContents.id &&
+    frame !== null &&
+    frame.processId === top.processId &&
+    frame.routingId === top.routingId &&
+    isStudio(frame.url, studioOrigins)
+  );
+}
+
+/** The picture window's studio, in its top frame. */
+function fromPictureHost(event: IpcMainEvent): boolean {
+  const frame = event.senderFrame;
+  const top = event.sender.mainFrame;
+  return (
+    !!pictureWindow &&
+    !pictureWindow.isDestroyed() &&
+    event.sender.id === pictureWindow.webContents.id &&
     frame !== null &&
     frame.processId === top.processId &&
     frame.routingId === top.routingId &&
@@ -479,12 +535,26 @@ function registerIpc(session: MainSession, updater: Updates) {
   });
   listen(CHANNELS.comeForward, () => comeForward());
   listen(CHANNELS.notifyShow, (notice) => {
-    if (!smoke) notifications().show(notice);
+    if (!apart) notifications().show(notice);
   });
   listen(CHANNELS.notifyRemove, (ids) => notifications().remove(ids));
   listen(CHANNELS.notifyBadge, (count) => notifications().setBadge(count));
   handle(CHANNELS.welcome1x, () => welcome1x());
   handle(CHANNELS.usageSharing, (enabled) => setUsageSharing(enabled === true));
+  handle(CHANNELS.picturesDraw, (request) => {
+    const asked = pictureRequest(request);
+    return asked
+      ? pictures.draw(asked)
+      : { ok: false, reason: "failed", message: "That isn't a picture to draw." };
+  });
+  ipcMain.on(CHANNELS.pictureHostReady, (event) => {
+    if (fromPictureHost(event)) pictureReady?.();
+  });
+  ipcMain.on(CHANNELS.pictureHostAnswer, (event, id, answer) => {
+    if (fromPictureHost(event) && typeof id === "number") {
+      pictures.answered(id, pictureAnswer(answer));
+    }
+  });
 }
 
 /**
@@ -533,7 +603,7 @@ function isBridgeError(value: unknown): value is BridgeError {
  * keychain.
  */
 function sessionStorage() {
-  if (smoke) return { storage: memoryStorage(), persistence: () => "memory" as const };
+  if (apart) return { storage: memoryStorage(), persistence: () => "memory" as const };
   const file = config.sessionFile;
   if (file) {
     console.warn(`Using the developer session saved in ${file}, unencrypted.`);
@@ -579,7 +649,7 @@ async function forgetStudioData(): Promise<void> {
  * launch. Ponzu Dev and Ponzu Local leave it all alone (`removeLegacyFor`).
  */
 function removeLegacySoon() {
-  if (!config.cleansUpLegacy || smoke) return;
+  if (!config.cleansUpLegacy || apart) return;
   setTimeout(async () => {
     const steps = await removeLegacyFor(
       config,
@@ -683,13 +753,15 @@ if (!app.requestSingleInstanceLock()) {
    * app, or starts it. Ponzu Local takes none: use Ponzu Dev for links. The smoke check claims
    * nothing (`claimsScheme`).
    */
-  if (config.linkScheme && claimsScheme(config, smoke)) {
+  if (config.linkScheme && claimsScheme(config, apart)) {
     app.setAsDefaultProtocolClient(config.linkScheme);
   }
 
   app.whenReady().then(async () => {
     await waitForPonzuPreview();
-    if (smoke) blockNetwork();
+    // The fake backend needs none either: whatever would leave the computer is refused.
+    // A checkout on Vite's development server keeps that server (`letThrough`), and only it.
+    if (apart) blockNetwork(smoke ? undefined : (url) => letThrough(url, config));
     else watchRequestIds();
     protocol.handle(STUDIO_SCHEME, serveStudio);
 
@@ -720,7 +792,7 @@ if (!app.requestSingleInstanceLock()) {
       if (state.status !== was && endsSession(state) && !launching) void forgetStudioData();
       // Nobody's questions wait on the dock, nor their banners in Notification Center, once they
       // have signed out: whoever signs in next sees none of them. The smoke check touches neither.
-      if (state.status !== was && endsSession(state) && !smoke) notifications().clear();
+      if (state.status !== was && endsSession(state) && !apart) notifications().clear();
       was = state.status;
       send(CHANNELS.sessionChanged, state);
       setSignedIn(state.status === "signed_in");
@@ -728,7 +800,7 @@ if (!app.requestSingleInstanceLock()) {
     // The smoke check never looks for updates: it touches no network. Ponzu Dev has no feed.
     const updates = installUpdater(
       (state) => send(CHANNELS.updateChanged, state),
-      config.updates && !smoke,
+      config.updates && !apart,
     );
     registerIpc(account, updates);
     // A sign-in still waiting in the browser goes with the app, and only then.
@@ -761,7 +833,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!smoke) {
       followAppearance();
       // The AppImage's desktop entry claims `ponzu:` links: the release's alone.
-      if (config.linkScheme === "ponzu") void registerAppImage().catch(() => {});
+      if (config.linkScheme === "ponzu" && !fake) void registerAppImage().catch(() => {});
       removeLegacySoon();
     }
   });

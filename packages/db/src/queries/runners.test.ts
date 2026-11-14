@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { seedCanvas } from "../fixtures.ts";
+import { newId } from "../ids.ts";
 import { canvases, canvasRunners } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { getCanvasHead } from "./canvases.ts";
-import { markEventsDelivered } from "./events.ts";
+import { appendEvent, claimEvents, markEventsDelivered } from "./events.ts";
 import {
   getSavedPoint,
   recordCheckpoint,
@@ -163,5 +164,75 @@ describe("checkpoints", () => {
     await takeRunnerLease(db, { canvasId: canvas.id, now: new Date(6_000) });
     expect(await recordCheckpoint(db, { ...at(7_000), ...point(9) })).toBeNull();
     expect((await getSavedPoint(db, canvas.id))!.turn).toBe(4);
+  });
+  describe("what a checkpoint holds (`saved_through`)", () => {
+    /** A canvas whose runner was handed four messages and delivered the first three. */
+    async function delivered() {
+      const { canvas, user } = await seedCanvas(db);
+      const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date(1_000) });
+      const seqs: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        const event = await appendEvent(db, {
+          canvasId: canvas.id,
+          kind: "message",
+          priority: "now",
+          payload: { text: `m${i}` },
+          userId: user.id,
+        });
+        seqs.push(event.seq);
+      }
+      const claimed = await claimEvents(db, {
+        canvasId: canvas.id,
+        runnerId,
+        claimId: newId("clm"),
+      });
+      const ids = claimed!.events.map((event) => event.id);
+      await markEventsDelivered(db, {
+        canvasId: canvas.id,
+        runnerId,
+        ids: ids.slice(0, 3),
+        claudeSessionId: "sess-1",
+      });
+      const record = (heldThrough?: number) =>
+        recordCheckpoint(db, {
+          canvasId: canvas.id,
+          runnerId,
+          now: new Date(2_000),
+          ...point(1),
+          ...(heldThrough === undefined ? {} : { heldThrough }),
+        });
+      return { canvasId: canvas.id, seqs, record };
+    }
+
+    test("a runner that does not say counts every event delivered by now, as before", async () => {
+      const { canvasId, seqs, record } = await delivered();
+      await record();
+      expect((await runnerOf(canvasId))!.savedThrough).toBe(seqs[2]!);
+    });
+
+    test("a runner that says records what its session held, below what was delivered", async () => {
+      const { canvasId, seqs, record } = await delivered();
+      await record(seqs[1]!);
+      expect((await runnerOf(canvasId))!.savedThrough).toBe(seqs[1]!);
+    });
+
+    test("never above what was delivered: a runner cannot count as held what never went out", async () => {
+      const { canvasId, seqs, record } = await delivered();
+      await record(seqs[3]! + 100);
+      expect((await runnerOf(canvasId))!.savedThrough).toBe(seqs[2]!);
+    });
+
+    test("with nothing delivered there is nothing held, whatever the runner says", async () => {
+      const { canvas } = await seedCanvas(db);
+      const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date(1_000) });
+      await recordCheckpoint(db, {
+        canvasId: canvas.id,
+        runnerId,
+        now: new Date(2_000),
+        ...point(1),
+        heldThrough: 5,
+      });
+      expect((await runnerOf(canvas.id))!.savedThrough).toBeNull();
+    });
   });
 });

@@ -39,12 +39,26 @@ const HAS_IT: Handoff = {
   closes: true,
 };
 
+/** The page an email's unsubscribe link answers: it asks, and only its button posts. */
+const ASKS: Handoff = {
+  documentTitle: "Friday recap",
+  view: {
+    title: "Stop Ponzu's Friday recap?",
+    body: "Turn it back on in Ponzu, in Settings › Notifications.",
+  },
+  link: null,
+  form: { action: "/answer?t=usr_1.recap.pzv1.k.n.c", fields: { via: "page" }, label: "Stop" },
+};
+
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 const pages = new Map<string, Handoff>([
   ["/linked", LINKED],
   ["/has-it", HAS_IT],
+  ["/asks", ASKS],
 ]);
+/** What the page's button posted: the address and the body. */
+const posted: { path: string; body: string }[] = [];
 
 beforeAll(async () => {
   if (!chromiumPath) return;
@@ -53,7 +67,12 @@ beforeAll(async () => {
     port: 0,
     hostname: "127.0.0.1",
     async fetch(request) {
-      const handoff = pages.get(new URL(request.url).pathname);
+      const url = new URL(request.url);
+      if (request.method === "POST") {
+        posted.push({ path: url.pathname + url.search, body: await request.text() });
+        return new Response("done", { headers: { "content-type": "text/plain" } });
+      }
+      const handoff = pages.get(url.pathname);
       if (!handoff) return new Response("Not found", { status: 404 });
       const { html, csp } = await renderHandoff(handoff);
       // Never a real app's link in a test: a fragment of this page, which goes nowhere.
@@ -179,6 +198,19 @@ describe.skipIf(!chromiumPath)("the handoff, in a browser", () => {
     expect(now.closes).toBe(1);
     expect(now.violations).toEqual([]);
     await here.close();
+  });
+
+  test("a page that asks posts nothing by itself, and its button posts to its own origin under its policy", async () => {
+    const page = await open("/asks");
+    const now = await read(page);
+    expect(now.shown).toEqual(["opening"]);
+    expect(now.text).toContain("Stop Ponzu's Friday recap?");
+    expect(now.closes).toBe(0);
+    // Loading it, as a link scanner would, sends nothing.
+    expect(posted).toEqual([]);
+    await Promise.all([page.waitForURL(/\/answer\?/, { timeout: 5000 }), page.click("button.cta")]);
+    expect(posted).toEqual([{ path: "/answer?t=usr_1.recap.pzv1.k.n.c", body: "via=page" }]);
+    await page.close();
   });
 
   test("light and dark: the slice is ink on light and yuzu on dark, on white and near black", async () => {

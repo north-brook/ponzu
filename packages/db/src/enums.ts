@@ -174,6 +174,12 @@ export const DELIVERY_STATES = [
 /** The states a delivery does not leave. */
 export const SETTLED_DELIVERY_STATES = ["delivered", "cancelled", "failed", "unknown"] as const;
 
+/**
+ * How a legal notice's email ended for one person (`email_notices`): `pending` while it is being
+ * sent, then what happened. Only `pending` is ever written again.
+ */
+export const EMAIL_NOTICE_OUTCOMES = ["pending", "sent", "refused", "no_address", "held"] as const;
+
 export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 export type RepoPermission = (typeof REPO_PERMISSIONS)[number];
@@ -200,3 +206,4 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export type NotificationOpen = (typeof NOTIFICATION_OPENS)[number];
 export type NotificationReadVia = (typeof NOTIFICATION_READ_VIA)[number];
 export type DeliveryState = (typeof DELIVERY_STATES)[number];
+export type EmailNoticeOutcome = (typeof EMAIL_NOTICE_OUTCOMES)[number];

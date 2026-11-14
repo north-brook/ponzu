@@ -6,6 +6,7 @@ import { type Analytics, cachedOptOuts, noAnalytics } from "../analytics/analyti
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
 import { createPosthogAdmin, type PosthogAdmin } from "../analytics/posthog-admin.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
+import type { EmailConfig } from "../email/kinds.ts";
 import type { Env, Environment, SandboxConfig } from "../env.ts";
 import type { Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
@@ -85,7 +86,7 @@ export interface Deps {
   posthogAdmin: PosthogAdmin | null;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
-  /** The daily email through Resend (deps/mail.ts). Off, as `noMail`, without RESEND_API_KEY. */
+  /** Email through Resend (deps/mail.ts, email/send.ts). Off, as `noMail`, without RESEND_API_KEY. */
   mail: Mail;
   /**
    * Per-caller rate limits through Vercel's firewall (deps/rate-limit.ts, http/rate-limits.ts).
@@ -115,6 +116,8 @@ export interface Config {
   cronSecret: string;
   /** How canvases' sandboxes are made and kept. */
   sandbox: SandboxConfig;
+  /** How email goes once RESEND_API_KEY is set: Reply-To, the allowlist, what is paused. */
+  email: EmailConfig;
 }
 
 /** Ids the API makes itself. Rows get theirs from `@ponzu/db`. */
@@ -217,6 +220,7 @@ export function createDeps(env: Env): Deps {
       },
       cronSecret: env.cronSecret,
       sandbox: env.sandbox,
+      email: env.email,
     },
   };
 }

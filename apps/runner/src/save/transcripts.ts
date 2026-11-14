@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readdirSync, type Stats } from "node:fs";
 import { join } from "node:path";
 import { MAX_SESSION_BYTES } from "../api/protocol.ts";
-import { fingerprint } from "./fingerprint.ts";
+import { fingerprint, type HashSkipped } from "./fingerprint.ts";
 import { type AgentShell, UNPACK_KEEPING_NEWER } from "./shell.ts";
 
 /*
@@ -65,9 +65,9 @@ export class Transcripts {
    * What the files are now, cheaply: their sizes and times (`fingerprint`), and those of every
    * file in the folder beside the transcript, whose own size and time do not change when a file
    * in it is written. The same stamp means nothing was written since, so a checkpoint need not
-   * upload the transcript again.
+   * upload the transcript again. `skipped` hears of each file too large to hash.
    */
-  stamp(sessionId: string): string {
+  stamp(sessionId: string, skipped?: HashSkipped): string {
     const since = Date.now();
     const parts: string[] = [];
     const add = (file: string) => {
@@ -80,7 +80,7 @@ export class Transcripts {
         return;
       }
       if (!stat.isDirectory()) {
-        parts.push(`${file}:${fingerprint(full, stat, since)}`);
+        parts.push(`${file}:${fingerprint(full, stat, since, (size) => skipped?.(file, size))}`);
         return;
       }
       for (const name of readdirSync(full).sort()) add(join(file, name));

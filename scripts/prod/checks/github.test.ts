@@ -32,13 +32,25 @@ function observed(answers: GithubAnswers, extra: Partial<GithubObserved> = {}): 
   return { checkedAt: NOW, token: true, answers, releaseToken: null, ...extra };
 }
 
+/** Main's ruleset as recorded, with the merge queue its file adds applied. */
+function withMergeQueue(rulesets: GithubAnswers["rulesets"]): GithubAnswers["rulesets"] {
+  const queue = infra["github/ruleset-main.json"].rules.find((r) => r.type === "merge_queue");
+  if (!queue) throw new Error("main's file has no merge queue");
+  return rulesets.map((r) =>
+    r.name === "Protect main" ? { ...r, rules: [...r.rules, queue] } : r,
+  );
+}
+
 /** The repository as it is once founder step D12 is done: what infra asks for, all there. */
 function afterD12(): GithubAnswers {
   const answers = recorded();
   const repo = infra["github/repo.json"];
   return {
     ...answers,
-    rulesets: [...answers.rulesets, { ...infra["github/ruleset-cloud.json"], bypass_actors: [] }],
+    rulesets: [
+      ...withMergeQueue(answers.rulesets),
+      { ...infra["github/ruleset-cloud.json"], bypass_actors: [] },
+    ],
     environments: [
       ...answers.environments,
       {
@@ -169,8 +181,9 @@ describe("evaluate on dev's recorded answers", () => {
       {
         id: "github.ruleset.main",
         area: "github",
-        status: "ok",
-        says: 'the ruleset "Protect main" protects main as infra says',
+        status: "pending",
+        says: 'the ruleset "Protect main" is its file\'s but has no merge_queue rule yet',
+        fix: "docs/production.md › Landing a change with a migration: gh api -X PUT repos/north-brook/ponzu/rulesets/25478973 --input infra/github/ruleset-main.json",
       },
       {
         id: "github.ruleset.cloud",
@@ -365,8 +378,36 @@ describe("the repository", () => {
     );
   });
 
+  test("main without the merge queue yet is pending; with it, it is ok; with another, it fails", () => {
+    const queue = infra["github/ruleset-main.json"].rules.find((r) => r.type === "merge_queue");
+    const at = (answers: GithubAnswers) =>
+      byId(evaluateGithub(desired("dev"), observed(answers)))["github.ruleset.main"];
+    expect(at(recorded())?.status).toBe("pending");
+    const applied = recorded();
+    applied.rulesets = withMergeQueue(applied.rulesets);
+    expect(at(applied)?.status).toBe("ok");
+    // A queue that merges with another method, or several entries at once, is not the file's.
+    const other = recorded();
+    other.rulesets = other.rulesets.map((r) => ({
+      ...r,
+      rules: [
+        ...r.rules,
+        { ...queue, parameters: { ...queue?.parameters, max_entries_to_merge: 5 } } as never,
+      ],
+    }));
+    expect(at(other)?.status).toBe("fail");
+    expect(at(other)?.says).toBe(
+      'the ruleset "Protect main": its merge_queue rule\'s settings differ',
+    );
+    // Missing the queue does not excuse anything else: a dropped check still fails.
+    const dropped = recorded();
+    dropped.rulesets = dropped.rulesets.map((r) => ({ ...r, enforcement: "evaluate" }));
+    expect(at(dropped)?.status).toBe("fail");
+  });
+
   test("a live rule with parameters GitHub added since still matches", () => {
     const answers = recorded();
+    answers.rulesets = withMergeQueue(answers.rulesets);
     const main = answers.rulesets[0];
     if (!main) throw new Error("no main ruleset");
     main.rules = main.rules.map((r) =>

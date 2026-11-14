@@ -74,6 +74,51 @@ test("placeholders take the board's own plain background", () => {
       ),
     ),
   ).toBe("#fff");
+  // Without pictures a placeholder shows for a frame or two: one of unknown colour is clear.
+  const pair = board(
+    `<section data-artboard data-id="ab_ld" style="width:10px;height:10px;background:light-dark(#f3efe6, rgb(28, 33, 27))"></section>`,
+  );
+  expect(placeholderFill(pair)).toBe("#f3efe6");
+  expect(placeholderFill(pair, "dark")).toBe("rgb(28, 33, 27)");
+  expect(
+    placeholderFill(
+      board(
+        `<section data-artboard data-id="ab_v" style="width:10px;height:10px;background:var(--paper)"></section>`,
+      ),
+      "dark",
+      "transparent",
+    ),
+  ).toBe("transparent");
+  // A token the canvas declares once takes its colour, for the board's scheme.
+  const tokened = board(
+    `<section data-artboard data-id="ab_t" style="width:10px;height:10px;background:var(--paper)"></section>`,
+  );
+  const tokens = ":root {\n  --paper: light-dark(#fafaf7, var(--ink));\n  --ink: #111;\n}\n";
+  expect(placeholderFill(tokened, "light", "transparent", tokens)).toBe("#fafaf7");
+  expect(placeholderFill(tokened, "dark", "transparent", tokens)).toBe("#111");
+  // One themed by a media query, or declared twice, could be either: left clear.
+  const media =
+    ":root { --paper: #fff; }\n@media (prefers-color-scheme: dark) { :root { --paper: #000; } }";
+  expect(placeholderFill(tokened, "dark", "transparent", media)).toBe("transparent");
+  // Its var() fallback isn't taken either: the token is declared, just not knowably.
+  const themedFallback = board(
+    `<section data-artboard data-id="ab_m" style="width:10px;height:10px;background:var(--paper, #fff)"></section>`,
+  );
+  expect(placeholderFill(themedFallback, "dark", "transparent", media)).toBe("transparent");
+  // An undeclared token on a themed canvas still takes its fallback.
+  const undeclared = board(
+    `<section data-artboard data-id="ab_u" style="width:10px;height:10px;background:var(--none, rgb(1, 2, 3))"></section>`,
+  );
+  expect(placeholderFill(undeclared, "dark", "transparent", media)).toBe("rgb(1, 2, 3)");
+  expect(
+    placeholderFill(tokened, "dark", "transparent", ":root { --paper: #fff; --paper: #000; }"),
+  ).toBe("transparent");
+  // Undeclared: its fallback, if it has one.
+  const fallback = board(
+    `<section data-artboard data-id="ab_f" style="width:10px;height:10px;background:var(--none, rgb(1, 2, 3))"></section>`,
+  );
+  expect(placeholderFill(fallback, "light", "transparent", tokens)).toBe("rgb(1, 2, 3)");
+  expect(placeholderFill(tokened, "light", "transparent")).toBe("transparent");
 });
 
 test("a server error or no server is asked again; only an answer, or none, is kept", async () => {

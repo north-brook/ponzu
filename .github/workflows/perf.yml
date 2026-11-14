@@ -1,0 +1,188 @@
+name: Performance
+
+# The studio's performance harness (apps/studio/perf/README.md) on every pull request that can
+# change the app, against the base it would merge into, built and run beside it on the same
+# runner; the result is one comment on the pull request, updated in place by each push. A push
+# to main measures main alone and adds it to the history the comments draw their trends from
+# (the perf-history branch). It reports and never blocks: no ruleset requires these jobs, and a
+# failure to measure leaves the comment as it was.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # As CI: a newer push to a pull request cancels the older's run; pushes to main never cancel.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  measure:
+    name: Measure
+    # The biggest of CI's runners: Chrome's raster and the studio's main thread then share fewer
+    # cores with each other, and the times wander less.
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 40
+    outputs:
+      measured: ${{ steps.run.outputs.measured }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The base is built from history, and perf-history is read from the remote (with this
+          # job's token, which can only read).
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - name: Whether this change can touch the app
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          # A pull request that changes nothing the desktop app bundles (scripts/ci/scope.ts) has
+          # nothing to measure. A push or a dispatch always measures.
+          if [ "$EVENT" = pull_request ]; then
+            bun scripts/ci/scope.ts HEAD^1 > "$RUNNER_TEMP/scope"
+            if grep -q '^desktop=true$' "$RUNNER_TEMP/scope"; then run=true; else run=false; fi
+            echo "run=$run" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.scope.outputs.run == 'true'
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Chrome
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          chrome=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)
+          [ -n "$chrome" ] || { echo "::error::No Chrome or Chromium on this runner."; exit 1; }
+          echo "PONZU_CHROMIUM=$chrome" >> "$GITHUB_ENV"
+      - name: Build this change
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          cd apps/studio
+          NODE_ENV='' bunx vite build --mode e2e --outDir "$RUNNER_TEMP/head" --logLevel warn
+      - name: Build the base
+        # The merge commit's first parent: main as this pull request would land on it.
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'pull_request'
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/base-src" HEAD^1
+          cd "$RUNNER_TEMP/base-src"
+          bun install --frozen-lockfile --ignore-scripts
+          cd apps/studio
+          NODE_ENV='' bunx vite build --mode e2e --outDir "$RUNNER_TEMP/base" --logLevel warn
+      - name: Main's history
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          # None yet (before main's first measured push): the comment draws no trends.
+          if ! { git fetch --depth=1 origin perf-history 2>/dev/null &&
+            git show FETCH_HEAD:history.jsonl > "$RUNNER_TEMP/history.jsonl"; }; then
+            : > "$RUNNER_TEMP/history.jsonl"
+          fi
+      - name: Measure
+        id: run
+        if: steps.scope.outputs.run == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          out="$RUNNER_TEMP/perf"
+          mkdir -p "$out"
+          base=()
+          if [ "$EVENT" = pull_request ]; then
+            base=(--base "$RUNNER_TEMP/base" --base-sha "$(git rev-parse HEAD^1)")
+          fi
+          bun apps/studio/perf/run.ts --head "$RUNNER_TEMP/head" --head-sha "$HEAD_SHA" "${base[@]}" \
+            --rounds 3 --machine "Blacksmith 8 vCPU, Linux" \
+            --out "$out/results.json" --markdown "$out/comment.md" --history "$RUNNER_TEMP/history.jsonl"
+          cat "$out/comment.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "measured=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.run.outputs.measured == 'true'
+        with:
+          name: perf
+          path: ${{ runner.temp }}/perf
+          retention-days: 90
+
+  comment:
+    # Apart from the measuring, so the token that can write to the pull request never runs the
+    # pull request's code. A fork's pull request gets no comment (its token can't write one);
+    # its numbers are in the run's summary.
+    name: Comment
+    needs: measure
+    if: >-
+      github.event_name == 'pull_request' && needs.measure.outputs.measured == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: perf
+          path: perf
+      - name: One comment, updated in place
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq '.[] | select(.body | startswith("<!-- ponzu-perf -->")) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@perf/comment.md > /dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@perf/comment.md > /dev/null
+          fi
+
+  history:
+    # Main's numbers, one line per push, on a branch of their own that nothing else writes.
+    name: History
+    needs: measure
+    if: github.event_name == 'push' && needs.measure.outputs.measured == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: perf-history
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: perf
+          path: ${{ runner.temp }}/perf
+      - name: Add this push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin perf-history; then
+            git worktree add -B perf-history "$RUNNER_TEMP/history" FETCH_HEAD
+          else
+            git worktree add --orphan -b perf-history "$RUNNER_TEMP/history"
+          fi
+          # history.ts needs nothing installed: it reads JSON and writes one line.
+          bun apps/studio/perf/history.ts "$RUNNER_TEMP/perf/results.json" >> "$RUNNER_TEMP/history/history.jsonl"
+          cd "$RUNNER_TEMP/history"
+          git add history.jsonl
+          git commit -m "perf: $GITHUB_SHA"
+          # Another push's history may have landed meanwhile: take it and go again.
+          for _ in 1 2 3; do
+            git push origin HEAD:perf-history && exit 0
+            git pull --rebase origin perf-history
+          done
+          exit 1

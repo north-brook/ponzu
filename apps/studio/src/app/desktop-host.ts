@@ -71,6 +71,8 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     welcome1x: () => desktop.welcome1x(),
     // An older shell has no switch to write: the account's own still holds.
     setUsageSharing: (enabled) => desktop.setUsageSharing?.(enabled) ?? Promise.resolve(false),
+    // An older shell has no picture window: the studio draws pictures itself.
+    ...(desktop.pictures ? { pictures: desktop.pictures } : {}),
   };
 }
 

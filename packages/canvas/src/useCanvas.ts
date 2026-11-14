@@ -220,6 +220,13 @@ const MID = PLANE / 2;
  * stretched (fast, but blurry once zoomed in). It's dropped once the camera
  * rests, so the boards and their animations redraw sharp.
  *
+ * Zooming out within one gesture, that bitmap would stay at the starting zoom
+ * while ever more of the page comes into view: Chromium keeps tiles for all of
+ * it at that scale, which measured 1.1 to 1.5 GB of GPU memory on a canvas of
+ * big boards in the Mac app. So once the zoom falls below `REPROMOTE` of the
+ * zoom the bitmap was drawn at, the layer is let go for a frame and promoted
+ * again, drawn at the zoom it has now (`rasterZoomAfter`).
+ *
  * The overlay layer never scales: it carries the zoom as --z, which its
  * overlays (placed in page coordinates with `calc(var(--z) * Npx)`) turn into
  * screen pixels, so titles and pins keep their screen size at any zoom, mid-
@@ -241,6 +248,18 @@ export function dotStep(zoom: number): number {
   return step;
 }
 
+/** How far a gesture may zoom out from the zoom its bitmap was drawn at before it is redrawn. */
+export const REPROMOTE = 0.5;
+
+/**
+ * The zoom the boards' bitmap is drawn at once the camera reaches `zoom`, when it was drawn at
+ * `drawn`: the same, unless that has zoomed out past `REPROMOTE` of it, when it is redrawn at
+ * `zoom`. Zooming in keeps it (stretched, cheap).
+ */
+export function rasterZoomAfter(drawn: number, zoom: number): number {
+  return zoom < drawn * REPROMOTE ? zoom : drawn;
+}
+
 export function useCameraLayers(
   camera: CameraStore,
   scroller: RefObject<HTMLElement | null>,
@@ -255,8 +274,13 @@ export function useCameraLayers(
   useLayoutEffect(() => {
     const s = scroller.current;
     if (!mounted || !s) return;
+    const dots = s.querySelector<HTMLElement>(":scope > .pz-dots");
     let moving: ReturnType<typeof setTimeout> | undefined;
     let zoom = Number.NaN;
+    /** The zoom the promoted layer's bitmap was drawn at, while it is promoted. */
+    let drawn = Number.NaN;
+    /** The frame that promotes the layer again after a redraw, while one is waiting. */
+    let repromote = 0;
     // The layers' translation on the plane, and the scroll we last wrote. A
     // point at page p shows at tx + p * zoom - sx.
     let tx = 0;
@@ -268,12 +292,17 @@ export function useCameraLayers(
       const at = `translate(${tx}px, ${ty}px)`;
       if (layer.current) layer.current.style.transform = `${at} scale(${zoom})`;
       // The ground's dots (styles.css, .pz-dots): one on the page's origin, which is at
-      // (tx, ty) on the plane; each is drawn 1px into its tile.
+      // (tx, ty) on the plane; each is drawn 1px into its tile. Written on the dots
+      // themselves, never on the plane: a custom property is inherited by everything under the
+      // element it's set on, and Chrome restyles all of it when it changes, so on the plane
+      // every frame of a zoom restyled every element of every board (apps/studio/perf).
       const step = dotStep(zoom);
       const from = (t: number) => (((t - 1) % step) + step) % step;
-      s.style.setProperty("--pz-dots-step", `${step}px`);
-      s.style.setProperty("--pz-dots-x", `${from(tx)}px`);
-      s.style.setProperty("--pz-dots-y", `${from(ty)}px`);
+      if (dots) {
+        dots.style.setProperty("--pz-dots-step", `${step}px`);
+        dots.style.setProperty("--pz-dots-x", `${from(tx)}px`);
+        dots.style.setProperty("--pz-dots-y", `${from(ty)}px`);
+      }
       const o = overlay.current;
       if (!o) return;
       o.style.transform = at;
@@ -349,16 +378,30 @@ export function useCameraLayers(
     // Promote the boards' layer for the whole gesture, pan or zoom: without
     // it, Chromium re-rasters its tiles (and re-decodes their images) as they
     // scroll into view or change scale.
+    const promote = () => layer.current?.style.setProperty("will-change", "transform");
     const endMove = () => {
       clearTimeout(moving);
       moving = undefined;
+      cancelAnimationFrame(repromote);
+      repromote = 0;
       layer.current?.style.removeProperty("will-change");
     };
     scrollTo(MID, MID);
     apply(camera.get());
     s.addEventListener("scroll", onScroll, { passive: true });
     const off = camera.subscribe((c) => {
-      if (moving === undefined) layer.current?.style.setProperty("will-change", "transform");
+      if (moving === undefined) {
+        promote();
+        drawn = c.zoom;
+      } else if (!repromote && rasterZoomAfter(drawn, c.zoom) !== drawn) {
+        // Let go of the bitmap for a frame, so the next promotion draws it at this zoom.
+        layer.current?.style.removeProperty("will-change");
+        drawn = c.zoom;
+        repromote = requestAnimationFrame(() => {
+          repromote = 0;
+          if (moving !== undefined) promote();
+        });
+      }
       apply(c);
       clearTimeout(moving);
       moving = setTimeout(() => {

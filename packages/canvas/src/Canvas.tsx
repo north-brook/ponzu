@@ -470,6 +470,16 @@ export function Canvas({
     const r = viewport.current?.getBoundingClientRect();
     return { w: r?.width ?? 1200, h: r?.height ?? 800 };
   };
+  /*
+   * The viewport's size as of its last layout, for what is drawn from it: the render (which
+   * boards are on screen, and how much of each), the camera's view key and the thaw queue's
+   * ranks. Measured there, it forced a layout of every board just built, inside the commit (or
+   * the frame) that built it. A ResizeObserver keeps it, declared before useCameraLayers' own,
+   * so a resize that moves the camera reads the new size. What acts (a fit, a key, a drag)
+   * measures it then, with `viewportSize`.
+   */
+  const laidOut = useRef<{ w: number; h: number } | null>(null);
+  const drawnSize = () => laidOut.current ?? viewportSize();
 
   const fitPage = useCallback(() => {
     if (bounds) fit(bounds, viewportSize(), 72, 1);
@@ -674,6 +684,19 @@ export function Canvas({
   // Wheel: pan; pinch or modifier: zoom. The viewport only mounts once the doc
   // arrives, so attach again then.
   const mounted = !!(doc && page);
+  useLayoutEffect(() => {
+    const el = viewport.current;
+    if (!mounted || !el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      laidOut.current = { w: r.width, h: r.height };
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      laidOut.current = null;
+    };
+  }, [mounted]);
   useEffect(() => {
     if (!mounted) return;
     const el = viewport.current;
@@ -1287,10 +1310,21 @@ export function Canvas({
     setBoxes((prev) => (sameBoxes(prev, next) ? prev : next));
   };
   const pinTarget = pinDrag?.moved ? pinDrag.target : undefined;
+  // A board's DOM is built the first time it goes live (snapshot.tsx), after the page has
+  // mounted: the pins on its nodes are measured again then, once a frame however many build in it.
+  const [builtBoards, setBuiltBoards] = useState(0);
+  const builtFrame = useRef(0);
+  const boardBuilt = useCallback(() => {
+    builtFrame.current ||= requestAnimationFrame(() => {
+      builtFrame.current = 0;
+      setBuiltBoards((n) => n + 1);
+    });
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(builtFrame.current), []);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- what the boxes depend on
   useLayoutEffect(
     () => measureBoxes.current(),
-    [doc, page, selection, measured, pinTarget, unsentPins, pending],
+    [doc, page, selection, measured, pinTarget, unsentPins, pending, builtBoards],
   );
 
   // The camera moves the layers directly, once a frame, without rendering.
@@ -1300,8 +1334,9 @@ export function Canvas({
   // board coming on or off screen, a tall board's band, a gesture starting or stopping):
   // the canvas renders only then, and each board only when its own inputs change.
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-  // Boards go live nearest the middle of the view first. Asked only when one
-  // queues to, so it reads the camera then; stable, so boards don't re-render.
+  // Boards go live nearest the middle of the view first. Asked by the thaw queue
+  // each frame a board waits in it, so it reads the camera then; stable, so
+  // boards don't re-render.
   const rankRef = useRef<(id: string) => number>(() => 0);
   rankRef.current = (id: string) => {
     const ab = boards.find((b) => b.id === id);
@@ -1309,12 +1344,12 @@ export function Canvas({
     return centreDistance(
       { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) },
       camera.get(),
-      viewportSize(),
+      drawnSize(),
     );
   };
   const rankOf = useCallback((id: string) => rankRef.current(id), []);
   const view = useCameraView(camera, (c) => {
-    const vp = viewportSize();
+    const vp = drawnSize();
     let k = String(detailScale(c.zoom, dpr));
     for (const ab of boards) {
       const r = { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) };
@@ -1325,9 +1360,68 @@ export function Canvas({
   });
   // A pan or zoom over a crowded view: every board's loops hold until the camera stops, as do
   // videos over pictures. A loop under a blur redraws it every frame of the gesture.
-  const crowd = view.moving && crowded(boardBoxes, view, viewportSize());
+  const crowd = view.moving && crowded(boardBoxes, view, drawnSize());
   // Videos over pictures also hold while nobody can be watching the window, as boards' loops do.
   useEffect(() => playing.hold(crowd || still), [crowd, still]);
+
+  // The footer's controls: the tools (and a host's extra) and the zoom. Beside page tabs they
+  // share one bar at the bottom right; without them, as the Mac app's boards draw it, the tools
+  // take the bottom left and the zoom stands alone at the bottom right. The same elements until
+  // what they show changes: the canvas draws again with every board that goes live, every op and
+  // every change of a board's tier mid-zoom, and these are a dozen tooltips.
+  const acts = useRef({ zoomAt, viewportSize, fitPage });
+  acts.current = { zoomAt, viewportSize, fitPage };
+  const toolMode = panning ? "hand" : mode;
+  const tools = useMemo(
+    () => (
+      <>
+        {footerExtra}
+        <ToggleGroup
+          variant="raised"
+          value={toolMode}
+          onValueChange={setMode}
+          items={MODES.filter((m) => !readOnly || m.value !== "comment").map((m) => ({
+            value: m.value,
+            title: m.label,
+            keys: [m.key],
+            label: <Icon name={m.value} step="control" />,
+          }))}
+        />
+      </>
+    ),
+    [footerExtra, toolMode, readOnly],
+  );
+  const zoom = useMemo(() => {
+    const zoomBy = (by: number) => {
+      const { zoomAt, viewportSize } = acts.current;
+      const v = viewportSize();
+      zoomAt(by, v.w / 2, v.h / 2);
+    };
+    return (
+      <>
+        <Tip label="Zoom out" keys={["⌘", "−"]}>
+          <Button variant="ghost" size="icon" aria-label="Zoom out" onClick={() => zoomBy(0.8)}>
+            <Icon name="minus" step="control" />
+          </Button>
+        </Tip>
+        <Tip label="Zoom to fit" keys={["⇧", "1"]}>
+          <Button
+            variant="ghost"
+            className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:font-medium pz:text-[12px] pz:tabular-nums"
+            aria-label="Zoom to fit"
+            onClick={() => acts.current.fitPage()}
+          >
+            <ZoomPercent camera={camera} />
+          </Button>
+        </Tip>
+        <Tip label="Zoom in" keys={["⌘", "+"]}>
+          <Button variant="ghost" size="icon" aria-label="Zoom in" onClick={() => zoomBy(1.25)}>
+            <Icon name="plus" step="control" />
+          </Button>
+        </Tip>
+      </>
+    );
+  }, [camera]);
 
   if (!doc || !page) {
     const offline = state.status === "offline";
@@ -1362,63 +1456,9 @@ export function Canvas({
   };
   const rectsFor = (ids: string[]) => selectionRects(ids, boards, boardHeight, ghostFor, boxes);
   const selectedRects = rectsFor(selection);
-  const vpSize = viewportSize();
+  const vpSize = drawnSize();
   const scale = detailScale(view.zoom, dpr);
   const arriving = arrivals.boardsArriving(boards);
-
-  // The footer's controls: the tools (and a host's extra) and the zoom. Beside page tabs they
-  // share one bar at the bottom right; without them, as the Mac app's boards draw it, the tools
-  // take the bottom left and the zoom stands alone at the bottom right.
-  const tools = (
-    <>
-      {footerExtra}
-      <ToggleGroup
-        variant="raised"
-        value={panning ? "hand" : mode}
-        onValueChange={setMode}
-        items={MODES.filter((m) => !readOnly || m.value !== "comment").map((m) => ({
-          value: m.value,
-          title: m.label,
-          keys: [m.key],
-          label: <Icon name={m.value} step="control" />,
-        }))}
-      />
-    </>
-  );
-  const zoom = (
-    <>
-      <Tip label="Zoom out" keys={["⌘", "−"]}>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Zoom out"
-          onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
-        >
-          <Icon name="minus" step="control" />
-        </Button>
-      </Tip>
-      <Tip label="Zoom to fit" keys={["⇧", "1"]}>
-        <Button
-          variant="ghost"
-          className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:font-medium pz:text-[12px] pz:tabular-nums"
-          aria-label="Zoom to fit"
-          onClick={fitPage}
-        >
-          <ZoomPercent camera={camera} />
-        </Button>
-      </Tip>
-      <Tip label="Zoom in" keys={["⌘", "+"]}>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Zoom in"
-          onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
-        >
-          <Icon name="plus" step="control" />
-        </Button>
-      </Tip>
-    </>
-  );
 
   return (
     <div
@@ -1491,6 +1531,7 @@ export function Canvas({
                   }
                   cheap={cold.has(ab.id)}
                   skeleton={skeletons.has(ab.id)}
+                  onBuilt={boardBuilt}
                   rankOf={rankOf}
                   arrivals={arrivals}
                   // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
@@ -2326,6 +2367,7 @@ const Board = memo(function Board({
   attention,
   cheap,
   skeleton,
+  onBuilt,
   rankOf,
   arrivals,
   radius,
@@ -2355,6 +2397,8 @@ const Board = memo(function Board({
   /** On a cold open: live while its picture is made, or a skeleton of it. */
   cheap: boolean;
   skeleton: boolean;
+  /** Its DOM was built after it mounted, the first time it went live. */
+  onBuilt: () => void;
   /** Its distance from the middle of the view, for which board goes live first. */
   rankOf: (id: string) => number;
   /** An agent's new pieces, which arrive as they render. */
@@ -2371,8 +2415,10 @@ const Board = memo(function Board({
 }) {
   const { w, h: fixed } = size(ab);
   const rank = useCallback(() => rankOf(ab.id), [rankOf, ab.id]);
-  // Its picture and loops, named by its content and theme.
-  const version = versionOf(ab, tokens, () => serializeArtboardElement(ab));
+  // Its picture and loops, named by its content and theme. Naming serializes the whole board
+  // (again after every edit), so a source with neither (Ponzu Cloud draws no pictures) skips it.
+  const named = !!(source.snapshotUrl || source.loopsUrl);
+  const version = named ? versionOf(ab, tokens, () => serializeArtboardElement(ab)) : "";
   const snapshotUrl = useMemo(
     () =>
       source.snapshotUrl &&
@@ -2382,6 +2428,11 @@ const Board = memo(function Board({
   const loopsUrl = useMemo(
     () => source.loopsUrl && ((id: string) => source.loopsUrl!(id, version, colorScheme)),
     [source, version, colorScheme],
+  );
+  const pictures = !!source.snapshotUrl;
+  const fill = useMemo(
+    () => placeholderFill(ab, colorScheme, pictures ? "#fff" : "transparent", tokens),
+    [ab, colorScheme, pictures, tokens],
   );
   const visible = y0 === undefined || y1 === undefined ? undefined : { y0, y1 };
   // The board's own corners where it rounds its root, the view's few px where it doesn't: the
@@ -2427,7 +2478,13 @@ const Board = memo(function Board({
         rank={rank}
         cost={boardCost(ab).elements}
         skeleton={skeleton}
-        fill={placeholderFill(ab)}
+        // Without pictures a placeholder shows only until the board's turn to go live, a frame
+        // or a few: a colour that isn't known for sure is left clear rather than guessed white.
+        fill={fill}
+        // A fit-content board's height comes from its DOM: the page's bounds, the camera's fit
+        // and which boards are on screen all need it, so it's built at once (hidden, not drawn).
+        build={fixed === null}
+        onBuilt={onBuilt}
       >
         {(hidden) => (
           <ArtboardView

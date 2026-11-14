@@ -8,6 +8,7 @@ import {
   type EvalContext,
   evalsApiKey,
   NO_EVALS_KEY,
+  percent,
   reportHeader,
   requireCalibrated,
   SpendCapReached,
@@ -25,8 +26,11 @@ import {
   pullRequestAsAsked,
 } from "./checks.ts";
 import {
+  type AgentRun,
+  agentRun,
   findHeadlessShell,
   REFUSAL,
+  RUN_ON,
   runTurn,
   type TurnOutcome,
   type TurnSetup,
@@ -363,7 +367,7 @@ export function factsText(f: FactInputs): string {
   return lines.join("\n");
 }
 
-interface CaseResult {
+export interface CaseResult {
   id: string;
   title: string;
   /** What the person did, as the judge read it. */
@@ -382,6 +386,11 @@ interface CaseResult {
   verdict?: ThreadVerdict;
   /** When and at what commit this row's turn ran, and at what commit it was last judged. */
   ran?: { at: string; commit: string | null };
+  /**
+   * Where the turn ran when not at a canvas's defaults (`--on`), e.g. `dev-key/haiku/low`. Such a
+   * row is reported apart and never replaces, or is replaced by, a row at the defaults.
+   */
+  ranOn?: string;
   judgedAt?: string | null;
 }
 
@@ -441,6 +450,8 @@ export const agentSuite: Suite = {
       THREAD_JUDGE,
       threadJudgeVersion(THREAD_JUDGE_MODEL),
     );
+    // Where the turns run: a canvas's defaults, or `--on` (an unknown name stops here, unspent).
+    const run = agentRun(ctx.on);
     // The evals' API key, the one the judges use: never a Claude sign-in, from the environment
     // or from disk.
     const apiKey = evalsApiKey();
@@ -456,7 +467,12 @@ export const agentSuite: Suite = {
     // One at a time: each is a real Claude Code session, which can run for minutes.
     for (const c of apiKey && claude ? cases : []) {
       if (!apiKey || !claude) break;
-      const row: CaseResult = { id: c.id, title: c.title, request: c.request };
+      const row: CaseResult = {
+        id: c.id,
+        title: c.title,
+        request: c.request,
+        ...(run.ranOn ? { ranOn: run.ranOn } : {}),
+      };
       results.push(row);
       // A turn's cost is known only once it ends: none starts once the cap is spent.
       if (ctx.meter.spent >= ctx.meter.capUsd) {
@@ -474,11 +490,12 @@ export const agentSuite: Suite = {
         continue;
       }
       const setup = c.setup();
-      ctx.log(`${c.id}: ${c.title}…`);
+      ctx.log(`${c.id}: ${c.title}… (${run.model} at ${run.effort})`);
       let turn: TurnOutcome;
       try {
         turn = await runTurn(setup, {
           apiKey,
+          run,
           claude,
           ...(chromium ? { chromium } : {}),
           log: ctx.log,
@@ -545,26 +562,22 @@ export const agentSuite: Suite = {
       ctx.log(`${c.id}: done in ${row.metrics.minutes} min`);
     }
 
-    // Some cases run again: the others keep what the last full run recorded, and say when.
-    const kept: CaseResult[] = [];
-    if (ctx.only && existsSync(join(RESULTS, "latest.json"))) {
-      const recorded = JSON.parse(
-        readFileSync(join(RESULTS, "latest.json"), "utf8"),
-      ) as SuiteReport;
-      for (const row of recorded.cases as CaseResult[]) {
-        if (ctx.only.includes(row.id)) continue;
-        row.ran ??= { at: recorded.at, commit: recorded.commit };
-        kept.push(row);
-      }
-      if (kept.length) {
-        notRun.push(
-          `${kept.map((row) => row.id).join(", ")} kept from the run of ${recorded.at}; ${ctx.only.join(", ")} ran again`,
-        );
-      }
+    // What this run did not replace is kept, each row saying when it ran: the cases `--only` left
+    // out, and every row that ran elsewhere (`--on`), which never stands in for this run's rows.
+    const kept = keptRows(
+      existsSync(join(RESULTS, "latest.json"))
+        ? (JSON.parse(readFileSync(join(RESULTS, "latest.json"), "utf8")) as SuiteReport)
+        : null,
+      run,
+      ctx.only,
+    );
+    if (kept.length) {
+      notRun.push(
+        `${kept.map(rowName).join(", ")} kept from earlier runs; ${ctx.only?.join(", ") ?? "every case"} ran ${run.ranOn ? `on ${run.ranOn}` : "again"}`,
+      );
     }
-    const order = (row: CaseResult) => AGENT_CASES.findIndex((c) => c.id === row.id);
     return finish(ctx, {
-      results: [...kept, ...results].sort((a, b) => order(a) - order(b)),
+      results: inOrder([...kept, ...results]),
       notRun: [
         ...notRun,
         ...(ctx.only && !kept.length
@@ -649,19 +662,24 @@ function finish(
   },
 ): SuiteReport {
   const rates: SuiteReport["rates"] = {};
+  // Rows that ran elsewhere count in their own rates, never in a canvas's defaults'.
+  const ratesByRun: NonNullable<SuiteReport["ratesByRun"]> = {};
   const failures: string[] = [];
   for (const row of results) {
+    if (row.ranOn) ratesByRun[row.ranOn] ??= {};
+    const into = row.ranOn ? ratesByRun[row.ranOn]! : rates;
+    const name = rowName(row);
     for (const [check, ok] of Object.entries(row.exact ?? {})) {
       if (ok === null) continue;
-      tally(rates, `exact: ${check}`, ok);
-      if (!ok) failures.push(`${row.id} exact ${check}: ${row.problems?.join("; ") || "failed"}`);
+      tally(into, `exact: ${check}`, ok);
+      if (!ok) failures.push(`${name} exact ${check}: ${row.problems?.join("; ") || "failed"}`);
     }
     for (const criterion of THREAD_CRITERIA) {
       const grade = row.verdict?.[criterion];
-      tally(rates, criterion, grade?.verdict);
-      if (grade?.verdict === "fail") failures.push(`${row.id} ${criterion}: ${grade.reason}`);
+      tally(into, criterion, grade?.verdict);
+      if (grade?.verdict === "fail") failures.push(`${name} ${criterion}: ${grade.reason}`);
     }
-    if (row.error) failures.push(`${row.id}: ${row.error}`);
+    if (row.error) failures.push(`${name}: ${row.error}`);
   }
   const report: SuiteReport = {
     suite: "agent",
@@ -676,10 +694,17 @@ function finish(
     turns,
     models: {
       agent: "claude-opus-5-5 (high), Claude Code via the Agent SDK",
+      ...Object.fromEntries(
+        Object.keys(ratesByRun).flatMap((ranOn) => {
+          const run = runFor(ranOn);
+          return run ? [[`agent on ${ranOn}`, `${run.model} (${run.effort})`]] : [];
+        }),
+      ),
       judge: THREAD_JUDGE_MODEL,
     },
     judges: { [THREAD_JUDGE]: judge },
     rates,
+    ...(Object.keys(ratesByRun).length ? { ratesByRun } : {}),
     notRun,
     failures,
     cases: results,
@@ -701,67 +726,133 @@ export function agentMarkdown(report: SuiteReport, results: readonly CaseResult[
       "",
       `${ran.length} agent turn(s) behind these rows, at ${[...commits].join(", ")}. The header's spend and turns are this run's alone.`,
       "",
-      "| Case | Turn ran | At commit | Judged at commit |",
-      "|---|---|---|---|",
+      "| Case | Ran on | Turn ran | At commit | Judged at commit |",
+      "|---|---|---|---|---|",
       ...ran.map(
         (row) =>
-          `| ${row.id} | ${row.ran!.at} | ${row.ran!.commit ?? "?"} | ${row.judgedAt ?? row.ran!.commit ?? "?"} |`,
+          `| ${row.id} | ${row.ranOn ?? "a canvas's defaults"} | ${row.ran!.at} | ${row.ran!.commit ?? "?"} | ${row.judgedAt ?? row.ran!.commit ?? "?"} |`,
       ),
       "",
     );
   }
   lines.push("## Cases", "");
-  for (const row of results) {
-    lines.push(`### ${row.id}: ${row.title}`, "");
-    if (row.error) lines.push(`_${row.error}_`, "");
-    if (row.metrics) {
-      lines.push(
-        `Metrics (never pass or fail): ${Object.entries(row.metrics)
-          .map(([k, v]) => `${k} ${v}`)
-          .join(", ")}.`,
-        "",
-      );
-    }
-    if (row.exact) {
-      lines.push(
-        `Exact: ${Object.entries(row.exact)
-          .map(([k, v]) => `${k} ${v === null ? "n/a" : v ? "pass" : "**fail**"}`)
-          .join(", ")}.`,
-        "",
-      );
-    }
-    if (row.verdict) {
-      lines.push("| Criterion | Verdict | Reason |", "|---|---|---|");
-      for (const criterion of THREAD_CRITERIA) {
-        const g = row.verdict[criterion];
-        lines.push(
-          `| ${criterion} | ${g.verdict} | ${g.reason.replaceAll("|", "\\|").replaceAll("\n", " ")} |`,
-        );
-      }
-      lines.push("");
-    }
-    if (row.facts)
-      lines.push(
-        "<details><summary>Facts, messages and steps</summary>",
-        "",
-        "```",
-        row.facts,
-        "```",
-        "",
-      );
-    for (const [i, m] of (row.midTurn ?? []).entries())
-      lines.push(`Mid-turn ${i + 1}:`, "", ...m.split("\n").map((l) => `> ${l}`), "");
-    if (row.closing)
-      lines.push("Closing:", "", ...row.closing.split("\n").map((l) => `> ${l}`), "");
-    if (row.prDescription)
-      lines.push(
-        "Pull request description:",
-        "",
-        ...row.prDescription.split("\n").map((l) => `> ${l}`),
-        "",
-      );
-    if (row.steps?.length) lines.push("Steps:", "", ...row.steps.map((s) => `- ${s}`), "");
-    if (row.facts) lines.push("</details>", "");
+  for (const row of results.filter((r) => !r.ranOn)) lines.push(...caseLines(row));
+  // Rows that ran elsewhere, each place in a section of its own with its own rates.
+  for (const ranOn of [...new Set(results.flatMap((r) => (r.ranOn ? [r.ranOn] : [])))]) {
+    const run = runFor(ranOn);
+    const rates = report.ratesByRun?.[ranOn] ?? {};
+    lines.push(
+      `## ${run?.title ?? `Ran on ${ranOn}`}`,
+      "",
+      `These rows ran on \`${ranOn}\`${run ? ` (\`${run.model}\` at \`${run.effort}\`)` : ""}. They prove the exact checks; their judged rates are not a measure of quality at a canvas's defaults, they are not in the pass rates above, and they never replace a row there.`,
+      "",
+      "| Criterion | Passed |",
+      "|---|---|",
+      ...Object.entries(rates).map(([criterion, rate]) => `| ${criterion} | ${percent(rate)} |`),
+      "",
+    );
+    for (const row of results.filter((r) => r.ranOn === ranOn)) lines.push(...caseLines(row));
   }
   return lines.join("\n");
+}
+
+/** One case's section of the report. */
+function caseLines(row: CaseResult): string[] {
+  const lines: string[] = [];
+  lines.push(`### ${row.id}: ${row.title}`, "");
+  if (row.error) lines.push(`_${row.error}_`, "");
+  if (row.metrics) {
+    lines.push(
+      `Metrics (never pass or fail): ${Object.entries(row.metrics)
+        .map(([k, v]) => `${k} ${v}`)
+        .join(", ")}.`,
+      "",
+    );
+  }
+  if (row.exact) {
+    lines.push(
+      `Exact: ${Object.entries(row.exact)
+        .map(([k, v]) => `${k} ${v === null ? "n/a" : v ? "pass" : "**fail**"}`)
+        .join(", ")}.`,
+      "",
+    );
+  }
+  if (row.verdict) {
+    lines.push("| Criterion | Verdict | Reason |", "|---|---|---|");
+    for (const criterion of THREAD_CRITERIA) {
+      const g = row.verdict[criterion];
+      lines.push(
+        `| ${criterion} | ${g.verdict} | ${g.reason.replaceAll("|", "\\|").replaceAll("\n", " ")} |`,
+      );
+    }
+    lines.push("");
+  }
+  if (row.facts)
+    lines.push(
+      "<details><summary>Facts, messages and steps</summary>",
+      "",
+      "```",
+      row.facts,
+      "```",
+      "",
+    );
+  for (const [i, m] of (row.midTurn ?? []).entries())
+    lines.push(`Mid-turn ${i + 1}:`, "", ...m.split("\n").map((l) => `> ${l}`), "");
+  if (row.closing) lines.push("Closing:", "", ...row.closing.split("\n").map((l) => `> ${l}`), "");
+  if (row.prDescription)
+    lines.push(
+      "Pull request description:",
+      "",
+      ...row.prDescription.split("\n").map((l) => `> ${l}`),
+      "",
+    );
+  if (row.steps?.length) lines.push("Steps:", "", ...row.steps.map((s) => `- ${s}`), "");
+  if (row.facts) lines.push("</details>", "");
+  return lines;
+}
+
+/** A row's name in the report: its case, and where it ran when not at a canvas's defaults. */
+export function rowName(row: Pick<CaseResult, "id" | "ranOn">): string {
+  return row.ranOn ? `${row.id} (${row.ranOn})` : row.id;
+}
+
+/** The run a row's `ranOn` names, if this code still knows it. */
+function runFor(ranOn: string): AgentRun | undefined {
+  return Object.values(RUN_ON).find((run) => run.ranOn === ranOn);
+}
+
+/** Rows at a canvas's defaults first, then each other place; within each, in case order. */
+export function inOrder<T extends Pick<CaseResult, "id" | "ranOn">>(rows: T[]): T[] {
+  const order = (row: T) => AGENT_CASES.findIndex((c) => c.id === row.id);
+  return [...rows].sort(
+    (a, b) => (a.ranOn ?? "").localeCompare(b.ranOn ?? "") || order(a) - order(b),
+  );
+}
+
+/**
+ * What a run keeps of the recorded report: every row it does not replace, dated. A run replaces
+ * only rows that ran where it runs (`ranOn`), and with `--only`, only those cases. So a run at a
+ * canvas's defaults never drops a `--on` row, and a `--on` run never replaces a defaults row.
+ */
+export function keptRows(
+  recorded: Pick<SuiteReport, "at" | "commit" | "cases"> | null,
+  run: Pick<AgentRun, "ranOn">,
+  only: readonly string[] | null,
+): CaseResult[] {
+  if (!recorded) return [];
+  const kept: CaseResult[] = [];
+  for (const row of recorded.cases as CaseResult[]) {
+    const here = (row.ranOn ?? null) === run.ranOn;
+    if (here && (!only || only.includes(row.id))) continue;
+    // A row whose turn never ran (stopped by the cap or the turn budget) gets no date: it ran
+    // nowhere, and the report must not say it did.
+    const ranNever = row.error?.startsWith("not run") ?? false;
+    const { ran: _ran, ...rest } = row;
+    kept.push(
+      row.ran || !ranNever
+        ? { ...rest, ran: row.ran ?? { at: recorded.at, commit: recorded.commit } }
+        : rest,
+    );
+  }
+  return kept;
 }

@@ -53,6 +53,11 @@ const STATES: [string, SettingsSection, SettingsData][] = [
     "notifications",
     team({ devices: [s.thisMac, s.iphone], emailAvailable: false }),
   ],
+  [
+    "Notifications · email, not an admin anywhere",
+    "notifications",
+    team({ devices: [s.thisMac, s.iphone], teamAvailable: false }),
+  ],
   ["Members · as a member", "members", team({ meId: f.maya.id })],
   [
     "Members · the last admin",

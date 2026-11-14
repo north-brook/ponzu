@@ -29,6 +29,10 @@ import { unsubscribeToken, unsubscribeUser } from "./unsubscribe.ts";
  * The daily email, on the real app with a fake Resend (FakeMail) and a clock that moves only when
  * a test moves it. The clock starts at 2026-01-01 00:00 UTC; Lisbon is on UTC then, and New
  * York five hours behind.
+ *
+ * The app says it is production unless a test says otherwise: outside production every email
+ * goes only to PONZU_EMAIL_ALLOW (email/send.test.ts covers that), so these see the email
+ * exactly as a person would.
  */
 
 const opened: TestApp[] = [];
@@ -36,8 +40,8 @@ afterEach(async () => {
   for (const app of opened.splice(0)) await app.close();
 });
 
-async function app(options: { mail?: boolean } = { mail: true }) {
-  const t = await createTestApp(options);
+async function app(options: Parameters<typeof createTestApp>[0] = { mail: true }) {
+  const t = await createTestApp({ environment: "production", ...options });
   opened.push(t);
   return t;
 }
@@ -174,7 +178,7 @@ describe("the daily email", () => {
     );
     const unsubscribe = email!.headers["List-Unsubscribe"]!;
     expect(unsubscribe).toMatch(
-      new RegExp(`^<${TEST_API_URL}/v1/email/unsubscribe\\?t=usr_[A-Za-z0-9]+\\.pzv1\\.`),
+      new RegExp(`^<${TEST_API_URL}/v1/email/unsubscribe\\?t=usr_[A-Za-z0-9]+\\.digest\\.pzv1\\.`),
     );
     expect(email!.headers).toEqual({
       "List-Unsubscribe": unsubscribe,
@@ -322,9 +326,9 @@ describe("the daily email", () => {
     expect(email!.subject).toBe(`${canvas.name} and ${plan}: 2 things since yesterday`);
     expect(email!.text).not.toContain("Not yours");
     expect(email!.text).not.toContain("Someone else's cap.");
-    // The billing line has no link yet: the site's /settings handoff comes with E3.
+    // The billing line opens the workspace's Plan and usage, through the site's /settings page.
     expect(email!.text).toContain(
-      `${plan}\nYour workspace has used 80% of this month's $100 cap.\n`,
+      `${plan}\nYour workspace has used 80% of this month's $100 cap. https://ponzu.design/settings?section=usage&workspace=${ws.id}&n=ntf_`,
     );
   });
 
@@ -384,7 +388,9 @@ describe("the daily email", () => {
     await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
     t.mail.failNext("rejected");
     expect(await cronAt(t, "2026-01-02T09:00:00Z")).toEqual({ due: 1, recorded: 1 });
-    expect(t.logs.filter((line) => line.event === "digest_failed")).toHaveLength(1);
+    expect(t.logs.filter((line) => line.event === "email_refused")).toMatchObject([
+      { kind: "digest", job: `digest:${userId}:2026-01-02`, failure: "rejected" },
+    ]);
     expect(await cronAt(t, "2026-01-02T10:00:00Z")).toEqual({ due: 0, recorded: 0 });
     expect(t.mail.sent).toHaveLength(1);
   });
@@ -432,27 +438,41 @@ describe("unsubscribing", () => {
   const tokenOf = (email: { headers: Record<string, string> }) =>
     new URL(email.headers["List-Unsubscribe"]!.slice(1, -1)).searchParams.get("t")!;
 
-  test("the email's link turns the email off, as a page, and the toggle shows it", async () => {
+  test("following the email's link asks and changes nothing; its button turns the email off", async () => {
     const t = await app();
     const { canvas, ws, userId } = await person(t);
     await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
     await cronAt(t, "2026-01-01T09:00:00Z");
     const token = tokenOf(t.mail.sent[0]!);
+    const path = `/v1/email/unsubscribe?t=${encodeURIComponent(token)}`;
 
-    const page = await t.app.request(`/v1/email/unsubscribe?t=${encodeURIComponent(token)}`);
+    // A link scanner, or the person, follows it: a page that asks, and nothing else.
+    const page = await t.app.request(path);
     expect(page.status).toBe(200);
     expect(page.headers.get("content-type")).toContain("text/html");
     expect(page.headers.get("referrer-policy")).toBe("no-referrer");
-    expect(page.headers.get("content-security-policy")).toBeTruthy();
-    expect(await page.text()).toContain("You won't get Ponzu's daily email any more.");
+    expect(page.headers.get("content-security-policy")).toContain("form-action 'self'");
+    const html = await page.text();
+    expect(html).toContain("Stop Ponzu's daily email?");
+    expect(html).toContain(`<form method="post" action="${path.replaceAll("&", "&amp;")}">`);
+    expect(html).toContain('<input type="hidden" name="via" value="page">');
+    expect((await digestRecipient(t.db, userId))?.emailDigest).toBe(true);
+    expect(t.analytics.events.filter((e) => e.event === "email unsubscribed")).toEqual([]);
+
+    // The button.
+    const done = await t.app.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "via=page",
+    });
+    expect(done.status).toBe(200);
+    expect(await done.text()).toContain("You won't get Ponzu's daily email any more.");
     expect((await digestRecipient(t.db, userId))?.emailDigest).toBe(false);
 
-    // Off: the next day nothing is due. Following the link again is the same page.
+    // Off: the next day nothing is due. Following the link again still only asks.
     await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
     expect(await cronAt(t, "2026-01-02T09:00:00Z")).toEqual({ due: 0, recorded: 0 });
-    expect(
-      (await t.app.request(`/v1/email/unsubscribe?t=${encodeURIComponent(token)}`)).status,
-    ).toBe(200);
+    expect((await t.app.request(path)).status).toBe(200);
   });
 
   test("a mail app's one-click POST turns it off with 204", async () => {
@@ -535,11 +555,31 @@ describe("the email's parts", () => {
     ).toBe("You've used 80% of this month's $100 cap");
   });
 
-  test("a link carries the canvas and what to open, and nothing else", () => {
-    expect(digestHref({ canvasId: "cnv_1", link: { open: "pull-request" } })).toBe(
+  test("a link carries the canvas and what to open, a billing line its plan, and nothing else", () => {
+    const row = {
+      id: "ntf_1",
+      canvasId: "cnv_1" as string | null,
+      workspaceId: "wks_1",
+      kind: "reply" as const,
+      link: { open: "pull-request" as const },
+    };
+    expect(digestHref("production", row)).toBe(
       "https://ponzu.design/canvases/cnv_1?open=pull-request",
     );
-    expect(digestHref({ canvasId: null, link: { open: "usage" } })).toBeNull();
+    // From any other environment the page opens the development app.
+    expect(digestHref("dev", row)).toBe(
+      "https://ponzu.design/canvases/cnv_1?open=pull-request&app=ponzu-dev",
+    );
+    const billing = {
+      ...row,
+      canvasId: null,
+      kind: "billing_cap_warning" as const,
+      link: { open: "usage" as const },
+    };
+    expect(digestHref("production", billing)).toBe(
+      "https://ponzu.design/settings?section=usage&workspace=wks_1&n=ntf_1",
+    );
+    expect(digestHref("production", { ...billing, kind: "reply" })).toBeNull();
   });
 
   test("names are escaped in the HTML, and past ten lines a group counts the rest", async () => {

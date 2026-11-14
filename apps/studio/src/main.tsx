@@ -9,6 +9,7 @@ import { App } from "./app/app.tsx";
 import { CantStart } from "./app/cant-start.tsx";
 import { desktopHost } from "./app/desktop-host.ts";
 import type { Host } from "./app/host.ts";
+import { runPictureHost } from "./app/picture-host.ts";
 import { installFocusRule } from "./cloud/ui/quiet-focus.ts";
 
 declare global {
@@ -27,12 +28,15 @@ declare global {
 const inMemory = import.meta.env.MODE === "development" || import.meta.env.MODE === "e2e";
 
 async function host(): Promise<Host | null> {
-  if (window.ponzuDesktop) return desktopHost(window.ponzuDesktop);
+  const desktop = window.ponzuDesktop;
   // The mode, not DEV: DEV follows NODE_ENV, which a test runner sets for the build too.
-  if (inMemory) {
+  if (inMemory && (!desktop || desktop.config.fake)) {
+    // A test build of the Mac app told to (PONZU_FAKE_BACKEND), which spare measures: the same
+    // world in memory, kept the way the Mac app keeps it (fake-host.ts's `shell`).
     const { fakeHost } = await import("./app/fake-host.ts");
-    return fakeHost();
+    return fakeHost(desktop ? { shell: desktop } : {});
   }
+  if (desktop) return desktopHost(desktop);
   return null;
 }
 
@@ -79,18 +83,25 @@ function launched(analytics: Analytics, setup: AnalyticsSetup | null, version: s
   }
 }
 
-void Promise.all([host(), loadAnalytics(analyticsContext())]).then(([host, analytics]) => {
-  const context = analyticsContext();
-  launched(analytics, context?.setup ?? null, context?.version ?? "");
-  // An error React can't render past goes to PostHog with its component stack, once (in place of
-  // React's own report, which autocapture would count again), and still to the console. What
-  // the window shows for it is what it showed before.
-  const report = analytics.client
-    ? setupReactErrorHandler(analytics.client, (_event, error) => console.error(error))
-    : undefined;
-  createRoot(document.getElementById("root")!, report ? { onUncaughtError: report } : {}).render(
-    <AnalyticsProvider analytics={analytics}>
-      {host ? <App host={host} /> : <CantStart />}
-    </AnalyticsProvider>,
-  );
-});
+/** The app, on its host, reporting where the shell says. */
+const startApp = () =>
+  Promise.all([host(), loadAnalytics(analyticsContext())]).then(([host, analytics]) => {
+    const context = analyticsContext();
+    launched(analytics, context?.setup ?? null, context?.version ?? "");
+    // An error React can't render past goes to PostHog with its component stack, once (in place of
+    // React's own report, which autocapture would count again), and still to the console. What
+    // the window shows for it is what it showed before.
+    const report = analytics.client
+      ? setupReactErrorHandler(analytics.client, (_event, error) => console.error(error))
+      : undefined;
+    createRoot(document.getElementById("root")!, report ? { onUncaughtError: report } : {}).render(
+      <AnalyticsProvider analytics={analytics}>
+        {host ? <App host={host} /> : <CantStart />}
+      </AnalyticsProvider>,
+    );
+  });
+
+// In the desktop's hidden picture window the studio runs no app, reports nothing and keeps
+// nothing: it only draws comments' pictures as the shell asks (app/picture-host.ts).
+if (window.ponzuPictureHost) runPictureHost(window.ponzuPictureHost);
+else void startApp();

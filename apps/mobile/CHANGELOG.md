@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/north-brook/ponzu/compare/mobile-v1.2.0...mobile-v1.3.0) (2026-11-13)
+
+
+### Features
+
+* **mobile:** the chat docks beside the canvas on an ipad, and standby follows ponzu on iphone duo ([#624](https://github.com/north-brook/ponzu/issues/624)) ([f04eb6a](https://github.com/north-brook/ponzu/commit/f04eb6adc229c87fd1cef46345cfa82ecf347255))
+
+## [1.2.0](https://github.com/north-brook/ponzu/compare/mobile-v1.1.0...mobile-v1.2.0) (2026-11-13)
+
+
+### Features
+
+* **mobile:** filter the canvases list by person and repo ([#626](https://github.com/north-brook/ponzu/issues/626)) ([6228adb](https://github.com/north-brook/ponzu/commit/6228adb3ba21298d4cd4622e1548dda9450b7516))
+
 ## [1.1.0](https://github.com/north-brook/ponzu/compare/mobile-v1.0.0...mobile-v1.1.0) (2026-11-13)
 
 

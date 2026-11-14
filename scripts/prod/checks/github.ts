@@ -34,15 +34,34 @@ import {
 /** A token that expires sooner than this fails, so it is renewed before Release Please stops. */
 export const RELEASE_TOKEN_WARN_DAYS = 30;
 
-/** The rulesets infra writes down, by file. `pending` names the step that creates one. */
-const RULESET_FILES = [
-  { file: "github/ruleset-main.json", id: "ruleset.main", pending: null },
+/**
+ * The rulesets infra writes down, by file. `pending` names the step that creates one;
+ * `pendingRules`, the step that adds a rule the file has and the live ruleset may not have yet.
+ * A live ruleset that is its file but for those rules is `pending`, not `fail`; one that has a
+ * pending rule is held to the file's settings for it, like any other rule.
+ */
+const RULESET_FILES: {
+  file: "github/ruleset-main.json" | "github/ruleset-cloud.json";
+  id: string;
+  pending: string | null;
+  pendingRules: Record<string, string>;
+}[] = [
+  {
+    file: "github/ruleset-main.json",
+    id: "ruleset.main",
+    pending: null,
+    pendingRules: {
+      merge_queue:
+        "docs/production.md › Landing a change with a migration: gh api -X PUT repos/north-brook/ponzu/rulesets/25478973 --input infra/github/ruleset-main.json",
+    },
+  },
   {
     file: "github/ruleset-cloud.json",
     id: "ruleset.cloud",
     pending: "founder step D12: bun scripts/prod/apply.ts github-rulesets --yes",
+    pendingRules: {},
   },
-] as const;
+];
 
 /** Environments that do not exist until a founder step makes them. */
 const ENVIRONMENT_PENDING: Record<string, string> = {
@@ -66,7 +85,12 @@ export interface GithubDesired {
   /** `north-brook/ponzu`. */
   repository: string;
   merge: Repo["merge"];
-  rulesets: { id: string; pending: string | null; ruleset: Ruleset }[];
+  rulesets: {
+    id: string;
+    pending: string | null;
+    pendingRules: Record<string, string>;
+    ruleset: Ruleset;
+  }[];
   environments: Repo["environments"];
   variables: string[];
   secrets: string[];
@@ -93,9 +117,10 @@ export function githubDesired(ctx: Pick<CheckContext, "env" | "infra">): GithubD
     manifest: appManifest(ctx.infra, appSlug),
     repository: repo.repository,
     merge: repo.merge,
-    rulesets: RULESET_FILES.map(({ file, id, pending }) => ({
+    rulesets: RULESET_FILES.map(({ file, id, pending, pendingRules }) => ({
       id,
       pending,
+      pendingRules,
       ruleset: ctx.infra[file],
     })),
     environments: repo.environments,
@@ -690,13 +715,29 @@ function evaluateRuleset(want: GithubDesired["rulesets"][number], answers: Githu
       "delete all but one",
     );
   }
-  const wrong = rulesetDifferences(ruleset, live[0] as GithubAnswers["rulesets"][number]);
+  const got = live[0] as GithubAnswers["rulesets"][number];
+  const wrong = rulesetDifferences(ruleset, got);
   const branches = list(
     ruleset.conditions.ref_name.include.map((r) => r.replace("refs/heads/", "")),
   );
-  return wrong.length
-    ? f.fail(want.id, `the ruleset "${ruleset.name}": ${list(wrong)}`, fix)
-    : f.ok(want.id, `the ruleset "${ruleset.name}" protects ${branches} as infra says`);
+  if (!wrong.length) {
+    return f.ok(want.id, `the ruleset "${ruleset.name}" protects ${branches} as infra says`);
+  }
+  // Only rules still to be added are missing, and everything else is the file's: pending.
+  const missing = Object.keys(want.pendingRules).filter(
+    (type) => !got.rules.some((r) => r.type === type),
+  );
+  if (missing.length) {
+    const without = { ...ruleset, rules: ruleset.rules.filter((r) => !missing.includes(r.type)) };
+    if (!rulesetDifferences(without, got).length) {
+      return f.pending(
+        want.id,
+        `the ruleset "${ruleset.name}" is its file's but has no ${list(missing)} rule yet`,
+        missing.map((type) => want.pendingRules[type]).join("; "),
+      );
+    }
+  }
+  return f.fail(want.id, `the ruleset "${ruleset.name}": ${list(wrong)}`, fix);
 }
 
 function evaluateEnvironment(

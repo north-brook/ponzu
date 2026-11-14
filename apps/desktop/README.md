@@ -3,22 +3,24 @@
 The Mac, Windows and Linux app: a window onto the studio (`apps/studio`), the session, links
 and updates. There is no local server. The studio talks to Ponzu Cloud itself
 ([docs/cloud.md](../../docs/cloud.md), "Clients"), with an access token it borrows from the
-main process.
+main process. The pictures of the comments a person leaves are drawn in a second, hidden window
+of the studio in a session of its own (`src/pictures.ts`, `src/picture-window.ts`), so drawing
+one never holds up the person's window.
 
 ```sh
 bun run start                                   # build, then run against the built studio
 PONZU_STUDIO_URL=http://localhost:5173 bun run start   # against the studio's Vite server
-bun run package:dir                             # out/<platform>-unpacked, unsigned
+bun run package:dir                             # out/mac-arm64 on a Mac (out/<platform>-unpacked elsewhere), unsigned
 PONZU_SMOKE=1 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu   # must exit 0
 ```
 
 Where a build talks to is baked in by `scripts/build.ts` from
 [`infra/environments.json`](../../infra/environments.json): a release takes the environment the
-file's `release` names (dev until the cutover PR flips it to production), Ponzu Dev always takes
+file's `release` names (production), Ponzu Dev always takes
 dev's, and a field of that environment the app reads (`apiUrl`, `workosClientId`, `realtimeUrl`,
 `assetsUrl`) that is still `null` fails the build, naming it. The
 build also bakes the commit it was made from (the checkout's HEAD). About shows both, "Version
-2.0.0 (abc1234 · dev)", and every analytics event carries them as `environment` and
+2.0.0 (abc1234 · production)", and every analytics event carries them as `environment` and
 `app_commit`.
 
 A development build may also take `PONZU_API_URL` (https, or http on this computer) and
@@ -39,7 +41,7 @@ bun run package:dev      # out/dev/mac-arm64/Ponzu Dev.app, and a zip of it besi
 PONZU_SMOKE=1 "out/dev/mac-arm64/Ponzu Dev.app/Contents/MacOS/Ponzu Dev"
 ```
 
-The cloud app for a Mac that still uses Ponzu 1.x, until the cloud release replaces it: the
+Ponzu Dev, the release under its own name that runs beside an installed Ponzu or Ponzu 1.x: the
 release in everything (fuses, no debugging port, no session file, the CSP, sign-in) but who
 it is (`src/packaging.ts`, `src/config.ts`) and where it talks: always dev, at
 `api-dev.ponzu.design`, from infra/environments.json. It is "Ponzu Dev",
@@ -84,7 +86,20 @@ variables, quits when started with a debugging port, and has no developer tools.
 PONZU_TEST_BUILD=1 bun run package:dir          # for spare or CI to drive, signed in
 ```
 
+`PONZU_FAKE_BACKEND=1` runs the studio on Ponzu Cloud in memory (the studio's fake host, the
+one its headless tests use) instead of the service, so the packaged app can be measured on a
+canvas of its own without an account. A test build or a development build takes it; a release
+ignores it, and a release's studio, built for production, has no fake in it at all (CI checks the
+packaged studio for it). Launched that way the app is apart from the person, like the smoke
+check: a throwaway data folder, no keychain, no links claimed, and every request that would leave
+the computer refused. Its studio must be built with `--mode e2e` for the fake to be there;
+`scripts/measure/run.sh` builds such an app and measures it (`scripts/measure/measure.ts`: open,
+idle, comments, pan and zoom, switching canvases, a long idle, with macOS `footprint` of each
+process). It opens a window, so it runs on the test Mac, never a person's own.
+
 ## Layout
+
+The main files; `src/` holds a few more small helpers beside them.
 
 ```
 src/
@@ -120,7 +135,8 @@ API's CORS allows exactly it) and the app and its UI always match. Every file go
 policy in `csp.ts`: script only from the studio itself, no frames, plugins or forms, and
 nothing reached but the API, its environment's Neon Realtime host and assets host (exact
 hosts, from the environment the build baked; a development build allows any of each), and
-Google Fonts, for the fonts a canvas names (the studio's own fonts ship inside it). Images load
+Google Fonts, for the fonts a canvas names (the studio's own fonts ship inside it), and, when
+the build reports usage, its PostHog project's hosts. Images load
 from any https host, as the runner's previews draw them (docs/cloud.md, "Security").
 
 A studio built for shipping carries no stand-in for Ponzu Cloud: with no bridge under it (a
@@ -232,8 +248,9 @@ shows it, and never the smoke check or a test build.
 
 Contact Support opens a `mailto:support@ponzu.design` with the version, commit, environment and
 the `x-request-id` of the API's last answer to the window (`support.ts`). Each fact is checked
-against its shape and the body is scrubbed, so no token or session can reach it. Ponzu Status,
-Privacy Policy and Terms of Service open their pages on ponzu.design.
+against its shape and the body is scrubbed, so no token or session can reach it. Privacy Policy
+and Terms of Service open their pages on ponzu.design, and a last item opens ponzu.design
+itself. There is no status item, because the site has no status page yet.
 
 ## The smoke check
 

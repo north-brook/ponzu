@@ -418,7 +418,10 @@ export class FakeBackend {
         } else if (!existing) {
           this.append(canvas, { kind: "assistant", payload: { text } }, null, streaming, id);
         }
-        this.touch(canvas);
+        // As the API: a line in the thread leaves the canvas's last activity alone (only a
+        // commit to its document moves it, packages/db/src/queries/ops.ts). Moving it here made
+        // every streamed token reorder the sidebar and redraw the window, which the app never does.
+        this.changed();
         return id;
       },
       tool: (
@@ -433,7 +436,8 @@ export class FakeBackend {
         } else if (!existing) {
           this.append(canvas, { kind: "tool", payload }, null, streaming, id);
         }
-        this.touch(canvas);
+        // As `say`: the thread leaves the canvas's last activity alone.
+        this.changed();
         return id;
       },
       work: (artboards, status) => {
@@ -1379,6 +1383,13 @@ export class FakeBackend {
       email: (userId) => ({
         address: this.people.get(userId)?.email ?? null,
         available: this.features.email,
+        // The API also asks GitHub's own answer (owner or member, never an outside
+        // collaborator); the fake has only roles, so an admin of a team is enough here.
+        ...(this.features.email && {
+          teamAvailable: [...this.workspaces.values()].some(
+            (workspace) => workspace.kind === "org" && workspace.members.get(userId) === "admin",
+          ),
+        }),
       }),
       changed: () => this.changed(),
       meChanged: () => this.changed(),

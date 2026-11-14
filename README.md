@@ -13,7 +13,7 @@ Ponzu is an app for making things with Claude: brands, apps, launch pages, diagr
 ## Get started
 
 1. [Download Ponzu for Mac](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). Windows and Linux builds are in beta on the same page.
-2. Sign in with GitHub. Ponzu makes you a personal workspace named after your login.
+2. Sign in with GitHub, then choose where you build: install Ponzu's GitHub App on your own account or an organization, or use one your team has already set up. Each account Ponzu is installed on is a workspace.
 3. Connect Claude: your Claude Pro or Max subscription, or an Anthropic API key. Claude runs on your plan, and Ponzu adds nothing for tokens.
 4. Pick a repository or start from scratch.
 

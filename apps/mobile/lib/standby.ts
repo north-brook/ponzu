@@ -95,6 +95,19 @@ export function standbyPath({
   return out;
 }
 
+/**
+ * The boards standby's camera visits on Ponzu Cloud: the ones the canvas's agent is working on
+ * now (the head's `agentArtboards`, in its order), on the page on screen. None while it isn't
+ * working: standby is only for watching Ponzu work.
+ */
+export function cloudStandbyPath(
+  head: { agentState: string; agentArtboards: readonly string[] } | null | undefined,
+  page: ReadonlySet<string>,
+): string[] {
+  if (head?.agentState !== "working") return [];
+  return [...new Set(head.agentArtboards)].filter((id) => page.has(id));
+}
+
 /** Whether an agent is at work in this design now. */
 export function agentWorking(presence: Presence[], file: string): boolean {
   return presence.some(

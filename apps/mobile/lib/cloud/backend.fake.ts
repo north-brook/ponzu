@@ -68,6 +68,11 @@ export const SCENARIOS = [
    * comment on the Plans board.
    */
   "search",
+  /**
+   * Acme with two people's canvases to filter (`stockFilter`): Jun Ito, Maya's teammate, has a
+   * canvas in site and a settled one in app, beside Maya's three.
+   */
+  "filter",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -443,6 +448,41 @@ export async function stockSearch(world: FakeWorld): Promise<void> {
   ]);
 }
 
+/** Who and what `stockFilter` adds, for tests to look for. */
+export const FILTER_SCENE = {
+  teammate: { login: "jun", name: "Jun Ito" },
+  /** Jun's, in site. */
+  active: "Checkout",
+  /** Jun's, in app, settled. */
+  settled: "Sign-up form",
+} as const;
+
+/**
+ * Acme with canvases from two people, once the world is ready: Maya's three (Pricing page in
+ * site, Onboarding in app, Launch poster in Scratch) and Jun's, a teammate's: Checkout in site,
+ * and Sign-up form in app, settled. A teammate's Scratch canvases are theirs alone, so Jun has
+ * none Maya can see. Counts in the filter: site 2, app 2, Scratch 1.
+ */
+export async function stockFilter(world: FakeWorld): Promise<void> {
+  await world.ready;
+  const { fake, acme } = world;
+  const workspace = fake.workspaces.get(acme.id);
+  if (!workspace) return;
+  const jun = fake.addPerson(FILTER_SCENE.teammate);
+  workspace.members.set(jun.id, "member");
+  fake.finishStep(jun.id, "where");
+  fake.claude.connect(jun.id);
+  const [site, app] = acme.repos;
+  const { api } = fake.connect(jun);
+  await api.canvases.create({ workspaceId: acme.id, repoId: site!.id, name: FILTER_SCENE.active });
+  const settled = await api.canvases.create({
+    workspaceId: acme.id,
+    repoId: app!.id,
+    name: FILTER_SCENE.settled,
+  });
+  await api.canvases.settle(settled.id, true);
+}
+
 export interface FakeCloud extends Backend {
   kind: "fake";
   /** The world now (`reset` makes a new one). */
@@ -514,6 +554,7 @@ export function fakeCloud(
   const pulled = new WeakSet<FakeWorld>();
   const pinged = new WeakSet<FakeWorld>();
   const searched = new WeakSet<FakeWorld>();
+  const filtered = new WeakSet<FakeWorld>();
   const storage = opts.storage === undefined ? null : opts.storage;
   /** The scenario a flow asked for at this launch, read once, before the session is. */
   let nextLaunch: Promise<void> | null = null;
@@ -636,6 +677,7 @@ export function fakeCloud(
         "pull-request": signedIn,
         pings: signedIn,
         search: signedIn,
+        filter: signedIn,
       };
       // An API that sends pings, for the scenario that says so; none otherwise.
       world.fake.features = { ...world.fake.features, push: scenario === "pings" };
@@ -692,6 +734,15 @@ export function fakeCloud(
         const current = world;
         session.set({ status: "loading" });
         void stockSearch(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "filter" && !filtered.has(world)) {
+        filtered.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockFilter(current).finally(() => {
           if (world === current) session.set(states[scenario]);
         });
         return true;

@@ -423,9 +423,44 @@ describe("github/", () => {
     expect(RulesetSchema.safeParse(request).success).toBe(true);
   });
 
-  test("main's ruleset is main's today, unchanged", () => {
+  test("main's ruleset is main's today, unchanged, plus the merge queue", () => {
     const request = Object.fromEntries(RULESET_REQUEST_FIELDS.map((k) => [k, recorded[k]]));
-    expect(loadInfraFile("github/ruleset-main.json") as unknown).toEqual(request);
+    const main = loadInfraFile("github/ruleset-main.json");
+    const queue = main.rules.filter((r) => r.type === "merge_queue");
+    expect({
+      ...main,
+      rules: main.rules.filter((r) => r.type !== "merge_queue"),
+    } as unknown).toEqual(request);
+    // One entry merges at a time, squashed, each tested on top of the ones ahead of it: every
+    // merge is its own push, so its migration and its deploy are its own.
+    expect(queue).toEqual([
+      {
+        type: "merge_queue",
+        parameters: {
+          merge_method: "SQUASH",
+          grouping_strategy: "ALLGREEN",
+          max_entries_to_build: 5,
+          min_entries_to_merge: 1,
+          max_entries_to_merge: 1,
+          min_entries_to_merge_wait_minutes: 0,
+          check_response_timeout_minutes: 60,
+        },
+      },
+    ]);
+  });
+
+  test("every check main requires runs in the merge queue: ci.yml has merge_group", () => {
+    const ci = Bun.YAML.parse(readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8")) as {
+      on: Record<string, unknown>;
+      jobs: Record<string, { name?: string }>;
+    };
+    expect(ci.on.merge_group).toEqual({ types: ["checks_requested"] });
+    const main = loadInfraFile("github/ruleset-main.json");
+    const checks = main.rules.find((r) => r.type === "required_status_checks")?.parameters as {
+      required_status_checks: { context: string }[];
+    };
+    const names = Object.values(ci.jobs).map((job) => job.name);
+    for (const { context } of checks.required_status_checks) expect(names).toContain(context);
   });
 
   test("a field the API doesn't take is refused", () => {

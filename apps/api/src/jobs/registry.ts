@@ -1,5 +1,7 @@
 import { accountJobs } from "./kinds/account.ts";
 import { canvasJobs } from "./kinds/canvases.ts";
+import { emailMembersJobs } from "./kinds/email-members.ts";
+import { emailRecapJobs } from "./kinds/email-recap.ts";
 import { environmentJobs } from "./kinds/environments.ts";
 import { githubJobs } from "./kinds/github.ts";
 import { notificationJobs } from "./kinds/notifications.ts";
@@ -38,6 +40,8 @@ export const JOB_MODULES: readonly (() => JobKinds)[] = [
   searchJobs,
   notificationJobs,
   accountJobs,
+  emailMembersJobs,
+  emailRecapJobs,
 ];
 
 /**

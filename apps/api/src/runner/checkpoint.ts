@@ -100,6 +100,8 @@ export async function recordRunnerCheckpoint(
     // Only in place of an archive this checkpoint does not carry.
     keepSession: wanted.session === null && body.keep?.session === true,
     keepWorkspace: wanted.workspace === null && body.keep?.workspace === true,
+    // What the session held as its archive was taken; absent, what was delivered by now.
+    heldThrough: body.heldThrough ?? null,
   });
   if (!recorded?.saved)
     throw new ApiError(409, "superseded", "A newer runner has started for this canvas.");

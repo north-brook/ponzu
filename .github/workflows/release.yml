@@ -126,6 +126,19 @@ jobs:
               if [ "$enabled" = true ]; then
                 gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
               fi
+              # Main merges through a merge queue. Turning auto-merge off does not take a
+              # PR out of the queue once its checks have put it there, so a held PR that is
+              # queued is taken out.
+              owner=${GITHUB_REPOSITORY%/*}
+              name=${GITHUB_REPOSITORY#*/}
+              queued=$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$name\") {
+                  pullRequest(number: $number) { id isInMergeQueue } } }" \
+                --jq '.data.repository.pullRequest | select(.isInMergeQueue) | .id')
+              if [ -n "$queued" ]; then
+                gh api graphql \
+                  -f query="mutation { dequeuePullRequest(input: {id: \"$queued\"}) { clientMutationId } }" >/dev/null
+                echo "took held release PR #$number out of the merge queue"
+              fi
               why=${answer#hold: }
               why=${why//'%'/'%25'}
               why=${why//$'\r'/'%0D'}
@@ -159,6 +172,23 @@ jobs:
           for number in $numbers; do
             gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
             echo "::warning title=Auto-merge turned off on release PR #$number::Whether it is held could not be decided, so a person merges it or the next push to main decides again."
+          done
+          # One already in the merge queue has no auto-merge left to turn off, and would still
+          # merge: it is taken out of the queue too.
+          numbers=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head "release-please--branches--main--components--$APP" \
+            --label "autorelease: pending" --json number --jq '.[].number')
+          owner=${GITHUB_REPOSITORY%/*}
+          name=${GITHUB_REPOSITORY#*/}
+          for number in $numbers; do
+            queued=$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$name\") {
+                pullRequest(number: $number) { id isInMergeQueue } } }" \
+              --jq '.data.repository.pullRequest | select(.isInMergeQueue) | .id')
+            if [ -n "$queued" ]; then
+              gh api graphql \
+                -f query="mutation { dequeuePullRequest(input: {id: \"$queued\"}) { clientMutationId } }" >/dev/null
+              echo "::warning title=Release PR #$number taken out of the merge queue::Whether it is held could not be decided, so a person merges it or the next push to main decides again."
+            fi
           done
         env:
           APP: ${{ matrix.app }}
@@ -574,10 +604,22 @@ jobs:
       # latest release (scripts/release-notes.ts --changelog). Run from this
       # workflow's tooling, since a tag rebuilt by hand can predate the mode.
       # Uploaded before the draft is downloaded, or put beside a dry run's
-      # builds, so the check below reads it too.
+      # builds, so the check below reads it too. A desktop tag whose every
+      # GitHub release is a draft, other than this one, was never published
+      # (v2.1.1's publish failed and 2.2.0 shipped its fixes): its notes show
+      # under the release after it. One tag can hold a published release and
+      # stray drafts (v1.33.1 does), so a tag counts only if all of its are. The iPhone ships through Expo whatever its GitHub
+      # release says, so its tags are left alone. If the list can't be read,
+      # every tag counts as published.
       - name: The site's changelog
         run: |
-          bun release-tools/scripts/release-notes.ts --changelog "$RUNNER_TEMP/changelog.json"
+          unpublished=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 \
+            --json tagName,isDraft \
+            --jq "group_by(.tagName) | map(select(all(.isDraft) and (.[0].tagName | startswith(\"v\")) and .[0].tagName != \"$TAG\") | .[0].tagName) | join(\",\")") \
+            || { echo "::warning::could not list draft releases"; unpublished=""; }
+          echo "unpublished: ${unpublished:-none}"
+          bun release-tools/scripts/release-notes.ts --changelog "$RUNNER_TEMP/changelog.json" \
+            --unpublished "$unpublished"
           if [ "$PUBLISH" = true ]; then
             bash release-tools/scripts/release-upload.sh "$TAG" "$RUNNER_TEMP/changelog.json"
           else
