@@ -20,6 +20,14 @@ import type { CDPSession } from "./trace.ts";
 export const VIEWPORT = { width: 1512, height: 945 };
 export const SCALE = 2;
 
+/**
+ * Chrome's frames, never held to the screen's rate: headless Chrome draws at 60 and spare's
+ * display is 60 Hz, and the target is a ProMotion Mac's 120. The page's own frame clock
+ * (probe.ts) spaces frames as a 120 Hz display would, so a frame shows how long it really took
+ * and never waits on a 60 Hz vsync.
+ */
+export const UNCAPPED = ["--disable-frame-rate-limit", "--disable-gpu-vsync"];
+
 export interface Studio {
   page: Page;
   cdp: CDPSession;
@@ -31,7 +39,7 @@ export async function openStudio(dir: string, chromium?: string): Promise<Studio
   const server = serve(dir);
   let browser: TestChromium | undefined;
   try {
-    browser = await launchChromium(chromium);
+    browser = await launchChromium(chromium, UNCAPPED);
     const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: SCALE });
     await page.emulateMedia({ colorScheme: "light" });
     await page.addInitScript(PROBE);
@@ -81,7 +89,7 @@ export async function openDesktop(desktop: Desktop): Promise<Studio> {
   try {
     let endpoint: string;
     if ("electron" in desktop) {
-      app = spawn(desktop.electron, ["--remote-debugging-port=0"], {
+      app = spawn(desktop.electron, ["--remote-debugging-port=0", ...UNCAPPED], {
         env: { ...process.env, PONZU_FAKE_BACKEND: "1", PONZU_STUDIO_URL: server!.url },
         stdio: ["ignore", "pipe", "pipe"],
       });

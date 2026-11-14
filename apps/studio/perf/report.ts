@@ -3,7 +3,17 @@
  * headline numbers and how main has moved over its recent merges. Pure, so tested on its own
  * (report.test.ts). It reports; it never fails a check.
  */
-import { type Aggregate, aggregate, compare, METRICS, round, type Verdict } from "./metrics.ts";
+import {
+  type Aggregate,
+  aggregate,
+  compare,
+  HOLDS_FPS,
+  METRICS,
+  round,
+  scrollsOnly,
+  TARGET_FPS,
+  type Verdict,
+} from "./metrics.ts";
 
 /** The marker the workflow finds its own comment by, to update it in place. */
 export const MARKER = "<!-- ponzu-perf -->";
@@ -81,7 +91,7 @@ export function format(name: string, v: number): string {
         ? String(v)
         : String(round(v, 1));
   if (unit === "ms") return `${n} ms`;
-  if (unit === "fps") return `${n} fps`;
+  if (unit === "fps") return `${n} / ${TARGET_FPS} fps`;
   return n;
 }
 
@@ -135,7 +145,30 @@ export function report(results: Results, history: HistoryEntry[] = []): string {
     "",
   );
 
-  // What moved, first: each scenario's headline numbers. The rest are marked in the details.
+  // The target first: which gestures hold 120 frames a second, and how far short the rest are.
+  const desktop = where === "the desktop app";
+  const gestures = results.scenarios.filter(
+    (sc) =>
+      (results.head.runs[sc.id]?.fps ?? []).some((v) => v > 0) && (desktop || !scrollsOnly(sc.id)),
+  );
+  if (gestures.length) {
+    const fps = (id: string) => aggregate(results.head.runs[id]!.fps!).median;
+    const short = gestures
+      .filter((sc) => fps(sc.id) < HOLDS_FPS)
+      .sort((a, b) => fps(a.id) - fps(b.id));
+    out.push(
+      `**${gestures.length - short.length} of ${gestures.length} gestures hold ${TARGET_FPS} fps** (a ProMotion display; ${round(1000 / TARGET_FPS, 1)} ms a frame).` +
+        (short.length
+          ? ` Short of it: ${short
+              .slice(0, 8)
+              .map((sc) => `\`${sc.id}\` ${round(fps(sc.id))}`)
+              .join(", ")}${short.length > 8 ? `, and ${short.length - 8} more` : ""}.`
+          : ""),
+      "",
+    );
+  }
+
+  // What moved: each scenario's headline numbers. The rest are marked in the details.
   const moved: string[] = [];
   let better = 0;
   let worse = 0;
@@ -248,6 +281,8 @@ export function report(results: Results, history: HistoryEntry[] = []): string {
     ...results.suites.map((s) => `- **${s.id}**: ${s.about}`),
     "",
     ...Object.entries(METRICS).map(([, m]) => `- *${m.label}*: ${m.means}`),
+    "",
+    `The target is ${TARGET_FPS} frames a second, a ProMotion display's. Chrome is never held to 60: the harness draws frames as a ${TARGET_FPS} Hz display would, so a frame that fits ${round(1000 / TARGET_FPS, 1)} ms reads as ${TARGET_FPS} fps and one that doesn't reads as long as it took. A gesture holds the target at ${round(HOLDS_FPS)} fps or more. In headless Chrome a pan, whose frames only scroll, can't go past about 57 fps however cheap it is, so pans count only on the desktop app.`,
     "",
     "Run it yourself: `bun apps/studio/perf/run.ts` (apps/studio/perf/README.md).",
     "</details>",

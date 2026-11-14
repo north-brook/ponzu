@@ -12,7 +12,7 @@
 
 /** The page's side of the harness, as `window.__pz`. */
 export interface Probe {
-  /** Every animation frame's timestamp since the probe started. */
+  /** The timestamp of every frame the probe's 120 Hz clock has drawn (`frame`). */
   frames: number[];
   /** React commits since the page loaded. */
   commits: number;
@@ -32,7 +32,7 @@ export interface Probe {
   /** Resolves after `n` frames in which nothing changed in `quiet()`; true unless it gave up. */
   settle(quiet: () => unknown, n?: number, ms?: number): Promise<boolean>;
   /**
-   * A trackpad over the canvas: `perFrame` wheel events each frame for `frames` frames, each
+   * A trackpad over the canvas: `perFrame` wheel events each frame (one, as a 120 Hz trackpad sends) for `frames` frames, each
    * `dy` (ctrl held: a pinch). The canvas zooms by exp(-dy / 100) per event.
    */
   wheel(frames: number, dy: number, ctrl: boolean, perFrame?: number): Promise<void>;
@@ -57,14 +57,49 @@ export const PROBE = `(() => {
     keys: [],
     loafs: [],
     now: () => performance.now(),
-    frame: () => new Promise((resolve) => requestAnimationFrame(resolve)),
   };
   window.__pz = pz;
-  const tick = (t) => {
+  // A 120 Hz display's clock. Chrome runs uncapped (app.ts), so a frame comes as soon as it is
+  // ready; the next is asked for no sooner than a 120th of a second after this one began, as a
+  // ProMotion display would show it. A frame whose work fits the budget reads 8.3 ms, and one
+  // that doesn't reads as long as it took. Only frames something waits on are drawn: nothing
+  // spins between gestures.
+  //
+  // Each frame also moves one nearly clear pixel. Uncapped, headless Chrome still draws a
+  // frame in which the page itself changed nothing (a frame that only scrolls, or only waits)
+  // on its own 60 Hz clock; a pixel that moves makes every frame one the page asked for, as a
+  // 120 Hz display would draw it. The pixel is a layer of its own and only its transform
+  // changes, so it restyles that one element and rasters nothing.
+  const BUDGET = 1000 / 120;
+  let last = 0;
+  let dot = null;
+  let ticks = 0;
+  // How much sooner than its due to ask for a frame: the timer and the frame's own callback take
+  // a millisecond or two, and asking at the due would make an empty frame read about 10 ms.
+  // Learned from frames that came close to their due (light ones), so a heavy frame, which is
+  // late however soon it was asked for, never teaches it to ask sooner.
+  let lead = 1.5;
+  pz.frame = async () => {
+    const wait = last + BUDGET - lead - performance.now();
+    if (wait > 0.5) await new Promise((resolve) => setTimeout(resolve, wait));
+    if (!dot && document.body) {
+      dot = document.createElement("i");
+      dot.setAttribute("aria-hidden", "true");
+      dot.style.cssText =
+        "position:fixed;left:0;top:0;width:1px;height:1px;background:#000;opacity:.01;will-change:transform;pointer-events:none;z-index:2147483647";
+      document.body.append(dot);
+    }
+    if (dot) dot.style.transform = ++ticks % 2 ? "translateX(1px)" : "none";
+    // The time the frame's callbacks ran, not its timestamp: uncapped, Chrome's frame time can
+    // lag the clock, and pacing from it would ask for frames sooner than 120 Hz.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const t = performance.now();
+    const gap = t - last;
+    if (last && gap < BUDGET * 1.5) lead = Math.min(4, Math.max(0, lead + (gap - BUDGET) * 0.25));
+    last = t;
     pz.frames.push(t);
-    requestAnimationFrame(tick);
+    return t;
   };
-  requestAnimationFrame(tick);
 
   // React's commits, through the hook its devtools use: a production build calls it too. Only
   // counted, never walked, so it costs nothing measurable.
@@ -102,7 +137,7 @@ export const PROBE = `(() => {
     }).observe({ type: "long-animation-frame", buffered: true });
   } catch {}
 
-  pz.settle = async (quiet, n = 10, ms = 30000) => {
+  pz.settle = async (quiet, n = 20, ms = 30000) => {
     const end = performance.now() + ms;
     let last = JSON.stringify(quiet());
     let still = 0;
@@ -123,7 +158,7 @@ export const PROBE = `(() => {
     return el;
   };
 
-  pz.wheel = async (frames, dy, ctrl, perFrame = 2) => {
+  pz.wheel = async (frames, dy, ctrl, perFrame = 1) => {
     const el = pz.plane();
     const r = el.getBoundingClientRect();
     const init = {

@@ -26,10 +26,16 @@ export interface TestChromium {
   close(): Promise<void>;
 }
 
-/** Headless Chromium at `executablePath`, or the one findChromium finds. Throws when there is none. */
-export async function launchChromium(executablePath = findChromium()): Promise<TestChromium> {
+/**
+ * Headless Chromium at `executablePath`, or the one findChromium finds, started with `args` as
+ * well as Playwright's own. Throws when there is none.
+ */
+export async function launchChromium(
+  executablePath = findChromium(),
+  args: string[] = [],
+): Promise<TestChromium> {
   if (!executablePath) throw new Error("No Chrome or Chromium found (set PONZU_CHROMIUM).");
-  const browser = await chromium.launch({ executablePath, headless: true });
+  const browser = await chromium.launch({ executablePath, headless: true, args });
   const pid = await browserPid(browser).catch(async (err) => {
     await browser.close();
     throw err;
