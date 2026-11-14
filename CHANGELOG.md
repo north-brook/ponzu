@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/north-brook/ponzu/compare/v2.5.1...v2.6.0) (2026-11-14)
+
+
+### Features
+
+* pay as you go billing, off until its switch is set ([#586](https://github.com/north-brook/ponzu/issues/586)) ([c65eaaf](https://github.com/north-brook/ponzu/commit/c65eaaf9bc1fc441ca6559937a7b651c837915a3))
+
 ## [2.5.1](https://github.com/north-brook/ponzu/compare/v2.5.0...v2.5.1) (2026-11-14)
 
 
